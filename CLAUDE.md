@@ -6,21 +6,23 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 The code in this folder is meant to contain simulations for a Research Experience for Undergraduates (REU) program at the Cornell Center for Bright Beams (CBB) and Cornell Laboratory for Accelerator ScienceS and Education (CLASSE). The project focus is to build a beam simulation for the Cornell High Energy Synchotron Source (CHESS).
 
+Please use the CBB conda environment by running conda activate virtual environment (Miniforge is installed at ~/miniforge3; if conda isn't on your PATH yet, first run source ~/miniforge3/bin/activate).
+
 ## Reference Materials
 
 ### Simulation Codes
 
 | Tool | Location | Purpose |
 |------|----------|---------|
-| **IMPACT-T** | `reference/Impact-T Documentation/` | 3D relativistic particle tracking with space charge, wakefields, and CSR. Parallel implementation, used in photoinjector design. |
-| **IMPACT-Z** | `reference/Impact-Z Documentation/` | 3D parallel PIC code for intense beams through drifts, quadrupoles, solenoids, bending magnets, multipoles, and RF cavities. |
-| **GPT** | `reference/GPT Documentation/` | General Particle Tracer — 3D charged particle dynamics including space charge. Uses GDF file format for I/O. |
-| **WarpX** | `reference/WarpX Documentation/` | Massively parallel PIC code (EM and electrostatic). Supports GPU backends (CUDA/HIP/SYCL), adaptive mesh refinement, Python interface via `pywarpx`/PICMI. |
-| **G4beamline** | `reference/G4beamline Documentation/` | Geant4-based beamline simulation — command-driven input file, full physics lists, virtual detectors, NTuples, and 3D visualization. |
+| **IMPACT-T** | `reference/Impact-T Documentation/README.md` | 3D relativistic particle tracking with space charge, wakefields, and CSR. Parallel implementation, used in photoinjector design. |
+| **IMPACT-Z** | `reference/Impact-Z Documentation/README.md` | 3D parallel PIC code for intense beams through drifts, quadrupoles, solenoids, bending magnets, multipoles, and RF cavities. |
+| **GPT** | `reference/GPT Documentation/README.md` | General Particle Tracer — 3D charged particle dynamics including space charge. Uses GDF file format for I/O. |
+| **WarpX** | `reference/WarpX Documentation/README.md` | Massively parallel PIC code (EM and electrostatic). Supports GPU backends (CUDA/HIP/SYCL), adaptive mesh refinement, Python interface via `pywarpx`/PICMI. |
+| **G4beamline** | `reference/G4beamline Documentation/README.md` | Geant4-based beamline simulation — command-driven input file, full physics lists, virtual detectors, NTuples, and 3D visualization. |
 
 ### Papers
 
-Located in `reference/Papers/`. See `reference/Papers/README.md` for summaries.
+See `reference/Papers/README.md` for summaries of relevant papers.
 
 ### Key Concepts
 
