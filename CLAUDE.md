@@ -4,11 +4,13 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Overview
 
-The code in this folder is meant to contain simulations for a Research Experience for Undergraduates (REU) program at the Cornell Center for Bright Beams (CBB) and Cornell Laboratory for Accelerator ScienceS and Education (CLASSE). The project focus is to build a beam simulation for the Cornell High Energy Synchotron Source (CHESS).
+The code in this folder is meant to contain simulations for a Research Experience for Undergraduates (REU) program at the Cornell Center for Bright Beams (CBB) and Cornell Laboratory for Accelerator ScienceS and Education (CLASSE). The project focus is to build a beam simulation for the Cornell High Energy Synchotron Source (CHESS). 
 
-Please use the CBB conda environment by running conda activate virtual environment (Miniforge is installed at ~/miniforge3; if conda isn't on your PATH yet, first run source ~/miniforge3/bin/activate).
+Please use the CBB conda environment by running `conda activate CBB` (Miniforge is installed at ~/miniforge3; if conda isn't on your PATH yet, first run source ~/miniforge3/bin/activate).
 
 ## Reference Materials
+
+Before coding, read any relevant documentation (listed below) or papers (listed in `reference/Papers/README.md`) to better understand the task.
 
 ### Simulation Codes
 
@@ -20,10 +22,6 @@ Please use the CBB conda environment by running conda activate virtual environme
 | **WarpX** | `reference/WarpX Documentation/README.md` | Massively parallel PIC code (EM and electrostatic). Supports GPU backends (CUDA/HIP/SYCL), adaptive mesh refinement, Python interface via `pywarpx`/PICMI. |
 | **G4beamline** | `reference/G4beamline Documentation/README.md` | Geant4-based beamline simulation — command-driven input file, full physics lists, virtual detectors, NTuples, and 3D visualization. |
 
-### Papers
-
-See `reference/Papers/README.md` for summaries of relevant papers.
-
 ### Key Concepts
 
 - **PIC (Particle-In-Cell)**: The computational method used by IMPACT-Z and WarpX — particles tracked on a mesh, fields solved on grid.
@@ -31,10 +29,6 @@ See `reference/Papers/README.md` for summaries of relevant papers.
 - **CSR (Coherent Synchrotron Radiation)**: Wakefield from relativistic bunches in bending magnets; modeled in IMPACT-T.
 - **GDF**: GPT's native binary data format; convert to/from ASCII with `GDF2A`/`ASCI2GDF`.
 - **IMPACT-Z output files**: Named `fort.18`, `fort.24`–`fort.30`, `fort.32` — see `reference/Impact-Z Documentation/output_files/` for column definitions.
-
-### Documentation Notes
-
-The markdown docs in `reference/Impact-T Documentation/`, `reference/Impact-Z Documentation/`, `reference/GPT Documentation/`, and `reference/G4beamline Documentation/` were auto-generated from PDFs and may have equation transcription errors. When in doubt, refer to the original PDFs (`ImpactTv3.pdf`, `ImpactZusermanual.pdf`, `UserManual.pdf`, `G4beamlineUsersGuide-2.pdf`).
 
 ### Adding New Papers
 
