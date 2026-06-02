@@ -76,6 +76,15 @@ ArXiv preprint (arXiv:1304.2708) of the paper published as `PhysRevSTAB.16.07340
 
 ---
 
+## Design and Experimental Study of a C-Band Traveling-Wave Accelerating Structure
+**File:** `SSRF_-_Modern_traveling_wave_simulation.pdf`
+
+**Authors:** FANG WenCheng, TONG DeChun, GU Qiang & ZHAO ZhenTang (Shanghai Institute of Applied Physics (SINAP), Chinese Academy of Sciences; Tsinghua University; *Chinese Science Bulletin*, January 2011, Vol. 56, No. 1, pp. 18–23, doi: 10.1007/s11434-010-4265-2)
+
+Presents the design, simulation, and cold RF test of a C-band (5712 MHz) constant-gradient disk-loaded traveling-wave (TW) accelerating structure of 53 regular cells (~1 m length), developed at SINAP for a compact hard X-ray FEL facility. Regular cells are designed with SUPERFISH in the 2π/3 mode targeting >40 MV/m gradient; waveguide couplers with two coupling ports are designed using MWS (CST Microwave Studio) and tuned with Kroll's time-domain method. A 14-cell experimental model is fabricated and characterized via RF cold test (LABVIEW-controlled NWA Agilent 8362B): measured frequency and Q agree with simulation within ~3.5 MHz, SWR reaches ~1.1 after cell-by-cell tuning, and field distribution matches the simulated profile, validating the design methodology.
+
+---
+
 ## Injection Optimization of CESR at 3.76 GeV
 **File:** `vrdoljak.pdf`
 

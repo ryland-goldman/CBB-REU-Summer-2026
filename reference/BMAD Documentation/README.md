@@ -9,6 +9,7 @@ BMAD (aka "Baby MAD" or "Better MAD" or "BE MAD!") is a set of Fortran90 subrout
 | [lattice_language_guide.md](lattice_language_guide.md) | BMAD Lattice Language Guide — elements, attributes, tracking switches, superimpose/overlay/group, input file syntax |
 | [programming_guide.md](programming_guide.md) | BMAD Programming Guide — ring structure, transfer matrices, tracking subroutine chains, Taylor maps, custom elements, Runge-Kutta tracking |
 | [subroutine_list.md](subroutine_list.md) | Library Subroutine List — all BMAD subroutines organized by category with signatures and descriptions |
+| [MAD-X User Manual/README.md](MAD-X%20User%20Manual/README.md) | MAD-X User Manual — input format, element definitions, sequences, Twiss, matching, PTC, error/orbit correction, aperture, and more. BMAD conforms to the MAD input standard; use this as reference for lattice file syntax. |
 
 ## Quick Reference
 
