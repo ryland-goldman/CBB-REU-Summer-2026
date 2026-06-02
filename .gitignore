@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Simulation outputs
+fort.*
+*.gdf
+*.h5
+*.hdf5
+*.bp
+*.bp4/
+*.openpmd/
+diags/
+output/
+outputs/
+checkpoint*/
+
+# WarpX / PICMI
+warpx_used_inputs
+warpx_metadata.txt
+*.ptc
+*.plt
+
+# IMPACT-T / IMPACT-Z output files
+ImpactT.in.bak
+test.in.bak
+
+# G4beamline
+*.root
+g4bl.out
+
+# Large data / binaries
+*.dat
+*.bin
+*.raw
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

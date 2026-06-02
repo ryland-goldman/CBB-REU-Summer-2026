@@ -1,0 +1,39 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code when working with code in this repository.
+
+## Overview
+
+The code in this folder is meant to contain simulations for a Research Experience for Undergraduates (REU) program at the Cornell Center for Bright Beams (CBB) and Cornell Laboratory for Accelerator ScienceS and Education (CLASSE). The project focus is to build a beam simulation for the Cornell High Energy Synchotron Source (CHESS).
+
+## Reference Materials
+
+### Simulation Codes
+
+| Tool | Location | Purpose |
+|------|----------|---------|
+| **IMPACT-T** | `reference/Impact-T Documentation/` | 3D relativistic particle tracking with space charge, wakefields, and CSR. Parallel implementation, used in photoinjector design. |
+| **IMPACT-Z** | `reference/Impact-Z Documentation/` | 3D parallel PIC code for intense beams through drifts, quadrupoles, solenoids, bending magnets, multipoles, and RF cavities. |
+| **GPT** | `reference/GPT Documentation/` | General Particle Tracer — 3D charged particle dynamics including space charge. Uses GDF file format for I/O. |
+| **WarpX** | `reference/WarpX Documentation/` | Massively parallel PIC code (EM and electrostatic). Supports GPU backends (CUDA/HIP/SYCL), adaptive mesh refinement, Python interface via `pywarpx`/PICMI. |
+| **G4beamline** | `reference/G4beamline Documentation/` | Geant4-based beamline simulation — command-driven input file, full physics lists, virtual detectors, NTuples, and 3D visualization. |
+
+### Papers
+
+Located in `reference/Papers/`. See `reference/Papers/README.md` for summaries.
+
+### Key Concepts
+
+- **PIC (Particle-In-Cell)**: The computational method used by IMPACT-Z and WarpX — particles tracked on a mesh, fields solved on grid.
+- **Space charge**: Coulomb self-repulsion of the beam, dominant at low energy and high current; all four codes model it.
+- **CSR (Coherent Synchrotron Radiation)**: Wakefield from relativistic bunches in bending magnets; modeled in IMPACT-T.
+- **GDF**: GPT's native binary data format; convert to/from ASCII with `GDF2A`/`ASCI2GDF`.
+- **IMPACT-Z output files**: Named `fort.18`, `fort.24`–`fort.30`, `fort.32` — see `reference/Impact-Z Documentation/output_files/` for column definitions.
+
+### Documentation Notes
+
+The markdown docs in `reference/Impact-T Documentation/`, `reference/Impact-Z Documentation/`, `reference/GPT Documentation/`, and `reference/G4beamline Documentation/` were auto-generated from PDFs and may have equation transcription errors. When in doubt, refer to the original PDFs (`ImpactTv3.pdf`, `ImpactZusermanual.pdf`, `UserManual.pdf`, `G4beamlineUsersGuide-2.pdf`).
+
+### Adding New Papers
+
+When saving a new paper to `reference/Papers/`, add a summary entry to `reference/Papers/README.md` following the existing format (title, file, author, abstract summary).
