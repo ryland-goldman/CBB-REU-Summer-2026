@@ -27,7 +27,7 @@ time-dependent E/B scaling functions).
 
 Run one case with:
     conda run -n CBB python warpx_prebuncher/prebuncher_sim.py \
-        --power 40 --phase zc --outdir warpx_prebuncher/diags/P40_zc
+        --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc
 """
 
 import argparse
