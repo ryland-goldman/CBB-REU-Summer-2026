@@ -1,0 +1,20 @@
+# Cornell Linac beam simulation — Python dependencies
+# Install into the CBB conda environment:  pip install -r requirements.txt
+# (WarpX/pywarpx and openpmd-api are typically installed via conda/mamba.)
+
+# Core PIC engine
+pywarpx==26.4
+
+# openPMD I/O and visualization
+openpmd-api==0.17.0
+openpmd-viewer==1.11.0
+yt==4.4.2
+
+# GPT/GDF field-map reader
+easygdf==2.1.1
+
+# Scientific stack
+numpy==2.4.6
+scipy==1.17.1
+matplotlib==3.10.9
+tqdm==4.67.3
