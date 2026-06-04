@@ -75,7 +75,16 @@ Field maps (`CESR_gun.gdf`, `prebuncher_25D.gdf`) live in `fieldmaps/`; field-ma
 
 ## Reference Materials
 
-Before coding, read any relevant documentation (listed below) or papers (listed in `reference/Papers/README.md`) to better understand the task.
+**Read aggressively and up front — the context window is a resource to be used, not conserved.** Before writing or modifying any code, load the documentation and papers into context generously rather than minimally. A typical task should begin by reading *several* relevant files in full, not skimming one. Specifically, at the start of a task:
+
+- Read the `README.md` of **every** simulation stage involved in the task, plus the stages immediately upstream and downstream of it (the chain is order-dependent, so neighboring stages' conventions matter).
+- Read the **full** reference doc(s) for each tool the task touches — not just the section you think is relevant. The relevant detail (a field-scale sign, an axis-order convention, a solver flag) is often elsewhere in the doc.
+- Read the relevant `reference/Papers/` entries in full when the task involves the underlying physics (emission, space charge, RF bunching, beam optics).
+- When unsure whether a doc is relevant, **read it anyway.** Under-reading (missing a convention and producing wrong physics) is far more costly here than over-reading. Err toward filling the context window with primary sources before you start coding.
+
+This applies on every model, and is mandatory on Opus: load all relevant documentation and papers into context immediately after the task is specified, before planning or editing.
+
+The tables below index what's available; `reference/Papers/README.md` indexes the papers.
 
 ### Simulation Codes
 
