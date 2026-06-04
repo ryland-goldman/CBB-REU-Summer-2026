@@ -57,5 +57,5 @@ plus papers in `reference/Papers/`. See [`CLAUDE.md`](CLAUDE.md) for the full in
 
 - Simulation outputs (`diags/`, `results/`, `*.h5`, `*.gdf`, logs, etc.) are git-ignored — clone
   and re-run to regenerate them.
-- Field maps (`CESR_gun.gdf`, `prebuncher_25D.gdf`) are read from `~/Downloads/` by the
-  `build_*_field.py` scripts; paths are set near the top of each script.
+- Field maps (`CESR_gun.gdf`, `prebuncher_25D.gdf`) live in [`fieldmaps/`](fieldmaps/) and are
+  read from there by the `build_*_field.py` scripts; paths are set near the top of each script.

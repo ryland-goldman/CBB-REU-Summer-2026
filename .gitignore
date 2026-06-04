@@ -19,6 +19,7 @@ env/
 # Simulation outputs
 fort.*
 *.gdf
+!fieldmaps/*.gdf
 *.h5
 *.hdf5
 *.bp

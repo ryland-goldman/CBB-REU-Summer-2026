@@ -26,7 +26,7 @@ import easygdf
 import openpmd_api as io
 
 # ── Inputs / outputs ─────────────────────────────────────────────────────────
-GDF_PATH = os.path.expanduser("~/Downloads/CESR_gun.gdf")
+GDF_PATH = "fieldmaps/CESR_gun.gdf"
 OUT_DIR = "warpx_gun/gun_field"
 OUT_FILE = os.path.join(OUT_DIR, "gun_E.h5")
 

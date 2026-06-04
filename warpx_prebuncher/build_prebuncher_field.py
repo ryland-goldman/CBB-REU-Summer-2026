@@ -37,7 +37,7 @@ import easygdf
 import openpmd_api as io
 
 # ── Inputs / outputs ─────────────────────────────────────────────────────────
-GDF_PATH = os.path.expanduser("~/Downloads/prebuncher_25D.gdf")
+GDF_PATH = "fieldmaps/prebuncher_25D.gdf"
 OUT_DIR = "warpx_prebuncher/prebuncher_field"
 OUT_FILE = os.path.join(OUT_DIR, "prebuncher_EB.h5")
 
