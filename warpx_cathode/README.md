@@ -6,15 +6,16 @@ positively biased grid/anode, operating in the **space-charge-limited (SCL)**
 regime. Built with the Python/PICMI interface (`pywarpx`).
 
 Unlike the canonical 1D [Pierce-diode example](../reference/WarpX%20Documentation/usage/examples/pierce_diode/README.md),
-the cathode here has a **finite transverse extent** and is simulated in 2D (x–z),
-so we can see the on-axis Child–Langmuir physics *and* the 2D field enhancement at
-the cathode edges in the same run.
+the cathode here has a **finite transverse extent** and is simulated in 2D (x–z).
+The emitting strip (`|x| < 6 mm`) is much wider than the 0.1 mm gap, so on axis we
+recover the 1D Child–Langmuir physics cleanly, while the 2D run still resolves the
+finite-cathode edges.
 
 Run with:
 ```bash
 conda activate CBB
 python warpx_cathode/cathode_diode.py   # ~1 min, writes openPMD to diags/
-python warpx_cathode/plot_cathode.py    # writes the 3 figures to results/
+python warpx_cathode/plot_cathode.py    # writes the 4 figures to results/
 ```
 
 ---
@@ -45,11 +46,11 @@ we do not impose the answer.
 
 ## What the simulation does (`cathode_diode.py`)
 
-- **Geometry**: 2D x–z, cathode plane at `z = 0` held at 0 V, anode at `z = d = 4 mm`
-  held at `+500 V`. Electrons are emitted only from the finite cathode patch
+- **Geometry**: 2D x–z, cathode plane at `z = 0` held at 0 V, anode at `z = d = 0.1 mm`
+  (100 µm) held at `+50 V`. Electrons are emitted only from the finite cathode patch
   `|x| < 6 mm` (the `lower_bound`/`upper_bound` of the flux distribution).
-- **Emission**: continuous flux injection (`NFluxPerCell`) at `2 × J_CL`, with a
-  small thermal velocity spread set by a 1500 K cathode and a half-Maxwellian
+- **Emission**: continuous flux injection (PICMI `UniformFluxDistribution`) at `2 × J_CL`,
+  with a small thermal velocity spread set by a 1200 K cathode and a half-Maxwellian
   normal-momentum distribution (`gaussian_flux_momentum_distribution`).
 - **Solver**: electrostatic lab frame, **Multigrid** Poisson solver with Dirichlet
   plate potentials (`warpx_potential_lo_z` / `warpx_potential_hi_z`) and Neumann
@@ -61,13 +62,13 @@ we do not impose the answer.
 
 | Parameter | Value |
 |-----------|-------|
-| Anode bias `V` | 500 V |
-| Gap `d` | 4 mm |
-| Cathode width `2R` | 12 mm (3× the gap) |
-| Cathode temperature | 1500 K |
-| Injected current | 2 × J_CL ≈ 3260 A/m² |
-| Child–Langmuir J_CL | ≈ 1630 A/m² |
-| Grid | 128 × 64 cells (x, z), domain ±12 mm × 4 mm |
+| Anode bias `V` | 50 V |
+| Gap `d` | 0.1 mm (100 µm) |
+| Cathode width `2R` | 12 mm (120× the gap → 1D limit on axis) |
+| Cathode temperature | 1200 K |
+| Injected current | 2 × J_CL ≈ 1.65 × 10⁵ A/m² |
+| Child–Langmuir J_CL | ≈ 8.25 × 10⁴ A/m² |
+| Grid | 128 × 64 cells (x, z), domain ±12 mm × 0.1 mm |
 | Steps | 2000 (gap-fill ≈ 480 steps) |
 
 ---
@@ -83,24 +84,29 @@ defining signature of space-charge-limited emission.
 ### `cathode_2d.png` — the 2D structure
 Maps of charge density, potential, and `|E|`. You can see (1) the dense
 space-charge / virtual-cathode layer hugging the emitting strip, (2) the potential
-depression in the beam column, and (3) **bright field enhancement at the cathode
-edges** `x = ±6 mm`, where the equipotentials crowd — a genuinely 2D effect with no
-counterpart in the planar theory.
+depression in the beam column, and (3) the **field transition at the cathode edges**
+`x = ±6 mm`, where the field-suppressed emitting strip meets the full vacuum field
+outside — the finite-cathode signature absent from planar theory.
 
 ### `current_saturation.png` — self-limiting
 Transmitted current (integrated across the beam, referenced to the cathode width)
-vs. time. Despite injecting **2× J_CL**, the transmitted current saturates near
-J_CL (≈ 87% in this run; the small deficit is from transverse beam spreading and
-edge losses in the finite 2D geometry). The cathode does **not** pass the current
-it is fed — the space charge regulates it.
+vs. time. Despite injecting **2× J_CL**, the transmitted current self-limits to the
+Child–Langmuir scale — it settles near J_CL (slightly above the cold-emission value,
+≈ 110% in this run, with the finite cathode temperature and near-1D geometry). The
+cathode does **not** pass the 2× current it is fed — space charge regulates it.
+
+### `rho_z_time.png` — space-charge cloud build-up
+On-axis charge density `|ρ|(z, t)` (√ scale) over the turn-on transient: the
+space-charge cloud building up and filling the gap (gap-fill ≈ 480 steps), drawn
+with `pcolormesh` on the true (non-uniform) time coordinates.
 
 ---
 
 ## Notes & possible extensions
 
-- The cathode is intentionally only 3× wider than the gap so the edge effects are
-  visible. Make `R_cathode` much larger than `gap_d` to approach the ideal 1D
-  planar limit and tighten the J_CL agreement.
+- The cathode is much wider than the gap (2R = 12 mm ≫ d = 0.1 mm), so on axis it
+  sits in the ideal 1D planar limit and the J_CL agreement is tight. Shrink
+  `R_cathode` toward `gap_d` to bring out the finite-cathode edge effects instead.
 - Adam's Region 1 actually *pulses* the grid voltage to chop out a bunch. That can
   be added with a time-dependent potential / `AnalyticFluxDistribution`; this demo
   uses a DC bias to keep the Child–Langmuir validation clean.

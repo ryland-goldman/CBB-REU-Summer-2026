@@ -1,7 +1,7 @@
 """
 Figures for the finite-cathode space-charge-limited diode (cathode_diode.py).
 
-Reads the openPMD output under warpx_cathode/diags/ and writes three figures to
+Reads the openPMD output under warpx_cathode/diags/ and writes four figures to
 warpx_cathode/results/:
 
   1. cathode_2d.png       — 2D maps of charge density, potential, |E|: shows the
@@ -10,6 +10,8 @@ warpx_cathode/results/:
   2. child_langmuir.png   — on-axis phi(z), Ez(z) vs. the Child–Langmuir laws.
   3. current_saturation.png — transmitted current vs. time, saturating at J_CL
                             even though we inject 2× J_CL.
+  4. rho_z_time.png       — on-axis charge density rho(z, t): build-up of the
+                            space-charge cloud filling the gap during turn-on.
 
 Run with:
     conda run -n CBB python warpx_cathode/plot_cathode.py
