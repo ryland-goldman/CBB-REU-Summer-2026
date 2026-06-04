@@ -19,8 +19,9 @@ python warpx_gun/gun_sim.py           # RZ WarpX run  ->  diags/{fields,particle
 python warpx_gun/plot_gun.py          # figures       ->  results/*.png
 ```
 
-`build_gun_field.py` reads `../fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output
-from `../warpx_cathode/diags/particles/`. Both paths are set near the top of each script.
+`build_gun_field.py` reads `fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output
+from `warpx_cathode/diags/particles/`. Both paths are repo-root-relative (run from the repo
+root) and set near the top of each script.
 
 ## The gun field map
 
