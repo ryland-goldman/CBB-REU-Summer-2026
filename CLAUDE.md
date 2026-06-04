@@ -1,12 +1,77 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
 
-The code in this folder is meant to contain simulations for a Research Experience for Undergraduates (REU) program at the Cornell Center for Bright Beams (CBB) and Cornell Laboratory for Accelerator ScienceS and Education (CLASSE). The project focus is to build a beam simulation for the Cornell High Energy Synchotron Source (CHESS). 
+The code in this folder is meant to contain simulations for a Research Experience for Undergraduates (REU) program at the Cornell Center for Bright Beams (CBB) and Cornell Laboratory for Accelerator ScienceS and Education (CLASSE). The project focus is to build a beam simulation for the Cornell High Energy Synchotron Source (CHESS).
+
+Concretely, the repo rebuilds the front end of the Cornell Linac (Adam Bartnik's LinacSim: thermionic source → gun → prebuncher) from first principles in **WarpX** via its Python/PICMI interface (`pywarpx`). The three stages form one self-consistent chain — each reads the previous stage's openPMD beam as input:
+
+```
+cathode  ─►  gun  ─►  prebuncher
+(SCL diode)  (~148 keV)  (RF velocity bunching)
+```
 
 Please use the CBB conda environment by running `conda activate CBB` (Miniforge is installed at ~/miniforge3; if conda isn't on your PATH yet, first run source ~/miniforge3/bin/activate).
+
+## Keeping Documentation in Sync
+
+Whenever you add or significantly change a feature, stage, folder, script, or dependency, **update the docs in the same change** so they never drift from the code:
+
+- **New stage / top-level directory** → add a `README.md` to it, add a row to the component table in the root `README.md`, and update the inter-stage contract table and architecture notes in this file (`CLAUDE.md`).
+- **New or changed command / workflow** (run scripts, CLI flags, config toggles, env vars) → update the **Commands** section here and the relevant `README.md`.
+- **New inter-stage input/output path** → update the inter-stage contract table in **Project Architecture**.
+- **New dependency** → add it (pinned) to `requirements.txt`.
+- **New reference doc or paper** → add it to the **Reference Materials** table below and, for papers, to `reference/Papers/README.md` (see *Adding New Papers*).
+- **New WarpX gotcha / non-obvious convention** discovered while working on a stage → record it in that stage's `README.md`.
+
+When in doubt, treat a doc update as part of "done" — a feature isn't complete until `CLAUDE.md`, the root `README.md`, and the stage `README.md` reflect it.
+
+## Commands
+
+All commands run from the **repo root** in the `CBB` environment. Stage scripts use hard-coded relative paths (e.g. `warpx_gun/diags`), so running from anywhere else breaks the inter-stage handoff.
+
+```bash
+conda activate CBB
+pip install -r requirements.txt                 # pywarpx/openpmd-api are best via mamba
+
+python pipeline/run_pipeline.py                  # full chain, live progress + final-beam summary
+```
+
+- **Run one stage off existing upstream output:** toggle `RUN_CATHODE / RUN_GUN / RUN_PREBUNCHER / MAKE_PLOTS` in the `CONFIG` block at the top of `pipeline/run_pipeline.py` (e.g. set cathode+gun `False` to re-run only the prebuncher against the saved gun beam). `PREBUNCHER_POWER_W` / `PREBUNCHER_PHASE` set the prebuncher operating point.
+- **Run a stage directly:** `python warpx_gun/gun_sim.py`, etc. The prebuncher takes CLI args: `python warpx_prebuncher/prebuncher_sim.py --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc` (`--phase` is `zc` = zero-crossing bunching or `crest` = max energy gain; `--power 0` = drift-only baseline).
+- **Prebuncher power/phase scan:** `python warpx_prebuncher/run_scan.py`.
+- **Plots:** each stage has a `plot_*.py` that reads its `diags/` and writes PNGs to `results/`.
+- **Threads:** `OMP_THREADS` (default 6) — the MLMG Poisson solve is memory-bandwidth bound, so using all cores is *slower*. Override via env var or the `CONFIG` block.
+
+There is no test suite, linter, or build step — validation is physics sanity checks (energy gain, Child–Langmuir current, bunching) printed by each run and inspected in the `results/` plots.
+
+## Project Architecture
+
+Each stage lives in its own `warpx_<stage>/` directory and follows the same script layout:
+
+- `build_*_field.py` — converts a GPT `.gdf` field map from `fieldmaps/` into an openPMD `.h5` field mesh (via `easygdf` + `openPMD-beamphysics`) that WarpX loads as an external field. (The cathode has no field map; its field is self-consistent.)
+- `*_sim.py` — the WarpX/PICMI run. Reads the upstream beam with `openPMD-viewer`, injects it, tracks through the stage, writes openPMD particle diagnostics to its own `diags/`.
+- `plot_*.py` — reads `diags/`, writes figures to `results/`.
+- `README.md` — the stage's physics, field map, operating point, and outputs.
+
+**Inter-stage contract (the chain is order-dependent):**
+
+| Stage | Reads | Writes |
+|-------|-------|--------|
+| `warpx_cathode/cathode_diode.py` | — (emits at cathode) | `warpx_cathode/diags/particles` |
+| `warpx_gun/gun_sim.py` | `warpx_cathode/diags/particles` + `warpx_gun/gun_field/gun_E.h5` | `warpx_gun/diags` |
+| `warpx_prebuncher/prebuncher_sim.py` | `warpx_gun/diags/particles` + `warpx_prebuncher/prebuncher_field/prebuncher_EB.h5` | `warpx_prebuncher/diags/<P..._...>` |
+
+`pipeline/run_pipeline.py` orchestrates the whole chain as a sequence of subprocesses (cd's to repo root, runs each `build`/`sim`/`plot` in order), surfacing key physics lines and a live progress bar to the terminal while writing a full DEBUG log to `pipeline/logs/pipeline_<timestamp>.log`. The cathode is 2D x–z; the gun and prebuncher are RZ (cylindrically symmetric).
+
+Field maps (`CESR_gun.gdf`, `prebuncher_25D.gdf`) live in `fieldmaps/`; field-map paths are set near the top of each `build_*_field.py`. WarpX-specific gotchas accumulated per stage (negative field-scale conventions, thetaMode openPMD axis order, charge renormalization, where to stop the run to avoid MLMG aborts) are documented in each stage's `README.md` — read it before modifying a stage.
+
+**Conventions:**
+
+- Simulation outputs are git-ignored (`diags/`, `results/`, `*.h5`, `*.gdf`, logs); regenerate by re-running. Field maps in `fieldmaps/` are committed.
+- Commit convention (matches existing history): for a stage, commit its `*.py` scripts + `README.md`, and `git add -f warpx_<stage>/results/*.png` to include the result figures (since `results/` is git-ignored). Do **not** commit `diags/`, `.h5`, or logs.
 
 ## Reference Materials
 
