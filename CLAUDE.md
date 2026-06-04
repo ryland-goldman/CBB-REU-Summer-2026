@@ -25,6 +25,7 @@ Whenever you add or significantly change a feature, stage, folder, script, or de
 - **New dependency** → add it (pinned) to `requirements.txt`.
 - **New reference doc or paper** → add it to the **Reference Materials** table below and, for papers, to `reference/Papers/README.md` (see *Adding New Papers*).
 - **New WarpX gotcha / non-obvious convention** discovered while working on a stage → record it in that stage's `README.md`.
+- **New, removed, or renamed result figure** (a `plot_*.py` adds/drops/renames a PNG) → update the corresponding entry in `FIGURES.md` (the visual index of every stage's `results/` figures) in the same change.
 
 When in doubt, treat a doc update as part of "done" — a feature isn't complete until `CLAUDE.md`, the root `README.md`, and the stage `README.md` reflect it.
 
