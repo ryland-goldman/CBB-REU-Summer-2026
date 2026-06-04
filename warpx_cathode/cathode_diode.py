@@ -40,10 +40,10 @@ ep0  = picmi.constants.ep0
 kb   = 1.380649e-23                  # Boltzmann constant [J/K]
 
 # ── Diode parameters (Adam's Region-1 thermionic cathode, scaled for a 2D demo) ─
-V_anode   = 500.0        # anode (grid) bias [V] — cathode at 0 V
-gap_d     = 4.0e-3       # cathode→anode gap [m]
-R_cathode = 6.0e-3       # cathode half-width [m]  (width 2R = 3× the gap)
-T_cathode = 1500.0       # cathode temperature [K] → small thermal emittance
+V_anode   = 50.0         # anode (grid) bias [V] — cathode at 0 V
+gap_d     = 100.0e-6     # cathode→anode gap [m]
+R_cathode = 6.0e-3       # cathode half-width [m]
+T_cathode = 1200.0       # cathode temperature [K] → small thermal emittance
 
 over_inject = 2.0        # inject this multiple of the Child–Langmuir current
 
@@ -110,13 +110,19 @@ dt        = 0.4 * dz / v_final
 max_steps = 2000                     # ~4× the gap-fill time → reaches steady state
 
 # ── Diagnostics (openPMD) ───────────────────────────────────────────────────────
+# Sample densely through the gap-fill transient (≤ 0.07 ns ≈ step 470, since
+# dt ≈ 1.49e-13 s) and sparsely once the diode reaches steady state.  WarpX's
+# interval syntax unions the slices: every 5 steps to 470, then every 80.
 field_diag = picmi.FieldDiagnostic(
     name="fields",
     grid=grid,
-    period=200,
+    period="0:470:5, 470:2000:80",
     data_list=["phi", "rho", "E", "J"],
     write_dir="warpx_cathode/diags",
     warpx_format="openpmd",
+    # HDF5 writes one clean file per iteration; the ADIOS2 BP5 default clobbers
+    # files under the rapid successive flushes our dense early sampling produces.
+    warpx_openpmd_backend="h5",
 )
 part_diag = picmi.ParticleDiagnostic(
     name="particles",

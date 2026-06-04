@@ -21,12 +21,13 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import PowerNorm
 from openpmd_viewer import OpenPMDTimeSeries
 from scipy.constants import e as q_e, epsilon_0, m_e
 
 # ── Diode parameters (must match cathode_diode.py) ──────────────────────────────
-V_anode   = 500.0
-gap_d     = 4.0e-3
+V_anode   = 50.0
+gap_d     = 100.0e-6
 R_cathode = 6.0e-3
 over_inject = 2.0
 
@@ -54,13 +55,20 @@ extent = [x.min() * 1e3, x.max() * 1e3, z.min() * 1e3, z.max() * 1e3]  # mm
 # ════════════════════════════════════════════════════════════════════════════════
 fig, axs = plt.subplots(1, 3, figsize=(13, 4.5), constrained_layout=True)
 
+# |ρ| on a square-root (power-law) scale: electrons make ρ < 0, so plot the
+# magnitude.  γ=½ compresses the bright cathode layer to expose the bulk gradient
+# without log's amplification of the near-zero noise floor.
+absrho = np.abs(rho) * 1e6
+rho_norm = PowerNorm(gamma=0.5, vmin=0.0, vmax=absrho.max())
+
 panels = [
-    (rho * 1e6, "Charge density  ρ  [µC/m³]", "viridis"),
-    (phi,       "Potential  φ  [V]",          "plasma"),
-    (Emag * 1e-3, "Field magnitude  |E|  [kV/m]", "inferno"),
+    (absrho, "|Charge density|  |ρ|  [µC/m³]  (√)", "viridis", rho_norm),
+    (phi,       "Potential  φ  [V]",          "plasma",  None),
+    (Emag * 1e-3, "Field magnitude  |E|  [kV/m]", "inferno", None),
 ]
-for ax, (data, title, cmap) in zip(axs, panels):
-    im = ax.imshow(data, extent=extent, origin="lower", aspect="auto", cmap=cmap)
+for ax, (data, title, cmap, norm) in zip(axs, panels):
+    im = ax.imshow(data, extent=extent, origin="lower", aspect="auto",
+                   cmap=cmap, norm=norm)
     fig.colorbar(im, ax=ax, shrink=0.9)
     # mark the emitting cathode patch (z = 0, |x| < R)
     ax.plot([-R_cathode * 1e3, R_cathode * 1e3], [0, 0], "w-", lw=3,
@@ -119,14 +127,17 @@ print(f"wrote {RESULTS}/child_langmuir.png")
 iz_anode = -2                       # row just inside the anode
 dx       = x[1] - x[0]
 
-times, J_trans = [], []
-for itr in ts.iterations:
+times, J_trans, rho_zt = [], [], []
+for i, itr in enumerate(ts.iterations):
     jz, _ = ts.get_field("j", "z", iteration=itr)
     I_line = np.abs(jz[iz_anode, :].sum() * dx)     # total current [A/m depth]
     J_trans.append(I_line / (2.0 * R_cathode))      # referenced to cathode width
-    times.append(ts.t[list(ts.iterations).index(itr)])
+    rho_it, _ = ts.get_field("rho", iteration=itr)
+    rho_zt.append(rho_it[:, ix0])                   # on-axis charge density column
+    times.append(ts.t[i])
 times = np.array(times) * 1e9       # ns
 J_trans = np.array(J_trans)
+rho_zt = np.array(rho_zt).T         # shape (nz, n_times): rho(z, t) on axis
 
 fig, ax = plt.subplots(figsize=(7, 4.8), constrained_layout=True)
 ax.plot(times, J_trans, "o-", color="C2", label="WarpX transmitted current")
@@ -136,10 +147,34 @@ ax.axhline(over_inject * J_CL, color="r", ls=":",
 ax.set_xlabel("time  [ns]")
 ax.set_ylabel(r"current density at anode  $|J_z|$  [A/m²]")
 ax.set_title("Emission self-limits to the Child–Langmuir value")
-ax.set_ylim(0, over_inject * J_CL * 1.15)
+# Linear y-axis anchored at the origin so the turn-on ramp and the plateau
+# relative to J_CL are both visible to scale.
+ax.set_xlim(0, 0.15)
+ax.set_ylim(0, J_CL * 1.4)
 ax.legend()
 fig.savefig(f"{RESULTS}/current_saturation.png", dpi=140)
 print(f"wrote {RESULTS}/current_saturation.png")
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Figure 4 — on-axis charge density ρ(z, t): build-up of the space-charge cloud
+# ════════════════════════════════════════════════════════════════════════════════
+fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
+abs_rho_zt = np.abs(rho_zt) * 1e6                   # |ρ| in µC/m³
+# Time sampling is non-uniform (dense through the gap-fill transient, sparse in
+# steady state), so use pcolormesh with the true time coordinates — imshow would
+# force equal-width columns and distort the time axis.
+im = ax.pcolormesh(
+    times, z * 1e3, abs_rho_zt,
+    shading="nearest", cmap="viridis",
+    norm=PowerNorm(gamma=0.5, vmin=0.0, vmax=abs_rho_zt.max()),
+)
+fig.colorbar(im, ax=ax, label="|charge density|  |ρ|  [µC/m³]  (√)")
+ax.set_xlim(0, 0.15)            # densely-sampled transient; cloud is steady after
+ax.set_xlabel("time  [ns]")
+ax.set_ylabel("z  [mm]   (cathode → anode)")
+ax.set_title("On-axis charge density vs. time — space-charge cloud fills the gap")
+fig.savefig(f"{RESULTS}/rho_z_time.png", dpi=140)
+print(f"wrote {RESULTS}/rho_z_time.png")
 
 # ── Quantitative sanity check ───────────────────────────────────────────────────
 J_final = J_trans[-1]
