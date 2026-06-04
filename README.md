@@ -4,7 +4,8 @@ Beam-dynamics simulations for the **Cornell High Energy Synchrotron Source (CHES
 source, built during a Research Experience for Undergraduates (REU) at the Cornell Center for
 Bright Beams (CBB) / Cornell Laboratory for Accelerator ScienceS and Education (CLASSE).
 
-The project rebuilds the front end of the **Cornell Linac** — Adam Bartnik's thermionic
+The project rebuilds the front end of the **Cornell Linac** — Adam Bartnik's
+[LinacSim](https://cesrwww.lepp.cornell.edu/wiki/CESR/LinacSim) thermionic
 source → gun → prebuncher chain — from first principles in [WarpX](https://warpx.readthedocs.io),
 the massively-parallel particle-in-cell code, using its Python/PICMI interface (`pywarpx`). Each
 stage reads the previous stage's openPMD beam as input, so the simulations form a single
@@ -17,12 +18,19 @@ cathode  ─►  gun  ─►  prebuncher
 
 ## Setup
 
-All simulations run in the **CBB** conda environment:
+All simulations run in the **CBB** conda environment. Activate it and install the Python
+dependencies:
 
 ```bash
 conda activate CBB          # Miniforge at ~/miniforge3
 # if conda isn't on PATH: source ~/miniforge3/bin/activate
+
+pip install -r requirements.txt
 ```
+
+`pywarpx` and `openpmd-api` are best installed via conda/mamba (`mamba install -c conda-forge
+warpx openpmd-api`); the rest come from `requirements.txt`. See
+[`requirements.txt`](requirements.txt) for the pinned versions.
 
 ## Run the full chain
 
@@ -50,7 +58,15 @@ Each directory's `README.md` documents its physics, field maps, and outputs.
 ## Reference materials
 
 `reference/` holds documentation for the accelerator-physics tools considered for the project
-(WarpX, IMPACT-T/Z, GPT, BMAD, G4beamline, the Linac GUI, LUME-Impact, openPMD tools, easygdf)
+([WarpX](https://warpx.readthedocs.io),
+[IMPACT-T](https://github.com/impact-lbl/IMPACT-T)/[IMPACT-Z](https://github.com/impact-lbl/IMPACT-Z),
+[GPT](https://www.pulsar.nl/gpt/), [BMAD](https://www.classe.cornell.edu/bmad/),
+[G4beamline](https://www.muonsinternal.com/muons3/G4beamline),
+[Adam Bartnik's LinacSim](https://cesrwww.lepp.cornell.edu/wiki/CESR/LinacSim),
+[LUME-Impact](https://github.com/ChristopherMayes/lume-impact),
+[openPMD-beamphysics](https://github.com/ChristopherMayes/openPMD-beamphysics) /
+[openPMD-viewer](https://github.com/openPMD/openPMD-viewer),
+[easygdf](https://gitlab.com/chris.pierce/easygdf))
 plus papers in `reference/Papers/`. See [`CLAUDE.md`](CLAUDE.md) for the full index.
 
 ## Notes
