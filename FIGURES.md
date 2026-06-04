@@ -27,7 +27,7 @@ cathode  ─►  gun  ─►  prebuncher
 ## 1. Cathode — `warpx_cathode/results/`
 
 Finite-extent, space-charge-limited (Child–Langmuir) diode in **2D x–z**: cathode plane at
-`z = 0` (0 V), anode at `z = d = 4 mm` (+500 V), electrons emitted only from the finite patch
+`z = 0` (0 V), anode at `z = d = 0.1 mm` (+50 V), electrons emitted only from the finite patch
 `|x| < 6 mm`. The run deliberately **over-injects at 2× J_CL** and lets the self-consistent
 fields do the limiting — the answer is not imposed. Produced by `plot_cathode.py`.
 
@@ -47,18 +47,20 @@ reflecting excess current).
 Three side-by-side 2D maps across the gap: charge density `|ρ|` (√/PowerNorm scale), potential
 `φ`, and field magnitude `|E|`. The white bar marks the emitting cathode patch (z = 0,
 `|x| < 6 mm`). You can see (1) the dense space-charge / virtual-cathode layer hugging the
-emitting strip, (2) the potential depression in the beam column, and (3) **bright field
-enhancement at the cathode edges** `x = ±6 mm`, where the equipotentials crowd — a genuinely
-2D effect with no counterpart in the planar theory.
+emitting strip, (2) the potential depression in the beam column, and (3) the **field transition
+at the cathode edges** `x = ±6 mm`, where the field-suppressed emitting strip meets the full
+vacuum field outside — the finite-cathode signature absent from planar theory.
 
 ### `current_saturation.png` — self-limiting emission
 ![Transmitted current saturating at J_CL](warpx_cathode/results/current_saturation.png)
 
 Transmitted current density at the anode vs. time (integrated across the beam, referenced to the
-cathode width `2R`). Despite injecting **2× J_CL** (dotted line), the transmitted current ramps
-up during gap-fill and then saturates near `J_CL` (dashed, ≈ 1630 A/m²; ≈87% in this run — the
-small deficit is transverse spreading and edge losses in the finite 2D geometry). The cathode
-does **not** pass the current it is fed; space charge regulates it. Linear y-axis anchored at the
+cathode width `2R`). Despite injecting **2× J_CL** (red dotted reference, above this zoomed view),
+the transmitted current ramps up during gap-fill and then settles near `J_CL` (dashed,
+≈ 8.25 × 10⁴ A/m²; slightly above it, ≈ 110% in this run — the wide cathode / narrow gap is deep
+in the 1D limit and the finite cathode temperature pushes emission just past the cold-emission
+value). The cathode does **not** pass the 2× current it is fed; space charge regulates it.
+Linear y-axis anchored at the
 origin so both the turn-on ramp and the plateau-vs-`J_CL` are visible to scale.
 
 ### `rho_z_time.png` — space-charge cloud build-up
@@ -97,8 +99,8 @@ transport through the gun, including the near-cathode radial focusing as the bea
 ![Mean and max KE vs. ⟨z⟩](warpx_gun/results/energy_gain.png)
 
 Mean and max kinetic energy of the beam vs. mean position `⟨z⟩`, climbing toward the 150 keV
-gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), reaching the
-full ~150 keV set by the cathode→exit potential drop.
+gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the
+~150 keV cathode→exit potential drop (mean exit KE ≈ 148 keV).
 
 ### `exit_phase_space.png` — exit beam
 ![Exit longitudinal phase space and energy spectrum](warpx_gun/results/exit_phase_space.png)
@@ -141,7 +143,7 @@ chirp flip — visible by comparing a `crest` phasespace figure.)
 
 ### `compare_power_phase.png` — scan summary *(when present)*
 A cross-case figure written only when several cases / the drift baseline have been run (e.g. via
-`run_scan.py` or repeated `prebuncher_sim.py` runs). **Left:** `σ_z(z)` for the drift baseline
+repeated `prebuncher_sim.py` runs, one `--outdir` per power). **Left:** `σ_z(z)` for the drift baseline
 vs. each zero-crossing power. **Right:** max bunching `σ_drift/σ_cavity` vs. RF power, for the
 zero-crossing and on-crest phases. (Not committed in the current tree — regenerate by running
 multiple powers; see `warpx_prebuncher/README.md`.)

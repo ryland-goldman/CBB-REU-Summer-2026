@@ -22,7 +22,7 @@ things at once:
 Physics setup (electrostatic lab frame):
   - cathode plane at z = 0 held at 0 V, anode plane at z = d held at +V
   - electrons emitted from the cathode patch |x| < R via continuous flux injection
-    (`NFluxPerCell`).  We deliberately *over-inject* at 2 × the Child–Langmuir
+    (PICMI `UniformFluxDistribution`).  We deliberately *over-inject* at 2 × the Child–Langmuir
     current; WarpX's self-consistent self-fields build a virtual cathode that
     reflects the excess, so the transmitted current self-limits to J_CL.
 

@@ -25,8 +25,8 @@ python warpx_prebuncher/plot_prebuncher.py          # figures + summary table ->
 python warpx_prebuncher/prebuncher_sim.py --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc
 ```
 
-`build_prebuncher_field.py` reads `../fieldmaps/prebuncher_25D.gdf`; the sim reads the gun
-output from `../warpx_gun/diags/particles/`. To run the whole accelerator chain
+`build_prebuncher_field.py` reads `fieldmaps/prebuncher_25D.gdf`; the sim reads the gun
+output from `warpx_gun/diags/particles/` (both paths repo-root-relative). To run the whole accelerator chain
 (cathode → gun → prebuncher) with progress bars, use **`pipeline/run_pipeline.py`** in the repo
 root. The results table below was produced by running several powers and the `P=0` drift
 baseline manually (`--power 0` gives the baseline; `--power 160/300/500/800`).

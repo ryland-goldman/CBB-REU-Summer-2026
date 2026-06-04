@@ -1,5 +1,6 @@
 """
-Figures and summary for the WarpX prebuncher scan (run_scan.py / prebuncher_sim.py).
+Figures and summary for the WarpX prebuncher scan (repeated prebuncher_sim.py
+runs, one --outdir per power/phase).
 
 The gun-exit bunch is short (σ_z ≈ 1 mm ≈ 0.1 % of the 214 MHz RF wavelength) and
 carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at 0.1 nC it is
