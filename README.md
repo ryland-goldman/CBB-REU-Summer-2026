@@ -51,7 +51,6 @@ of `run_pipeline.py`. See [`pipeline/README.md`](pipeline/README.md) for details
 | **2. Gun** | [`warpx_gun/`](warpx_gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~148 keV. |
 | **3. Prebuncher** | [`warpx_prebuncher/`](warpx_prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
 | **Pipeline** | [`pipeline/`](pipeline/README.md) | Chains stages 1–3 as subprocesses; each reads the prior stage's openPMD output. |
-| **Tutorials** | [`warpx_test/`](warpx_test/README.md) | Introductory WarpX/PICMI demos (single positron, Gaussian bunch, space charge) — the learning warm-up, not part of the chain. |
 
 Each directory's `README.md` documents its physics, field maps, and outputs.
 

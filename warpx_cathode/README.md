@@ -53,9 +53,9 @@ we do not impose the answer.
   normal-momentum distribution (`gaussian_flux_momentum_distribution`).
 - **Solver**: electrostatic lab frame, **Multigrid** Poisson solver with Dirichlet
   plate potentials (`warpx_potential_lo_z` / `warpx_potential_hi_z`) and Neumann
-  transverse walls. (This differs from the FFT/IGF solver used in `warpx_test/` —
-  that one is for open-boundary relativistic beams; here we have fixed-potential
-  plates and non-relativistic electrons.)
+  transverse walls. (This differs from the FFT/IGF solver used for open-boundary
+  relativistic beams; here we have fixed-potential plates and non-relativistic
+  electrons.)
 - **Output**: openPMD field snapshots (`phi`, `rho`, `E`, `j`) and electron
   particle data every 200 steps, into `diags/`.
 
