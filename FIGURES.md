@@ -99,8 +99,8 @@ transport through the gun, including the near-cathode radial focusing as the bea
 ![Mean and max KE vs. ⟨z⟩](warpx_gun/results/energy_gain.png)
 
 Mean and max kinetic energy of the beam vs. mean position `⟨z⟩`, climbing toward the 150 keV
-gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), reaching the
-full ~150 keV set by the cathode→exit potential drop.
+gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the
+~150 keV cathode→exit potential drop (mean exit KE ≈ 148 keV).
 
 ### `exit_phase_space.png` — exit beam
 ![Exit longitudinal phase space and energy spectrum](warpx_gun/results/exit_phase_space.png)

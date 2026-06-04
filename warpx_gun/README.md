@@ -90,7 +90,7 @@ true cylindrical emission). The DC beam is treated as a single injected bunch.
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
 | bunch | 0.1 nC, imported cathode phase space, ~222k macroparticles |
 | time step | `dt = 0.4·Δz/v_exit` (v_exit ≈ 0.63 c at 150 keV) |
-| duration | ~2× gun-transit time |
+| duration | ~1.15× gun-transit time (bunch average speed ≈ 0.6·v_exit); stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
 
 The lab-frame electrostatic solver is non-relativistic in its self-field treatment; at the
 gun exit (β ≈ 0.63) this mildly overestimates the space-charge field — acceptable for a
@@ -108,8 +108,8 @@ single-pass gun demo, but note it if pushing to higher voltage.
 
 ## Notes / extensions
 
-- The beam energy gain tracks `∫ e·|Ez| dz` (≈ 7.5 keV by z ≈ 4 mm), reaching the full 150 keV
-  set by the cathode→exit potential drop.
+- The beam energy gain tracks `∫ e·|Ez| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the ~150 keV
+  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~148 keV mean).
 - To approach the continuous-emission picture, inject a train of bunches or feed the cathode
   current directly rather than a single snapshot.
 - A solenoid (magnetic focusing) could be added via a second `read_from_file` B map if the
