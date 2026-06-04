@@ -52,7 +52,7 @@ There is no test suite, linter, or build step — validation is physics sanity c
 
 Each stage lives in its own `warpx_<stage>/` directory and follows the same script layout:
 
-- `build_*_field.py` — converts a GPT `.gdf` field map from `fieldmaps/` into an openPMD `.h5` field mesh (via `easygdf` + `openPMD-beamphysics`) that WarpX loads as an external field. (The cathode has no field map; its field is self-consistent.)
+- `build_*_field.py` — converts a GPT `.gdf` field map from `fieldmaps/` into an openPMD `.h5` field mesh (via `easygdf` to read + `openPMD-api` to write) that WarpX loads as an external field. (The cathode has no field map; its field is self-consistent.)
 - `*_sim.py` — the WarpX/PICMI run. Reads the upstream beam with `openPMD-viewer`, injects it, tracks through the stage, writes openPMD particle diagnostics to its own `diags/`.
 - `plot_*.py` — reads `diags/`, writes figures to `results/`.
 - `README.md` — the stage's physics, field map, operating point, and outputs.
