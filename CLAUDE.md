@@ -42,7 +42,7 @@ python pipeline/run_pipeline.py                  # full chain, live progress + f
 
 - **Run one stage off existing upstream output:** toggle `RUN_CATHODE / RUN_GUN / RUN_PREBUNCHER / MAKE_PLOTS` in the `CONFIG` block at the top of `pipeline/run_pipeline.py` (e.g. set cathode+gun `False` to re-run only the prebuncher against the saved gun beam). `PREBUNCHER_POWER_W` / `PREBUNCHER_PHASE` set the prebuncher operating point.
 - **Run a stage directly:** `python warpx_gun/gun_sim.py`, etc. The prebuncher takes CLI args: `python warpx_prebuncher/prebuncher_sim.py --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc` (`--phase` is `zc` = zero-crossing bunching or `crest` = max energy gain; `--power 0` = drift-only baseline).
-- **Prebuncher power/phase scan:** `python warpx_prebuncher/run_scan.py`.
+- **Prebuncher power/phase scan:** run `prebuncher_sim.py` once per operating point (e.g. in a shell loop), each with its own `--power`/`--phase`/`--outdir warpx_prebuncher/diags/P<P>_<phase>`; `plot_prebuncher.py` then aggregates every `diags/P*` directory (see `warpx_prebuncher/README.md`).
 - **Plots:** each stage has a `plot_*.py` that reads its `diags/` and writes PNGs to `results/`.
 - **Threads:** `OMP_THREADS` (default 6) — the MLMG Poisson solve is memory-bandwidth bound, so using all cores is *slower*. Override via env var or the `CONFIG` block.
 

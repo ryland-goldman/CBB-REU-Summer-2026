@@ -18,8 +18,8 @@ mode, reproducing GPT's `Map25D_TM` convention:
 with f_RF = 18 × master RF = 214.18 MHz and scale = sqrt(1e3·Q·P / (2π f_RF))
 from the loaded-Q (Q = 3000) / dissipated-power (P) normalisation documented in
 `reference/Linac Simulation Documentation/details.md`. P and the RF phase are the
-two undocumented operating-point inputs; this script takes them on the CLI so
-`run_scan.py` can sweep power and compare phases.
+two undocumented operating-point inputs; this script takes them on the CLI so a
+shell loop over it (one --outdir per power) can sweep power and compare phases.
 
 WarpX's electrostatic Multigrid solver supplies the beam self-field; the cavity
 field is applied to the particles via `picmi.LoadAppliedField` (read_from_file +

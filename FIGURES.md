@@ -143,7 +143,7 @@ chirp flip — visible by comparing a `crest` phasespace figure.)
 
 ### `compare_power_phase.png` — scan summary *(when present)*
 A cross-case figure written only when several cases / the drift baseline have been run (e.g. via
-`run_scan.py` or repeated `prebuncher_sim.py` runs). **Left:** `σ_z(z)` for the drift baseline
+repeated `prebuncher_sim.py` runs, one `--outdir` per power). **Left:** `σ_z(z)` for the drift baseline
 vs. each zero-crossing power. **Right:** max bunching `σ_drift/σ_cavity` vs. RF power, for the
 zero-crossing and on-crest phases. (Not committed in the current tree — regenerate by running
 multiple powers; see `warpx_prebuncher/README.md`.)
