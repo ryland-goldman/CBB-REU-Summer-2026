@@ -144,11 +144,23 @@ def per_case_figure(name, rec, base):
 
 
 def main():
-    dirs = sorted(d for d in glob.glob(f"{DIAG_ROOT}/P*") if os.path.isdir(d))
-    cases = [(d, case_label(os.path.basename(d))) for d in dirs]
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Plot prebuncher case(s). With no arguments, plots every "
+                    f"{DIAG_ROOT}/P* directory; pass case names to restrict.")
+    ap.add_argument("cases", nargs="*",
+                    help="case dir names to plot, e.g. P800_zc (default: all)")
+    a = ap.parse_args()
+
+    if a.cases:
+        dirs = [os.path.join(DIAG_ROOT, c) for c in a.cases]
+    else:
+        dirs = sorted(glob.glob(f"{DIAG_ROOT}/P*"))
+    cases = [(d, case_label(os.path.basename(d))) for d in dirs if os.path.isdir(d)]
     cases = [(d, lab) for d, lab in cases if lab]
     if not cases:
-        print(f"No case directories under {DIAG_ROOT}/ (run run_scan.py first).")
+        print(f"No case directories found under {DIAG_ROOT}/ "
+              f"(run prebuncher_sim.py first).")
         return
 
     base = None
@@ -168,30 +180,34 @@ def main():
         s.update(name=name, power=power, phase=phase, rec=rec)
         summary.append(s)
 
-    # ── Headline: σ_z(z), drift vs. zc powers ─────────────────────────────────
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.6), constrained_layout=True)
-    if base is not None:
-        a1.plot(base["zmean"] * 1e3, base["sigz"] * 1e3, "k--", lw=2, label="drift (P=0)")
-    for s in sorted([s for s in summary if s["phase"] == "zc"], key=lambda s: s["power"]):
-        r = s["rec"]
-        a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-",
-                label=f"{s['power']:.0f} W")
-    a1.axvline(Z_GAP_CENTER * 1e3, color="C3", ls=":")
-    a1.set_xlabel("⟨z⟩  [mm]"); a1.set_ylabel("σ_z  [mm]")
-    a1.set_title("Bunch length: drift vs. zero-crossing cavity"); a1.legend(fontsize=8)
+    # ── Headline comparison (only meaningful with several cases / a baseline) ──
+    if len(summary) > 1 or base is not None:
+        fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.6), constrained_layout=True)
+        if base is not None:
+            a1.plot(base["zmean"] * 1e3, base["sigz"] * 1e3, "k--", lw=2,
+                    label="drift (P=0)")
+        for s in sorted([s for s in summary if s["phase"] == "zc"],
+                        key=lambda s: s["power"]):
+            r = s["rec"]
+            a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-", label=f"{s['power']:.0f} W")
+        a1.axvline(Z_GAP_CENTER * 1e3, color="C3", ls=":")
+        a1.set_xlabel("⟨z⟩  [mm]"); a1.set_ylabel("σ_z  [mm]")
+        a1.set_title("Bunch length: drift vs. zero-crossing cavity"); a1.legend(fontsize=8)
 
-    for phase, col in (("zc", "C0"), ("crest", "C3")):
-        pts = sorted([s for s in summary if s["phase"] == phase and "ratio" in s],
-                     key=lambda s: s["power"])
-        if pts:
-            a2.plot([s["power"] for s in pts], [s["ratio"] for s in pts], "o-",
-                    color=col, label="zero-crossing" if phase == "zc" else "on-crest")
-    a2.axhline(1.0, color="k", lw=0.6)
-    a2.set_xlabel("RF power P  [W]")
-    a2.set_ylabel("max bunching  σ_drift / σ_cavity")
-    a2.set_title("Bunching vs. power"); a2.legend(fontsize=8)
-    fig.savefig(f"{RESULTS}/compare_power_phase.png", dpi=140); plt.close(fig)
-    print(f"wrote {RESULTS}/compare_power_phase.png")
+        for phase, col in (("zc", "C0"), ("crest", "C3")):
+            pts = sorted([s for s in summary if s["phase"] == phase and "ratio" in s],
+                         key=lambda s: s["power"])
+            if pts:
+                a2.plot([s["power"] for s in pts], [s["ratio"] for s in pts], "o-",
+                        color=col, label="zero-crossing" if phase == "zc" else "on-crest")
+        a2.axhline(1.0, color="k", lw=0.6)
+        a2.set_xlabel("RF power P  [W]")
+        a2.set_ylabel("max bunching  σ_drift / σ_cavity")
+        a2.set_title("Bunching vs. power"); a2.legend(fontsize=8)
+        fig.savefig(f"{RESULTS}/compare_power_phase.png", dpi=140); plt.close(fig)
+        print(f"wrote {RESULTS}/compare_power_phase.png")
+    else:
+        print("single case, no drift baseline -> skipping cross-case comparison figure")
 
     # ── Summary table ─────────────────────────────────────────────────────────
     print("\n" + "=" * 96)
@@ -203,9 +219,10 @@ def main():
               f"{base['sigz'].min()*1e3:10.3f} {'—':>7} {'—':>9} "
               f"{base['ipk'].max():7.2f} {base['ke'][-1]:11.1f}")
     for s in sorted(summary, key=lambda s: (s["phase"], s["power"])):
+        ratio = f"{s['ratio']:7.2f}" if "ratio" in s else f"{'—':>7}"
+        zbest = f"{s['zbest']*1e3:9.0f}" if "zbest" in s else f"{'—':>9}"
         print(f"{s['name']:>10} {s['power']:5.0f} {s['phase']:>6} {s['sz0']*1e3:8.3f} "
-              f"{s['szmin']*1e3:10.3f} {s.get('ratio', float('nan')):7.2f} "
-              f"{s.get('zbest', float('nan'))*1e3:9.0f} {s['ipk_max']:7.2f} "
+              f"{s['szmin']*1e3:10.3f} {ratio} {zbest} {s['ipk_max']:7.2f} "
               f"{s['ke_end']:11.1f}")
     print("=" * 96)
 

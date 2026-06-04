@@ -201,13 +201,17 @@ def main():
                        "warpx_prebuncher/prebuncher_sim.py",
                        ["--power", str(PREBUNCHER_POWER_W),
                         "--phase", PREBUNCHER_PHASE], True))
+    preb_tag = ("P0_drift" if PREBUNCHER_POWER_W == 0
+                else f"P{int(PREBUNCHER_POWER_W)}_{PREBUNCHER_PHASE}")
     if MAKE_PLOTS:
         if RUN_CATHODE:
             stages.append(("Cathode plots", "warpx_cathode/plot_cathode.py", [], False))
         if RUN_GUN:
             stages.append(("Gun plots", "warpx_gun/plot_gun.py", [], False))
         if RUN_PREBUNCHER:
-            stages.append(("Prebuncher plots", "warpx_prebuncher/plot_prebuncher.py", [], False))
+            # Plot only the case this pipeline ran (not any leftover diags/P* dirs).
+            stages.append(("Prebuncher plots",
+                           "warpx_prebuncher/plot_prebuncher.py", [preb_tag], False))
 
     n = len(stages)
     cl("=" * 72)
@@ -230,9 +234,7 @@ def main():
             failures.append(title)
 
     if RUN_PREBUNCHER:
-        tag = ("P0_drift" if PREBUNCHER_POWER_W == 0
-               else f"P{int(PREBUNCHER_POWER_W)}_{PREBUNCHER_PHASE}")
-        final_beam_summary(f"warpx_prebuncher/diags/{tag}")
+        final_beam_summary(f"warpx_prebuncher/diags/{preb_tag}")
 
     cl("\n" + "=" * 72)
     mins = (time.time() - t0) / 60
