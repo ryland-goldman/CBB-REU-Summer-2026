@@ -59,3 +59,8 @@ g4bl.out
 *.swp
 *.swo
 *~
+
+# Logs / crash artifacts
+*.log
+pipeline/logs/
+Backtrace.*

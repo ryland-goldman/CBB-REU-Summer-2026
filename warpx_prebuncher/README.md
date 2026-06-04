@@ -9,21 +9,27 @@ cathode (warpx_cathode/)  ->  gun (warpx_gun/)  ->  prebuncher (this)
 The gun's exit beam (~148 keV, β ≈ 0.63, 0.1 nC, already RZ) is driven through the CESR
 prebuncher — a standing-wave TM RF cavity — and bunches in the downstream drift.
 
-## Pipeline
+## Running
 
 ```
 conda activate CBB
 python warpx_prebuncher/build_prebuncher_field.py   # prebuncher_25D.gdf -> prebuncher_field/prebuncher_EB.h5
-python warpx_prebuncher/run_scan.py                 # sweeps power × {zc, crest} -> diags/P*_*/
+python warpx_prebuncher/prebuncher_sim.py           # one case (config at top of the script)
 python warpx_prebuncher/plot_prebuncher.py          # figures + summary table -> results/
 ```
 
-`build_prebuncher_field.py` reads `~/Downloads/prebuncher_25D.gdf`; the sim reads the gun
-output from `../warpx_gun/diags/particles/`. To run a single case directly:
+`prebuncher_sim.py` runs a **single case**; set the operating point in its CONFIG block
+(`POWER_W`, `PHASE`) or override on the CLI:
 
 ```
-python warpx_prebuncher/prebuncher_sim.py --power 40 --phase zc --outdir warpx_prebuncher/diags/P40_zc
+python warpx_prebuncher/prebuncher_sim.py --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc
 ```
+
+`build_prebuncher_field.py` reads `~/Downloads/prebuncher_25D.gdf`; the sim reads the gun
+output from `../warpx_gun/diags/particles/`. To run the whole accelerator chain
+(cathode → gun → prebuncher) with progress bars, use **`pipeline/run_pipeline.py`** in the repo
+root. The results table below was produced by running several powers and the `P=0` drift
+baseline manually (`--power 0` gives the baseline; `--power 160/300/500/800`).
 
 ## Field map
 
@@ -69,9 +75,10 @@ Parameters fixed by `reference/Linac Simulation Documentation/details.md`:
 Two inputs are left to the operator by design ("the user specifies dissipated power and
 relative phase"):
 
-- **Power P** — *scanned*: `[160, 300, 500, 800] W` (⇒ V_gap ≈ 257–574 kV; see the
-  intrinsic-chirp threshold below for why these are higher than a textbook prebuncher).
-- **Phase** — *both run and compared*:
+- **Power P** — set per run (default `800 W`; characterised over `[160, 300, 500, 800] W`,
+  ⇒ V_gap ≈ 257–574 kV; see the intrinsic-chirp threshold below for why these are higher than a
+  textbook prebuncher).
+- **Phase** — `zc` or `crest` (both characterised below):
   - `zc` (zero-crossing): bunch centre crosses the gap at the field zero-crossing → head
     decelerated, tail accelerated → velocity (ballistic) bunching downstream.
   - `crest`: maximum energy gain at the gap → mostly accelerates, little bunching.
@@ -118,10 +125,11 @@ negative through the cavity), not the (≈1, flat) RF-fundamental bunching facto
 | time step | `dt = 0.8 · Δz / v_beam` (≈ 5 ps; RF period 4.67 ns) |
 | duration | bunch transit of the 1.30 m domain (crest uses the accelerated v) |
 
-`run_scan.py` runs the cases **concurrently** (default 4 at a time × 3 OpenMP threads): WarpX's
-MLMG solve scales poorly past a few threads, so this uses the cores far better than one case on
-all of them (~0.44 s/step/case vs ~0.78 s/step on 14 threads). Override with
-`WORKERS=… THREADS_PER=… python warpx_prebuncher/run_scan.py`.
+WarpX's MLMG Poisson solve is memory-bandwidth bound, so a single run on all 14 cores
+(~0.78 s/step) is actually *slower* than on ~6 (`OMP_NUM_THREADS=6`); the pipeline sets this by
+default. To compare several powers, run `prebuncher_sim.py` once per power (e.g. in a shell
+loop), each writing its own `--outdir`; `plot_prebuncher.py` then picks up every `diags/P*`
+directory.
 
 ## Results
 
@@ -143,8 +151,9 @@ energy). The phase-space and σ_z curves show some space-charge filamentation ne
 
 ## Outputs
 
-`run_scan.py` writes `diags/P{P}_{phase}/{fields,particles}/` per case (plus `P0_drift/` for the
-baseline). `plot_prebuncher.py` writes to `results/`:
+Each `prebuncher_sim.py` run writes `diags/P{P}_{phase}/{fields,particles}/` (or `P0_drift/` for
+`--power 0`). `plot_prebuncher.py` reads every `diags/P*` directory present and writes to
+`results/`:
 
 - `P{P}_{phase}_line.png` — σ_z(z) vs. the drift baseline (max-bunching point marked) and peak
   current / mean energy.
@@ -167,7 +176,6 @@ baseline). `plot_prebuncher.py` writes to `results/`:
   gun→cavity drift, or higher V_gap.** Here the bunch is already short and space-charge dense,
   so we report bunching relative to the drift baseline. Set `BUNCH`/`MAX_PART` or `Z_GAP_CENTER`
   in `prebuncher_sim.py` to explore.
-- If a lower-power focus falls outside the 1.30 m domain, raise `ZMAX` in `prebuncher_sim.py`
-  (and the `POWERS` list in `run_scan.py`).
+- If a lower-power focus falls outside the 1.30 m domain, raise `ZMAX` in `prebuncher_sim.py`.
 - The drift baseline and crest curves drop sharply at the last 1–2 points as the beam clears the
   absorbing exit (few particles left); these near-empty dumps are ignored in the analysis.

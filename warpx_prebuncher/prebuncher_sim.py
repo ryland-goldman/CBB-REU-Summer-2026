@@ -59,15 +59,22 @@ RMAX = 0.036                     # covers the field-map bore (0–36.07 mm)
 ZMAX = 1.30                      # entrance drift + 305 mm cavity + bunching drift
 nr, nz = 80, 1024                # divisible by the blocking factor (8)
 
+# ── Single-case operating point (set here, or override on the CLI) ─────────────
+# P and the RF phase are the two undocumented prebuncher inputs (details.md).
+# P = 0 runs the drift-only baseline (no cavity).
+POWER_W = 800.0                  # dissipated RF power [W]  (V_gap ≈ scale·430 kV)
+PHASE = "zc"                     # "zc" = zero-crossing (bunching), "crest" = max gain
+OUTDIR = "warpx_prebuncher/diags/P800_zc"
+
 
 def parse_args():
     p = argparse.ArgumentParser(description="WarpX CESR prebuncher (one case).")
-    p.add_argument("--power", type=float, default=40.0,
-                   help="dissipated RF power P [W] -> field scale")
-    p.add_argument("--phase", choices=["zc", "crest"], default="zc",
+    p.add_argument("--power", type=float, default=POWER_W,
+                   help="dissipated RF power P [W] -> field scale (0 = drift baseline)")
+    p.add_argument("--phase", choices=["zc", "crest"], default=PHASE,
                    help="zc = zero-crossing (velocity bunching); "
                         "crest = max energy gain")
-    p.add_argument("--outdir", default="warpx_prebuncher/diags/P40_zc",
+    p.add_argument("--outdir", default=OUTDIR,
                    help="openPMD diagnostics output directory")
     p.add_argument("--nz", type=int, default=nz, help="cells in z")
     p.add_argument("--zmax", type=float, default=ZMAX, help="domain length [m]")
@@ -180,10 +187,12 @@ def main():
     # ── Time step / duration ──────────────────────────────────────────────────
     dz = args.zmax / args.nz
     dt = CFL * dz / v_beam
-    # Carry the bunch from the entrance to just past the exit, then stop: running
-    # on after the beam has left empties the domain and the Multigrid solve aborts.
-    # At the crest the cavity accelerates the beam (+V_gap ≈ scale·V1J), so it
-    # crosses the post-gap drift faster — size the transit with that final speed.
+    # Stop just before the bunch *centre* reaches the exit (margin < 1): once the
+    # beam clears the absorbing boundary the domain empties and the Multigrid solve
+    # aborts. margin = 0.97 keeps the bunch in-domain while still capturing the full
+    # cavity + bunching drift (all foci sit at ≤ 1.16 m < 0.97·1.30 m). At the crest
+    # the cavity accelerates the beam (+V_gap ≈ scale·V1J), so the post-gap drift is
+    # crossed faster — size that segment with the accelerated speed.
     V1J_KEV = 430.2                                  # 1-J effective gap voltage
     if args.phase == "crest":
         ke_final = ke_mean + scale * V1J_KEV
@@ -191,11 +200,9 @@ def main():
         v_final = c * np.sqrt(1.0 - 1.0 / gamma_f**2)
         transit = ((Z_GAP_CENTER - Z_INJECT) / v_beam
                    + (args.zmax - Z_GAP_CENTER) / v_final)
-        margin = 0.97        # stop just before the fast beam fully clears the box
     else:
         transit = (args.zmax - Z_INJECT) / v_beam
-        margin = 1.05
-    max_steps = args.max_steps or int(margin * transit / dt)
+    max_steps = args.max_steps or int(0.97 * transit / dt)
     print(f"dt = {dt:.3e} s, max_steps = {max_steps}, "
           f"RF period = {1/F_RF*1e9:.2f} ns ({1/F_RF/dt:.0f} steps/period)",
           flush=True)
