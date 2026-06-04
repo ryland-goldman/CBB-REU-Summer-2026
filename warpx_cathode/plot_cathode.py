@@ -79,7 +79,7 @@ for ax, (data, title, cmap, norm) in zip(axs, panels):
     ax.set_xlabel("x  [mm]")
 axs[0].set_ylabel("z  [mm]   (cathode → anode)")
 fig.suptitle("Finite thermionic cathode in WarpX — emission from |x| < "
-             f"{R_cathode*1e3:.0f} mm (white bar); note edge field enhancement",
+             f"{R_cathode*1e3:.0f} mm (white bar); note field transition at edges",
              fontsize=12)
 fig.savefig(f"{RESULTS}/cathode_2d.png", dpi=140)
 print(f"wrote {RESULTS}/cathode_2d.png")
