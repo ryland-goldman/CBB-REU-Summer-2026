@@ -159,34 +159,37 @@ CESR standing-wave RF prebuncher (214 MHz TM cavity) in **RZ** that velocity-bun
 exit beam (~148 keV, β ≈ 0.63, 0.1 nC) in the downstream 1.3 m drift. Because the bunch is
 already short and space-charge dense, the honest metric is bunching **relative to a drift-only
 baseline** (`P = 0`): `σ_z,drift(z) / σ_z,cavity(z)`. Produced by `plot_prebuncher.py`, which
-writes a `*_line.png`, `*_phasespace.png`, `*_cavity.png`, and `*_bunch_profile.png` for
-**every** `diags/P*` case directory present, plus a cross-case `compare_power_phase.png` when a
-baseline or multiple cases exist.
+writes `prebuncher_line.png`, `prebuncher_phasespace.png`, `prebuncher_cavity.png`, and
+`prebuncher_bunch_profile.png` — **config-independent filenames** (the power/phase lives in the
+figure titles and the `diags/<case>` input dir, not the filename), so changing the operating point
+overwrites these in place rather than leaving orphans. With several `diags/P*` cases present they
+are overwritten (last case wins); the cross-case `compare_power_phase.png` then summarises the scan.
 
 Case names are `P<power>_<phase>`: `<phase>` is `zc` (zero-crossing → ballistic bunching) or
 `crest` (max energy gain, little bunching); `P0_drift` is the drift-only baseline.
 
-### `P800_zc_line.png` — bunch length, current, energy
-![P800 zero-crossing: σ_z vs. drift, peak current, mean KE](warpx_prebuncher/results/P800_zc_line.png)
+### `prebuncher_line.png` — bunch length, current, energy
+![Prebuncher: σ_z(z), peak current, mean KE](warpx_prebuncher/results/prebuncher_line.png)
 
-For one case (here 800 W zero-crossing). **Left:** bunch length `σ_z(z)` for the cavity run vs.
-the interpolated drift baseline (`k--`), with the max-bunching point starred
-(`σ_drift/σ_cavity`, ≈ 5.4× for this case) and the cavity gap marked. The drift beam expands
-0.985 → ~19 mm over the line; the cavity suppresses this and reaches a transient focus.
-**Right:** peak current `I_peak(z)` and mean `KE(z)` along the line on twin axes.
+For the plotted case (here 800 W zero-crossing — see the figure title). **Left:** bunch length
+`σ_z(z)` for the cavity run, rising to ≈ 2 mm at the gap then dipping to a ballistic focus
+(≈ 1.07 mm at ⟨z⟩ ≈ 426 mm) before re-expanding; a `P0_drift` baseline, when present, is overlaid
+(`k--`) with the max-bunching point (`σ_drift/σ_cavity`) starred. **Right:** peak current
+`I_peak(z)` and mean `KE(z)` on twin axes — the mean energy dips while the bunch transits the
+(long) cavity field and recovers to ~148 keV, the net-zero energy gain expected at the zero-crossing.
 
-### `P800_zc_phasespace.png` — the chirp flipping through the cavity
-![P800 zero-crossing: z–KE phase space at three points](warpx_prebuncher/results/P800_zc_phasespace.png)
+### `prebuncher_phasespace.png` — the chirp flipping through the cavity
+![Prebuncher: z–KE phase space at three points](warpx_prebuncher/results/prebuncher_phasespace.png)
 
 Mean-subtracted longitudinal `z–KE` phase space at three points: injection, cavity exit, and the
 best ballistic focus (the `σ_drift/σ_cavity` maximum when a drift baseline is present, otherwise the
-post-cavity `σ_z` minimum — ⟨z⟩ ≈ 446 mm here). The gun beam arrives with an intrinsic **+1.40 keV/mm** (debunching) chirp; the
+post-cavity `σ_z` minimum — ⟨z⟩ ≈ 426 mm here). The gun beam arrives with an intrinsic **+1.40 keV/mm** (debunching) chirp; the
 zero-crossing cavity adds a negative chirp, flipping the net slope and rotating the distribution
 so it compresses downstream. (On-crest cases, by contrast, mostly shift up in energy without a
 chirp flip — visible by comparing a `crest` phasespace figure.)
 
-### `P800_zc_cavity.png` — the RF drive the bunch sees
-![P800 zero-crossing: scaled on-axis Ez(z) and the cos/sin RF waveform at the gap](warpx_prebuncher/results/P800_zc_cavity.png)
+### `prebuncher_cavity.png` — the RF drive the bunch sees
+![Prebuncher: scaled on-axis Ez(z) and the cos/sin RF waveform at the gap](warpx_prebuncher/results/prebuncher_cavity.png)
 
 The cavity field itself (the σ_z / phase-space figures show only the beam's response). **Left:**
 on-axis `Ez(z)` of the 1-J map scaled by this case's field `scale` (≈ 8.2 MV/m peak at 800 W),
@@ -197,16 +200,16 @@ to ±1, with the bunch `±σ_t` width shaded. For `zc` the bunch centre lands on
 **zero-crossing** (annotated) → velocity bunching; for `crest` it lands on the **crest** → pure
 acceleration. This is what makes "zero-crossing vs. crest" visual.
 
-### `P800_zc_bunch_profile.png` — the real longitudinal bunch shape λ(z)
-![P800 zero-crossing: line-charge density λ(z) at injection, cavity exit, max bunching](warpx_prebuncher/results/P800_zc_bunch_profile.png)
+### `prebuncher_bunch_profile.png` — the real longitudinal bunch shape λ(z)
+![Prebuncher: line-charge density λ(z) at injection, cavity exit, best focus](warpx_prebuncher/results/prebuncher_bunch_profile.png)
 
 The line-charge density `λ(z−⟨z⟩)` (histogram of `z` weighted by `w·q_e` ÷ bin width, in nC/m) at
 the **same** three snapshots as the phase-space figure. Unlike the scalar `σ_z` curve this shows
-the bunch's actual shape: a clean peak at injection (σ_z ≈ 0.98 mm), pronounced **space-charge
-filamentation spikes** at the cavity exit (σ_z ≈ 2.1 mm, peak `λ` halved), and the **recompressed**
-profile at the ballistic focus (σ_z back to ≈ 1.1 mm, peak `λ` ≈ 45 nC/m). Peak `λ` and `σ_z` are
-annotated per panel; a drift baseline is overlaid when present (guarded — none on disk in the
-current single-case tree).
+the bunch's actual shape: a clean peak at injection (σ_z ≈ 1.04 mm, peak `λ` ≈ 43 nC/m), pronounced
+**space-charge filamentation spikes** at the cavity exit (σ_z ≈ 1.85 mm, peak `λ` ≈ 14 nC/m), and the
+**recompressed** profile at the ballistic focus (σ_z ≈ 1.07 mm, peak `λ` ≈ 24 nC/m). Peak `λ` and
+`σ_z` are annotated per panel; a drift baseline is overlaid when present (guarded — none on disk in
+the current single-case tree).
 
 ### `compare_power_phase.png` — scan summary *(when present)*
 A cross-case figure written only when several cases / the drift baseline have been run (e.g. via

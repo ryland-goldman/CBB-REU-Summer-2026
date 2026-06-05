@@ -16,18 +16,23 @@ this is to compare each powered run against a **drift-only baseline** (P = 0):
 
 (The bunching factor at the RF fundamental is ≈1 and flat here, so it is not used.)
 
-Per-case figures written for every case directory present:
+Per-case figures use CONFIG-INDEPENDENT filenames (the power/phase lives in the
+diags/<case> input dir and the figure titles, not the filename) so changing the
+operating point overwrites the same files instead of leaving orphans:
 
-  * {name}_line.png        — σ_z(z) (vs. drift) and peak current / mean energy
-  * {name}_phasespace.png  — z–KE at injection / cavity exit / max bunching
-  * {name}_cavity.png      — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map in
+  * prebuncher_line.png        — σ_z(z) (vs. drift) and peak current / mean energy
+  * prebuncher_phasespace.png  — z–KE at injection / cavity exit / best focus
+  * prebuncher_cavity.png      — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map in
                              the lab frame, plus the cos/sin RF waveform vs. time
                              bracketing the gap arrival, showing whether the bunch
                              centre lands on the field zero-crossing (zc) or crest.
-  * {name}_bunch_profile.png — the real longitudinal line-charge density λ(z) at the
-                             same three snapshots as the phase-space figure, exposing
-                             the compression and any space-charge spike/filamentation
-                             the scalar σ_z curve cannot show.
+  * prebuncher_bunch_profile.png — the real longitudinal line-charge density λ(z) at
+                             the same three snapshots as the phase-space figure,
+                             exposing the compression and any space-charge
+                             spike/filamentation the scalar σ_z curve cannot show.
+
+With several diags/P* cases present these per-case figures are overwritten (last
+case wins) — use compare_power_phase.png for the cross-case scan summary.
 
 Run with:
     conda run -n CBB python warpx_prebuncher/plot_prebuncher.py
@@ -189,7 +194,7 @@ def snapshot_picks(rec, base):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FIGURE A — {name}_cavity.png : the RF DRIVE the bunch actually sees.
+# FIGURE A — prebuncher_cavity.png : the RF DRIVE the bunch actually sees.
 #
 # The σ_z / phase-space figures show the beam's *response* but never the cavity
 # field itself — there is no prebuncher analogue of the gun's gun_field.png. This
@@ -257,13 +262,13 @@ def cavity_figure(name, rec, power, phase):
     a2.set_title(f"{name}: RF waveform at the gap (φ={phi:.2f} rad)")
     a2.legend(fontsize=8, loc="upper right")
 
-    path = f"{RESULTS}/{name}_cavity.png"
+    path = f"{RESULTS}/prebuncher_cavity.png"
     fig.savefig(path, dpi=140); plt.close(fig)
     print(f"wrote {path}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FIGURE B — {name}_bunch_profile.png : the REAL longitudinal bunch shape λ(z).
+# FIGURE B — prebuncher_bunch_profile.png : the REAL longitudinal bunch shape λ(z).
 #
 # The σ_z(z) curve is a single scalar per snapshot; it cannot show *how* the bunch
 # is shaped — the compression, and the space-charge spike/filamentation that grows
@@ -315,7 +320,7 @@ def bunch_profile_figure(name, rec, base):
         if base_snaps is not None:
             ax.legend(fontsize=8, loc="upper left")
     fig.suptitle(f"{name}: longitudinal line-charge density λ(z)", fontsize=12)
-    path = f"{RESULTS}/{name}_bunch_profile.png"
+    path = f"{RESULTS}/prebuncher_bunch_profile.png"
     fig.savefig(path, dpi=140); plt.close(fig)
     print(f"wrote {path}")
 
@@ -343,7 +348,7 @@ def per_case_figure(name, rec, base):
     a2.set_ylabel("peak current  [A]", color="C2")
     a2b.set_ylabel("mean KE  [keV]", color="C4")
     a2.set_title(f"{name}: peak current & mean energy")
-    fig.savefig(f"{RESULTS}/{name}_line.png", dpi=140); plt.close(fig)
+    fig.savefig(f"{RESULTS}/prebuncher_line.png", dpi=140); plt.close(fig)
 
     # z–KE phase space at injection / gap exit / best-bunching point.
     snaps, its = rec["snaps"], rec["it"]
@@ -356,7 +361,7 @@ def per_case_figure(name, rec, base):
         ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("KE − ⟨KE⟩  [keV]")
         ax.set_title(f"{ti}  (⟨z⟩={rec['zmean'][zi]*1e3:.0f} mm)")
     fig.suptitle(f"{name}: longitudinal phase space", fontsize=12)
-    fig.savefig(f"{RESULTS}/{name}_phasespace.png", dpi=140); plt.close(fig)
+    fig.savefig(f"{RESULTS}/prebuncher_phasespace.png", dpi=140); plt.close(fig)
 
     out = dict(szmin=float(rec["sigz"].min()),
                sz0=float(rec["sigz"][0]),
@@ -394,6 +399,13 @@ def main():
         if lab[1] == "drift":
             print("analysing drift baseline …", flush=True)
             base = analyse_case(d)
+
+    n_powered = sum(1 for _, lab in cases if lab[1] != "drift")
+    if n_powered > 1:
+        print(f"note: {n_powered} powered cases present — the prebuncher_*.png "
+              f"per-case figures use fixed filenames and are OVERWRITTEN (last "
+              f"case wins); see compare_power_phase.png for the cross-case scan.",
+              flush=True)
 
     summary = []
     for d, (power, phase) in sorted(cases, key=lambda x: (x[1][1], x[1][0])):

@@ -155,14 +155,19 @@ Each `prebuncher_sim.py` run writes `diags/P{P}_{phase}/{fields,particles}/` (or
 `--power 0`). `plot_prebuncher.py` reads every `diags/P*` directory present and writes to
 `results/`:
 
-- `P{P}_{phase}_line.png` — σ_z(z) vs. the drift baseline (max-bunching point marked) and peak
-  current / mean energy.
-- `P{P}_{phase}_phasespace.png` — z–KE at injection / cavity exit / best focus (the
+The per-case figures use **config-independent filenames** (the power/phase lives in the figure
+titles and the `diags/<case>` input dir, not the filename), so changing the operating point
+overwrites them in place. With several `diags/P*` cases present they are overwritten (last case
+wins) — use `compare_power_phase.png` for the cross-case scan.
+
+- `prebuncher_line.png` — σ_z(z) (vs. the drift baseline, when present, with the max-bunching point
+  marked) and peak current / mean energy.
+- `prebuncher_phasespace.png` — z–KE at injection / cavity exit / best focus (the
   σ_drift/σ_cavity maximum with a drift baseline, else the post-cavity σ_z minimum).
-- `P{P}_{phase}_cavity.png` — the RF drive: on-axis Ez(z) of the scaled 1-J map placed at the lab
+- `prebuncher_cavity.png` — the RF drive: on-axis Ez(z) of the scaled 1-J map placed at the lab
   gap, and the cos/sin RF waveform vs. time around the gap arrival (bunch centre on the field
   zero-crossing for `zc`, crest for `crest`).
-- `P{P}_{phase}_bunch_profile.png` — the real longitudinal line-charge density λ(z) at the same
+- `prebuncher_bunch_profile.png` — the real longitudinal line-charge density λ(z) at the same
   three snapshots as the phase-space figure (compression and space-charge filamentation/spikes the
   scalar σ_z curve cannot show).
 - `compare_power_phase.png` — σ_z(z) for the drift baseline vs. all zc powers, and the bunching
