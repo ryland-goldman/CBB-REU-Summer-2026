@@ -130,7 +130,7 @@ def main():
     field_diag = picmi.FieldDiagnostic(
         name="fields",
         grid=grid,
-        period="0:470:5, 470:2000:80",
+        period=f"0:470:5, 470:{MAX_STEPS}:80",
         data_list=["phi", "rho", "E", "J"],
         write_dir=DIAG_DIR,
         warpx_format="openpmd",
@@ -145,6 +145,7 @@ def main():
         data_list=["position", "momentum", "weighting"],
         write_dir=DIAG_DIR,
         warpx_format="openpmd",
+        warpx_openpmd_backend="h5",     # pin h5 like the field diag + downstream stages
     )
 
     sim = picmi.Simulation(

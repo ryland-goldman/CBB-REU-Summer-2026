@@ -66,6 +66,10 @@ def load_cathode_bunch():
     Returns dict of x, y, z, ux, uy, uz, w arrays for ParticleListDistribution.
     """
     ts = OpenPMDTimeSeries(CATHODE_DIAG)
+    if len(ts.iterations) == 0:
+        raise RuntimeError(
+            f"{CATHODE_DIAG} has no iterations — did the cathode stage run and "
+            f"produce particles?")
     it = ts.iterations[-1]
     x, z, ux, uy, uz, w = ts.get_particle(
         ["x", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it,
@@ -74,6 +78,10 @@ def load_cathode_bunch():
     rng = np.random.default_rng(RNG_SEED)
     r = np.abs(x)
     keep = r < RMAX
+    if not keep.any():
+        raise RuntimeError(
+            f"no cathode particles with r < RMAX={RMAX} m; check RMAX or the "
+            f"upstream cathode output")
     r, z, ux, uy, uz, w = (a[keep] for a in (r, z, ux, uy, uz, w))
 
     theta = rng.uniform(0.0, 2.0 * np.pi, size=r.size)
@@ -108,7 +116,8 @@ def main():
         lower_bound=[0.0, 0.0],
         upper_bound=[RMAX, ZMAX],
         # r=0 must be "none" (axis); the electrode field is applied externally, so
-        # the self-field Poisson solve just needs grounded outer walls.
+        # the self-field Poisson solve just needs grounded z plates (dirichlet) with
+        # a zero-normal-field (neumann) outer radial wall.
         lower_boundary_conditions=["none", "dirichlet"],
         upper_boundary_conditions=["neumann", "dirichlet"],
         lower_boundary_conditions_particles=["none", "absorbing"],
@@ -184,6 +193,8 @@ def main():
         verbose=0,                     # silence per-step "STEP N starts" — the tqdm bar is the progress display
         particle_shape="linear",
     )
+    # ParticleListDistribution supplies the macroparticles explicitly, so this layout
+    # (and its n_macroparticles_per_cell) is inert — the count is the imported list size.
     sim.add_species(
         electrons,
         layout=picmi.PseudoRandomLayout(n_macroparticles_per_cell=1, grid=grid),

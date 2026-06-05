@@ -40,6 +40,8 @@ PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
 F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
 OMEGA = 2.0 * np.pi * F_RF
 Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
+V1J_KEV = 430.2                  # 1-J effective gap voltage [keV] (∫|Ez|dz of the map,
+                                 # computed in build_prebuncher_field.py; mirrored here)
 
 GUN_DIAG = "gun/diags/particles"
 Z_INJECT = 0.005                 # lab z where the bunch head is placed [m]
@@ -68,6 +70,10 @@ def load_gun_bunch():
     Returns (dict for ParticleListDistribution, v_beam, mean KE [keV]).
     """
     ts = OpenPMDTimeSeries(GUN_DIAG)
+    if len(ts.iterations) == 0:
+        raise RuntimeError(
+            f"{GUN_DIAG} has no iterations — did the gun stage run and produce "
+            f"particles?")
     it = ts.iterations[-1]
     x, y, z, ux, uy, uz, w = ts.get_particle(
         ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it,
@@ -186,7 +192,6 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     # cavity + bunching drift (all foci sit at ≤ 1.16 m < 0.97·1.30 m). At the crest
     # the cavity accelerates the beam (+V_gap ≈ scale·V1J), so the post-gap drift is
     # crossed faster — size that segment with the accelerated speed.
-    V1J_KEV = 430.2                                  # 1-J effective gap voltage
     if phase == "crest":
         ke_final = ke_mean + scale * V1J_KEV
         gamma_f = 1.0 + ke_final / (m_e * c**2 / q_e / 1e3)
@@ -218,6 +223,8 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
         verbose=0,                     # silence per-step "STEP N starts" — the tqdm bar is the progress display
         particle_shape="linear",
     )
+    # ParticleListDistribution supplies the macroparticles explicitly, so this layout
+    # (and its n_macroparticles_per_cell) is inert — the count is the imported (downsampled) list size.
     sim.add_species(
         electrons,
         layout=picmi.PseudoRandomLayout(n_macroparticles_per_cell=1, grid=grid),

@@ -48,11 +48,16 @@ def _final_beam_summary(diag):
         import numpy as np
         from openpmd_viewer import OpenPMDTimeSeries
         ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
+        z = None
         for it in reversed(ts.iterations):
             z, ux, uy, uz, w = ts.get_particle(
                 ["z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
             if len(z) > 50:
                 break
+        if z is None or len(z) <= 50:
+            _cl("\n(final-beam summary: no snapshot with >50 macroparticles — "
+                "the beam may have cleared the domain)")
+            return
         ke = (np.sqrt(1 + ux**2 + uy**2 + uz**2) - 1) * 0.51099895e3
         zm = np.average(z, weights=w)
         sz = np.sqrt(np.average((z - zm) ** 2, weights=w))
@@ -61,7 +66,7 @@ def _final_beam_summary(diag):
         _cl(f"\n{_BOLD}Final beam{_RESET} (prebuncher exit, {len(z)} macroparticles):")
         _cl(f"      ⟨z⟩ = {zm*1e3:.0f} mm   σ_z = {sz*1e3:.3f} mm   "
             f"⟨KE⟩ = {km:.1f} keV   σ_KE = {dk:.2f} keV   "
-            f"q = {w.sum()*1.602e-19*1e9:.3f} nC")
+            f"q = {w.sum()*1.602176634e-19*1e9:.3f} nC")
     except Exception as e:
         import logging
         _cl(f"    (final-beam summary unavailable: {e})", level=logging.WARNING)
