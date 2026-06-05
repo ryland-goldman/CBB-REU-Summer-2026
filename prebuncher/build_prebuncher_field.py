@@ -28,7 +28,7 @@ The map's native z runs [-152.4, +152.4] mm about the cavity gap; we set
 `grid_global_offset` so it lands at `Z_GAP_CENTER` in the simulation lab frame.
 
 Run with:
-    conda run -n CBB python warpx_prebuncher/build_prebuncher_field.py
+    conda run -n CBB python prebuncher/build_prebuncher_field.py
 """
 
 import os
@@ -38,7 +38,7 @@ import openpmd_api as io
 
 # ── Inputs / outputs ─────────────────────────────────────────────────────────
 GDF_PATH = "fieldmaps/prebuncher_25D.gdf"
-OUT_DIR = "warpx_prebuncher/prebuncher_field"
+OUT_DIR = "prebuncher/prebuncher_field"
 OUT_FILE = os.path.join(OUT_DIR, "prebuncher_EB.h5")
 
 # Lab-frame z of the cavity gap centre (the map is gap-centred at its own z=0).

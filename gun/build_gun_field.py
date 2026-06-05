@@ -17,7 +17,7 @@ The gun is purely electrostatic (the GDF carries no magnetic field), so only an
 E mesh is written; `gun_sim.py` sets `particles.B_ext_particle_init_style = none`.
 
 Run with:
-    conda run -n CBB python warpx_gun/build_gun_field.py
+    conda run -n CBB python gun/build_gun_field.py
 """
 
 import os
@@ -27,7 +27,7 @@ import openpmd_api as io
 
 # ── Inputs / outputs ─────────────────────────────────────────────────────────
 GDF_PATH = "fieldmaps/CESR_gun.gdf"
-OUT_DIR = "warpx_gun/gun_field"
+OUT_DIR = "gun/gun_field"
 OUT_FILE = os.path.join(OUT_DIR, "gun_E.h5")
 
 # The map is normalised to a +1 kV cathode (V = +1000 at the cathode, 0 at the

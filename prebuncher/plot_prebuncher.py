@@ -35,7 +35,7 @@ With several diags/P* cases present these per-case figures are overwritten (last
 case wins) — use compare_power_phase.png for the cross-case scan summary.
 
 Run with:
-    conda run -n CBB python warpx_prebuncher/plot_prebuncher.py
+    conda run -n CBB python prebuncher/plot_prebuncher.py
 """
 
 import os
@@ -51,9 +51,9 @@ from openpmd_viewer import OpenPMDTimeSeries
 c = 299792458.0
 MC2 = 0.51099895e3                # electron rest energy [keV]
 Q_E = 1.602176634e-19            # elementary charge [C]
-DIAG_ROOT = "warpx_prebuncher/diags"
-RESULTS = "warpx_prebuncher/results"
-PREBUNCH_FIELD = "warpx_prebuncher/prebuncher_field/prebuncher_EB.h5"
+DIAG_ROOT = "prebuncher/diags"
+RESULTS = "prebuncher/results"
+PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
 Z_GAP_CENTER = 0.20              # [m] cavity gap (for marking plots)
 
 # ── RF-drive constants (must match prebuncher_sim.py) ─────────────────────────
@@ -93,7 +93,7 @@ def rf_phase(phase, t_gap):
 def load_cavity_axis():
     """On-axis Ez(z) of the raw 1-J cavity map, in LAB z.
 
-    Read the way warpx_gun/plot_gun.py reads gun_E.h5: io.Series, mesh 'E',
+    Read the way gun/plot_gun.py reads gun_E.h5: io.Series, mesh 'E',
     component 'z', grid_spacing, and grid_global_offset (set by
     build_prebuncher_field.py so the gap-centred map lands at Z_GAP_CENTER).
     Returns (z_lab [m], ez_axis [V/m]) for the r = 0 row of the (1, nr, nz) mesh.
@@ -374,17 +374,14 @@ def per_case_figure(name, rec, base):
     return out
 
 
-def main():
-    import argparse
-    ap = argparse.ArgumentParser(
-        description="Plot prebuncher case(s). With no arguments, plots every "
-                    f"{DIAG_ROOT}/P* directory; pass case names to restrict.")
-    ap.add_argument("cases", nargs="*",
-                    help="case dir names to plot, e.g. P800_zc (default: all)")
-    a = ap.parse_args()
+def main(cases=None):
+    """Plot prebuncher case(s).
 
-    if a.cases:
-        dirs = [os.path.join(DIAG_ROOT, c) for c in a.cases]
+    With `cases=None`, plots every `{DIAG_ROOT}/P*` directory; pass a list of
+    case dir names (e.g. ["P800_zc"]) to restrict.
+    """
+    if cases:
+        dirs = [os.path.join(DIAG_ROOT, c) for c in cases]
     else:
         dirs = sorted(glob.glob(f"{DIAG_ROOT}/P*"))
     cases = [(d, case_label(os.path.basename(d))) for d in dirs if os.path.isdir(d)]
