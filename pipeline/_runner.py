@@ -27,6 +27,7 @@ Logging is initialised once per process and reused across stages.
 """
 
 import importlib
+import importlib.util
 import json
 import logging
 import os
@@ -131,6 +132,32 @@ def run_step(sim, nsteps, desc):
         os.close(bar_fd)
 
 
+def _module_top_level_names(dotted):
+    """Return the set of top-level assignment targets in a module's source,
+    without importing it. Used to validate config() keys against the sim
+    module (which we cannot import in-parent without breaking subprocess
+    isolation). Best-effort: on any failure returns an empty set, so unknown
+    keys still get flagged — safer to over-warn than to miss a typo."""
+    try:
+        import ast
+        spec = importlib.util.find_spec(dotted)
+        if spec is None or spec.origin is None:
+            return set()
+        with open(spec.origin, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=spec.origin)
+        names = set()
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        names.add(t.id)
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+        return names
+    except Exception:
+        return set()
+
+
 def _prepare_environment():
     """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root."""
     os.environ.setdefault("OMP_NUM_THREADS",
@@ -168,12 +195,14 @@ class Stage:
         _prepare_environment()
         setup_logging()
         build = self._load(self._build_path)
+        plot_mod = self._load(self._plot_path)
+        recognized = self._apply_params(build, plot_mod)
+        self._warn_unknown_params(recognized)
         if build is not None:
-            self._apply_params(build)
             self._run_step(f"{self.name}: field map", build.main, is_sim=False)
         self._run_sim_subprocess()
         if plots:
-            self.plot()
+            self._run_step(f"{self.name}: plots", plot_mod.main, is_sim=False)
 
     def _run_sim_subprocess(self):
         title = f"{self.name}: simulation"
@@ -186,17 +215,19 @@ class Stage:
             env["STAGE_CONFIG_JSON"] = json.dumps(self._params)
         cmd = [sys.executable, "-m", "pipeline._launch_sim", self._sim_path]
         t0 = time.time()
+        rc = None
         try:
             result = subprocess.run(cmd, env=env, cwd=_REPO_ROOT)
-            ok = result.returncode == 0
+            rc = result.returncode
+            ok = rc == 0
             err = None if ok else RuntimeError(
-                f"{self.name} subprocess exited with code {result.returncode}")
+                f"{self.name} subprocess exited with code {rc}")
         except Exception as e:
             ok, err = False, e
             log.exception(f"{title} subprocess raised {type(e).__name__}: {e}")
         dt = time.time() - t0
         flag = (f"{_GREEN}✓{_RESET}" if ok
-                else f"{_YELLOW}⚠ exit {(err and getattr(err, 'args', [''])[0]) or 'fail'}{_RESET}")
+                else f"{_YELLOW}⚠ exit {rc if rc is not None else type(err).__name__}{_RESET}")
         _cl(f"    {flag}  {title}  ({dt:5.1f} s)")
         log.info(f"    {title}: ok={ok}, duration = {dt:.1f} s")
         if not ok:
@@ -207,7 +238,8 @@ class Stage:
         _prepare_environment()
         setup_logging()
         plot_mod = self._load(self._plot_path)
-        self._apply_params(plot_mod)
+        recognized = self._apply_params(plot_mod)
+        self._warn_unknown_params(recognized)
         self._run_step(f"{self.name}: plots", plot_mod.main, is_sim=False)
 
     # ── Internals ────────────────────────────────────────────────────────────
@@ -216,16 +248,36 @@ class Stage:
 
     def _apply_params(self, *modules):
         """Soft-apply config kwargs onto the given modules (no-op when a key
-        is absent). Strict validation is impossible across phases because the
-        sim module lives in a separate subprocess — typos in `config()` keys
-        will be silently ignored, so cross-check against the parameter names
-        at the top of `<stage>/*.py` if a config call doesn't seem to take."""
+        is absent). The sim module lives in a subprocess, so the child checks
+        its own keys (see pipeline._launch_sim) and the parent only knows
+        about build/plot — `recognized` here is the union across all modules
+        the parent sees, used by `_warn_unknown_params` to flag typos."""
+        recognized = set()
         for mod in modules:
             if mod is None:
                 continue
             for key, value in self._params.items():
                 if hasattr(mod, key):
                     setattr(mod, key, value)
+                    recognized.add(key)
+        return recognized
+
+    def _warn_unknown_params(self, recognized):
+        """Warn about config() keys that matched no attribute on any module
+        the parent loaded (build/plot) AND no attribute on the sim module.
+        The sim is in a subprocess, so we introspect its source for top-level
+        bindings rather than importing it here (which would defeat the
+        per-stage subprocess isolation)."""
+        unknown = set(self._params) - set(recognized)
+        if not unknown:
+            return
+        sim_names = _module_top_level_names(self._sim_path)
+        unknown -= sim_names
+        if unknown:
+            msg = (f"{self.name}: config() keys ignored (no matching attribute "
+                   f"on build/sim/plot): {sorted(unknown)}")
+            log.warning(msg)
+            _cl(f"    {_YELLOW}⚠ {msg}{_RESET}", level=logging.WARNING)
 
     def _run_step(self, title, func, is_sim):
         _cl(f"\n{_BOLD}▶ {title}{_RESET}")

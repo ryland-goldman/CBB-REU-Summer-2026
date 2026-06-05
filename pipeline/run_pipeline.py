@@ -35,7 +35,7 @@ from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 # ── Operating-point overrides (optional; defaults live in the stage modules) ──
 cathode.config(V_anode=50.0)
 gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=0.1e-9)
-prebuncher.config(POWER_W=800, PHASE="zc", OUTDIR="prebuncher/diags")
+prebuncher.config(POWER_W=800, PHASE="zc")
 
 
 def _final_beam_summary(diag):
