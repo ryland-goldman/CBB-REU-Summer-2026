@@ -157,7 +157,14 @@ Each `prebuncher_sim.py` run writes `diags/P{P}_{phase}/{fields,particles}/` (or
 
 - `P{P}_{phase}_line.png` — σ_z(z) vs. the drift baseline (max-bunching point marked) and peak
   current / mean energy.
-- `P{P}_{phase}_phasespace.png` — z–KE at injection / cavity exit / max bunching.
+- `P{P}_{phase}_phasespace.png` — z–KE at injection / cavity exit / best focus (the
+  σ_drift/σ_cavity maximum with a drift baseline, else the post-cavity σ_z minimum).
+- `P{P}_{phase}_cavity.png` — the RF drive: on-axis Ez(z) of the scaled 1-J map placed at the lab
+  gap, and the cos/sin RF waveform vs. time around the gap arrival (bunch centre on the field
+  zero-crossing for `zc`, crest for `crest`).
+- `P{P}_{phase}_bunch_profile.png` — the real longitudinal line-charge density λ(z) at the same
+  three snapshots as the phase-space figure (compression and space-charge filamentation/spikes the
+  scalar σ_z curve cannot show).
 - `compare_power_phase.png` — σ_z(z) for the drift baseline vs. all zc powers, and the bunching
   ratio vs. power (zc vs. crest).
 - a printed summary table (P, phase, σ_z0, σ_z,min, bunching ratio, focus z, I_peak, final KE).
