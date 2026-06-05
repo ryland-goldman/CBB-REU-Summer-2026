@@ -71,6 +71,29 @@ building up and filling the gap (gap-fill ≈ 480 steps). Time sampling is non-u
 through the transient, sparse in steady state), so it is drawn with `pcolormesh` on the true time
 coordinates rather than `imshow`, which would distort the time axis.
 
+### `field_lines.png` — the 2D cathode-edge field enhancement
+![Equipotentials + E-field streamlines, with a zoom on the cathode edge](warpx_cathode/results/field_lines.png)
+
+φ equipotential contours overlaid on E-field streamlines (coloured by `|E|`) across the gap, with a
+zoom on the `+x` cathode edge. Planar Child–Langmuir theory is 1D — flat equipotentials, straight
+field — but the cathode is **finite**: the space-charge-suppressed emitting strip (`|x| < 6 mm`,
+white bar) meets the full vacuum field outside. At the edges `x = ±6 mm` (dotted lines) the
+equipotentials **crowd together and the streamlines splay** as `|E|` climbs from its suppressed value
+on the emitting surface up to the uniform vacuum field outside — the **field transition** at the
+emission edge (a transition, not an overshoot: `|E|` rises monotonically to `V/d` and does not exceed
+it), the finite-cathode signature the planar picture cannot show. The contour companion to the `φ`
+panel of `cathode_2d.png`.
+
+### `emission_phase_space.png` — the source's thermal emittance
+![Transverse phase space x–ux and the thermal momentum spread](warpx_cathode/results/emission_phase_space.png)
+
+The intrinsic (thermal) beam quality of the source, from the last particle snapshot. **Left:**
+transverse phase space `x` vs. `ux = γβ_x` (density via hexbin), annotated with the RMS normalized
+emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) ≈ 1.57 mm·mrad` — the irreducible emittance every downstream
+stage inherits. **Right:** the histogram of `ux`, the Maxwellian transverse-momentum spread set by
+the 1200 K cathode, with the expected `±√(kT/mₑc²)` scale overlaid (the run reproduces it: rms
+`ux` = 0.45 × 10⁻³ vs. √(kT/mc²) = 0.45 × 10⁻³).
+
 ---
 
 ## 2. Gun — `warpx_gun/results/`
@@ -109,6 +132,25 @@ Left: longitudinal phase space (`z` vs. `KE`) at the last dump. Right: the final
 (histogram) with `⟨KE⟩` marked — a narrow distribution at ~148 keV, the beam handed off to the
 prebuncher.
 
+### `beam_envelope.png` — radial envelope and emittance
+![RMS radial size σ_r and normalized emittance vs ⟨z⟩](warpx_gun/results/beam_envelope.png)
+
+The near-cathode focusing that `beam_rz.png` shows only as three snapshots, quantified along the
+gun. **Blue:** the RMS radial size `σ_r = √⟨x²⟩` contracts from ≈ 2.47 mm as the diverging cathode
+emission is focused by the radial gun field, reaching a waist near the exit. **Red (twin axis):**
+the normalized transverse emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²)` grows as space charge and
+field nonlinearities act — the beam-quality cost of the transport.
+
+### `space_charge.png` — the beam's own space-charge field
+![r–z maps of self charge density ρ and the space-charge potential well φ](warpx_gun/results/space_charge.png)
+
+The beam **self-field** dumped to `diags/fields` (`ρ`, `φ`) — distinct from the *applied* gun field
+in `gun_field.png`, and plotted nowhere else. At a near-launch snapshot (`⟨z⟩ ≈ 0.4 mm`, beam still
+near the cathode where the self-field is largest): **top**, the self charge density `ρ(r, z)` of the
+electron bunch (`ρ < 0`); **bottom**, the **space-charge potential well** `φ(r, z)` it digs (≈ −250 V
+for the 0.1 nC bunch). This is the field the README renormalizes the bunch to 0.1 nC to control —
+the raw ~102 nC cathode population would dig a well that dwarfs the gun field and blows the beam apart.
+
 ---
 
 ## 3. Prebuncher — `warpx_prebuncher/results/`
@@ -117,8 +159,9 @@ CESR standing-wave RF prebuncher (214 MHz TM cavity) in **RZ** that velocity-bun
 exit beam (~148 keV, β ≈ 0.63, 0.1 nC) in the downstream 1.3 m drift. Because the bunch is
 already short and space-charge dense, the honest metric is bunching **relative to a drift-only
 baseline** (`P = 0`): `σ_z,drift(z) / σ_z,cavity(z)`. Produced by `plot_prebuncher.py`, which
-writes a `*_line.png` and `*_phasespace.png` for **every** `diags/P*` case directory present,
-plus a cross-case `compare_power_phase.png` when a baseline or multiple cases exist.
+writes a `*_line.png`, `*_phasespace.png`, `*_cavity.png`, and `*_bunch_profile.png` for
+**every** `diags/P*` case directory present, plus a cross-case `compare_power_phase.png` when a
+baseline or multiple cases exist.
 
 Case names are `P<power>_<phase>`: `<phase>` is `zc` (zero-crossing → ballistic bunching) or
 `crest` (max energy gain, little bunching); `P0_drift` is the drift-only baseline.
@@ -135,11 +178,35 @@ the interpolated drift baseline (`k--`), with the max-bunching point starred
 ### `P800_zc_phasespace.png` — the chirp flipping through the cavity
 ![P800 zero-crossing: z–KE phase space at three points](warpx_prebuncher/results/P800_zc_phasespace.png)
 
-Mean-subtracted longitudinal `z–KE` phase space at three points: injection, cavity exit, and max
-bunching. The gun beam arrives with an intrinsic **+1.40 keV/mm** (debunching) chirp; the
+Mean-subtracted longitudinal `z–KE` phase space at three points: injection, cavity exit, and the
+best ballistic focus (the `σ_drift/σ_cavity` maximum when a drift baseline is present, otherwise the
+post-cavity `σ_z` minimum — ⟨z⟩ ≈ 446 mm here). The gun beam arrives with an intrinsic **+1.40 keV/mm** (debunching) chirp; the
 zero-crossing cavity adds a negative chirp, flipping the net slope and rotating the distribution
 so it compresses downstream. (On-crest cases, by contrast, mostly shift up in energy without a
 chirp flip — visible by comparing a `crest` phasespace figure.)
+
+### `P800_zc_cavity.png` — the RF drive the bunch sees
+![P800 zero-crossing: scaled on-axis Ez(z) and the cos/sin RF waveform at the gap](warpx_prebuncher/results/P800_zc_cavity.png)
+
+The cavity field itself (the σ_z / phase-space figures show only the beam's response). **Left:**
+on-axis `Ez(z)` of the 1-J map scaled by this case's field `scale` (≈ 8.2 MV/m peak at 800 W),
+placed at the lab gap (`Z_GAP_CENTER` = 0.20 m) via the map's `grid_global_offset`, with the
+injection plane marked. **Right:** the temporal RF waveform `E ∝ cos(ω t+φ)`, `B ∝ sin(ω t+φ)`
+(90° out of phase) over ~2 RF periods around the bunch-centre gap-arrival `t_gap`, each normalised
+to ±1, with the bunch `±σ_t` width shaded. For `zc` the bunch centre lands on the field
+**zero-crossing** (annotated) → velocity bunching; for `crest` it lands on the **crest** → pure
+acceleration. This is what makes "zero-crossing vs. crest" visual.
+
+### `P800_zc_bunch_profile.png` — the real longitudinal bunch shape λ(z)
+![P800 zero-crossing: line-charge density λ(z) at injection, cavity exit, max bunching](warpx_prebuncher/results/P800_zc_bunch_profile.png)
+
+The line-charge density `λ(z−⟨z⟩)` (histogram of `z` weighted by `w·q_e` ÷ bin width, in nC/m) at
+the **same** three snapshots as the phase-space figure. Unlike the scalar `σ_z` curve this shows
+the bunch's actual shape: a clean peak at injection (σ_z ≈ 0.98 mm), pronounced **space-charge
+filamentation spikes** at the cavity exit (σ_z ≈ 2.1 mm, peak `λ` halved), and the **recompressed**
+profile at the ballistic focus (σ_z back to ≈ 1.1 mm, peak `λ` ≈ 45 nC/m). Peak `λ` and `σ_z` are
+annotated per panel; a drift baseline is overlaid when present (guarded — none on disk in the
+current single-case tree).
 
 ### `compare_power_phase.png` — scan summary *(when present)*
 A cross-case figure written only when several cases / the drift baseline have been run (e.g. via
