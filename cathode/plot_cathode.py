@@ -41,13 +41,16 @@ R_cathode = 6.0e-3
 over_inject = 2.0
 T_cathode = 1200.0
 
-J_CL = (4.0 / 9.0) * epsilon_0 * np.sqrt(2.0 * q_e / m_e) * V_anode**1.5 / gap_d**2
-
 RESULTS = "cathode/results"
 
 
 def main():
     os.makedirs(RESULTS, exist_ok=True)
+
+    # Child–Langmuir current density — computed here (not at module top) so a
+    # config(V_anode=...)/config(gap_d=...) override applied via setattr after
+    # import is reflected, matching cathode_diode.main().
+    J_CL = (4.0 / 9.0) * epsilon_0 * np.sqrt(2.0 * q_e / m_e) * V_anode**1.5 / gap_d**2
 
     ts  = OpenPMDTimeSeries("cathode/diags/fields")
     it  = ts.iterations[-1]            # final (steady-state) snapshot

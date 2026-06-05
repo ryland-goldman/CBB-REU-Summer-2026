@@ -55,6 +55,15 @@ def main():
     sim_module_path = sys.argv[1]
     params = json.loads(os.environ.get("STAGE_CONFIG_JSON", "{}"))
 
+    # Attach this child's `pipeline` logger to the parent's log file (append) so
+    # run_step's `progress:` lines and any other child log.* calls land in the
+    # shared log. Without this the child logger has no handler and those records
+    # are silently dropped (run_step only ever executes here, in the child).
+    log_path = os.environ.get("PIPELINE_LOG_PATH")
+    if log_path:
+        from pipeline._runner import setup_logging
+        setup_logging(log_path)
+
     sim = importlib.import_module(sim_module_path)
     for key, value in params.items():
         if hasattr(sim, key):

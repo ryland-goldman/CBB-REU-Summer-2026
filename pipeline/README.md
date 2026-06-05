@@ -1,7 +1,7 @@
 # End-to-end pipeline
 
 `run_pipeline.py` runs the full Cornell Linac beam simulation in WarpX, in order, by importing
-each stage's top-level facade module and calling `.run()` in a single Python process:
+each stage's top-level facade module and calling `.run()`:
 
 ```
 cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
@@ -13,6 +13,14 @@ Each `run()` reads the previous stage's openPMD output, runs the WarpX sim, and 
 generates that stage's figures.
 
 Each downstream stage reads the previous stage's openPMD output, so the order is fixed.
+
+Within a single `.run()`, the field-map build and the plots happen in-process, but the WarpX
+sim itself is spawned in a **fresh Python subprocess** (`pipeline._launch_sim`). This sidesteps
+pywarpx's per-process geometry binding — pywarpx binds globally to one geometry (2D/RZ/3D) at
+first `.so` load and caches diagnostic state per name, so chaining cathode (2D) → gun (RZ) →
+prebuncher (RZ) in one interpreter would trip `AssertionError: Diagnostic attributes not
+consistent`. The tqdm progress bar is driven by a WarpX `afterstep` callback, with WarpX's
+per-step stdout redirected to the log file so the bar stays on a clean terminal line.
 
 ## Run
 

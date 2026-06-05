@@ -1,6 +1,6 @@
 """
 Figures and summary for the WarpX prebuncher scan (repeated prebuncher_sim.py
-runs, one --outdir per power/phase).
+runs, one OUTDIR per power/phase).
 
 The gun-exit bunch is short (σ_z ≈ 1 mm ≈ 0.1 % of the 214 MHz RF wavelength) and
 carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at 0.1 nC it is
@@ -147,6 +147,8 @@ def analyse_case(path):
         rec["ke"].append(km); rec["dke"].append(dk)
         rec["ipk"].append(peak_current(z, w, v_beam)); rec["it"].append(it)
         snaps[it] = (z, ke, w)
+    if not rec["zmean"]:                       # every dump empty (crashed/aborted run)
+        return None
     order = np.argsort(rec["zmean"])
     for k in ("zmean", "sigz", "ke", "dke", "ipk"):
         rec[k] = np.asarray(rec[k])[order]
@@ -396,6 +398,9 @@ def main(cases=None):
         if lab[1] == "drift":
             print("analysing drift baseline …", flush=True)
             base = analyse_case(d)
+            if base is None:
+                print(f"  skipping {os.path.basename(d)}: no usable snapshots "
+                      f"(empty/aborted run)", flush=True)
 
     n_powered = sum(1 for _, lab in cases if lab[1] != "drift")
     if n_powered > 1:
@@ -411,6 +416,10 @@ def main(cases=None):
         name = os.path.basename(d)
         print(f"analysing {name} …", flush=True)
         rec = analyse_case(d)
+        if rec is None:
+            print(f"  skipping {name}: no usable snapshots (empty/aborted run)",
+                  flush=True)
+            continue
         s = per_case_figure(name, rec, base)
         cavity_figure(name, rec, power, phase)        # FIGURE A: the RF drive
         bunch_profile_figure(name, rec, base)         # FIGURE B: real λ(z) shape

@@ -1,13 +1,17 @@
 """End-to-end Cornell Linac beam simulation in WarpX.
 
-Runs the three stages in order in a single Python process:
+Orchestrates the three stages in order from one driver process:
 
     cathode -> gun -> prebuncher
 
-Each stage exposes `config(**kwargs)` (override module-level constants) and `run()`
-(build field map if any, simulate, plot). Stage execution is wrapped by the shared
-runner in `pipeline/_runner.py`, which captures WarpX's stdout for tqdm progress
-bars and writes a full DEBUG-level transcript to `pipeline/logs/pipeline_<ts>.log`.
+Each stage's build/plot run in-process, but its WarpX simulation runs in a fresh
+Python subprocess (`pipeline._launch_sim`) to sidestep pywarpx's per-process
+geometry binding (cathode 2D -> gun/prebuncher RZ would otherwise trip a diagnostic
+state assertion). Each stage exposes `config(**kwargs)` (override module-level
+constants) and `run()` (build field map if any, simulate, plot). Stage execution is
+wrapped by the shared runner in `pipeline/_runner.py`, which drives the tqdm bar from
+an afterstep callback and redirects WarpX's per-step stdout to the pipeline log file,
+writing a full DEBUG-level transcript to `pipeline/logs/pipeline_<ts>.log`.
 
 Run with:
     conda activate CBB

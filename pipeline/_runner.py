@@ -51,17 +51,29 @@ log = logging.getLogger("pipeline")
 _log_path = None
 
 
-def setup_logging():
-    """Initialise the per-process pipeline log file. Idempotent."""
+def setup_logging(path=None):
+    """Initialise the per-process pipeline log file. Idempotent.
+
+    With `path` given, attach to that existing file in APPEND mode instead of
+    creating a fresh timestamped one. This is the child-subprocess case:
+    `_launch_sim` passes PIPELINE_LOG_PATH so the child's `progress:` lines and
+    any other `log.*` calls (emitted by run_step) join the parent's log — without
+    it the child's `pipeline` logger has no handler and those records are silently
+    dropped (and a "w" reopen would truncate the parent's file).
+    """
     global _log_path
     if _log_path is not None:
         return _log_path
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    _log_path = os.path.join(_LOG_DIR, time.strftime("pipeline_%Y%m%d_%H%M%S.log"))
+    if path:
+        _log_path, mode = path, "a"
+    else:
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        _log_path = os.path.join(_LOG_DIR, time.strftime("pipeline_%Y%m%d_%H%M%S.log"))
+        mode = "w"
     log.setLevel(logging.DEBUG)
     log.propagate = False
     log.handlers.clear()
-    fh = logging.FileHandler(_log_path, mode="w", encoding="utf-8")
+    fh = logging.FileHandler(_log_path, mode=mode, encoding="utf-8")
     fh.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-5s  %(message)s",
                                       "%H:%M:%S"))
     log.addHandler(fh)
@@ -82,8 +94,11 @@ def run_step(sim, nsteps, desc):
     `afterstep` callback. WarpX's own stdout/stderr is redirected to the
     pipeline log file for the duration of the step, so the bar updates on a
     clean terminal line (rather than being scrolled off by WarpX's init banner
-    and post-step warnings). Stage sim files call this in place of bare
-    `sim.step(...)`.
+    and post-step warnings). The same callback also emits periodic
+    `progress: step N/total (%) — elapsed / rate / ETA` lines to the log (~20
+    over the run), so non-TTY runs (CI, nohup, redirected output) — where tqdm
+    is disabled — still get progress, and the log retains it regardless of TTY.
+    Stage sim files call this in place of bare `sim.step(...)`.
     """
     from pywarpx.callbacks import installcallback, uninstallcallback
     from tqdm import tqdm as _tqdm
@@ -94,31 +109,51 @@ def run_step(sim, nsteps, desc):
     bar_file = os.fdopen(bar_fd, "w", buffering=1, closefd=False)
     bar = _tqdm(total=nsteps, unit="step", desc=desc,
                 ncols=88, leave=True, file=bar_file, disable=not _TTY)
-    tick = lambda: bar.update(1)
-    installcallback("afterstep", tick)
+    t0 = time.time()
+    log_every = max(1, nsteps // 20)        # ~20 progress lines in the log
+    state = {"step": 0, "next_log": log_every}
 
-    # In a subprocess child, PIPELINE_LOG_PATH points at the parent's log.
-    target = os.environ.get("PIPELINE_LOG_PATH") or _log_path or os.devnull
-    redir_fd = os.open(target, os.O_WRONLY | os.O_APPEND)
-    saved_out = os.dup(1)
-    saved_err = os.dup(2)
-    try:
-        os.dup2(redir_fd, 1)
-        os.dup2(redir_fd, 2)
-    finally:
-        os.close(redir_fd)
+    def tick():
+        bar.update(1)
+        state["step"] += 1
+        step = state["step"]
+        if step >= state["next_log"] or step >= nsteps:
+            el = time.time() - t0
+            rate = step / el if el else 0.0
+            eta = (nsteps - step) / rate if rate else 0.0
+            log.info(f"    progress: step {step}/{nsteps} ({100*step/nsteps:3.0f}%)  "
+                     f"elapsed {el:5.0f}s  {rate:5.1f} step/s  eta {eta:4.0f}s")
+            state["next_log"] += log_every
 
+    # From here on every acquired fd / installed callback is released in the
+    # finally, so a failure mid-setup (e.g. os.open on a bad PIPELINE_LOG_PATH)
+    # can't leak the bar fd or leave the afterstep hook installed.
+    saved_out = saved_err = None
     try:
+        installcallback("afterstep", tick)
+        # In a subprocess child, PIPELINE_LOG_PATH points at the parent's log.
+        target = os.environ.get("PIPELINE_LOG_PATH") or _log_path or os.devnull
+        redir_fd = os.open(target, os.O_WRONLY | os.O_APPEND)
+        saved_out = os.dup(1)
+        saved_err = os.dup(2)
+        try:
+            os.dup2(redir_fd, 1)
+            os.dup2(redir_fd, 2)
+        finally:
+            os.close(redir_fd)
+
         sim.step(nsteps)
     finally:
         try: sys.stdout.flush()
         except Exception: pass
         try: sys.stderr.flush()
         except Exception: pass
-        os.dup2(saved_out, 1)
-        os.dup2(saved_err, 2)
-        os.close(saved_out)
-        os.close(saved_err)
+        if saved_out is not None:
+            os.dup2(saved_out, 1)
+            os.close(saved_out)
+        if saved_err is not None:
+            os.dup2(saved_err, 2)
+            os.close(saved_err)
         try:
             uninstallcallback("afterstep", tick)
         except Exception:
@@ -146,11 +181,20 @@ def _module_top_level_names(dotted):
         with open(spec.origin, "r", encoding="utf-8") as f:
             tree = ast.parse(f.read(), filename=spec.origin)
         names = set()
+
+        def _add_target(t):
+            # Recurse into tuple/list targets so unpacked module constants
+            # (e.g. `nr, nz = 96, 384`) are recorded, not just bare names.
+            if isinstance(t, ast.Name):
+                names.add(t.id)
+            elif isinstance(t, (ast.Tuple, ast.List)):
+                for elt in t.elts:
+                    _add_target(elt)
+
         for node in tree.body:
             if isinstance(node, ast.Assign):
                 for t in node.targets:
-                    if isinstance(t, ast.Name):
-                        names.add(t.id)
+                    _add_target(t)
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 names.add(node.target.id)
         return names
@@ -180,7 +224,15 @@ class Stage:
 
     # ── Public API ───────────────────────────────────────────────────────────
     def config(self, **kwargs):
-        """Stage parameter overrides applied at the next run()/plot()."""
+        """Stage parameter overrides applied at the next run()/plot().
+
+        **Cumulative:** keys accumulate across calls (`dict.update`) and are
+        never auto-cleared, so a key set once persists into every later
+        run() until overwritten. A scan loop that varies, say, POWER_W but
+        also writes per-point OUTDIRs must set OUTDIR every iteration (as the
+        documented prebuncher scan does) — set it once and the stale value
+        leaks into subsequent runs, silently overwriting the same directory.
+        """
         self._params.update(kwargs)
 
     def run(self, plots=True):
@@ -199,10 +251,10 @@ class Stage:
         recognized = self._apply_params(build, plot_mod)
         self._warn_unknown_params(recognized)
         if build is not None:
-            self._run_step(f"{self.name}: field map", build.main, is_sim=False)
+            self._run_step(f"{self.name}: field map", build.main)
         self._run_sim_subprocess()
         if plots:
-            self._run_step(f"{self.name}: plots", plot_mod.main, is_sim=False)
+            self._run_step(f"{self.name}: plots", plot_mod.main)
 
     def _run_sim_subprocess(self):
         title = f"{self.name}: simulation"
@@ -211,12 +263,14 @@ class Stage:
         env = os.environ.copy()
         if _log_path:
             env["PIPELINE_LOG_PATH"] = _log_path
-        if self._params:
-            env["STAGE_CONFIG_JSON"] = json.dumps(self._params)
         cmd = [sys.executable, "-m", "pipeline._launch_sim", self._sim_path]
         t0 = time.time()
         rc = None
         try:
+            # json.dumps is inside the try so a non-serializable config value
+            # is reported through the same ok/err path as a sim failure.
+            if self._params:
+                env["STAGE_CONFIG_JSON"] = json.dumps(self._params)
             result = subprocess.run(cmd, env=env, cwd=_REPO_ROOT)
             rc = result.returncode
             ok = rc == 0
@@ -240,7 +294,7 @@ class Stage:
         plot_mod = self._load(self._plot_path)
         recognized = self._apply_params(plot_mod)
         self._warn_unknown_params(recognized)
-        self._run_step(f"{self.name}: plots", plot_mod.main, is_sim=False)
+        self._run_step(f"{self.name}: plots", plot_mod.main)
 
     # ── Internals ────────────────────────────────────────────────────────────
     def _load(self, dotted):
@@ -279,7 +333,7 @@ class Stage:
             log.warning(msg)
             _cl(f"    {_YELLOW}⚠ {msg}{_RESET}", level=logging.WARNING)
 
-    def _run_step(self, title, func, is_sim):
+    def _run_step(self, title, func):
         _cl(f"\n{_BOLD}▶ {title}{_RESET}")
         log.info(f"    {func.__module__}.main()  cwd={os.getcwd()}")
         t0 = time.time()

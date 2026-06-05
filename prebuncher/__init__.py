@@ -22,7 +22,11 @@ DEFAULT_PHASE = "zc"
 
 
 def _derive_outdir(power_w, phase):
-    return f"prebuncher/diags/P{int(power_w)}_{phase}"
+    # `:g` keeps whole watts compact (800.0 -> "P800_zc", matching the shipped
+    # config) while preserving fractional operating points (160.5 -> "P160.5_zc")
+    # so a power scan over non-integer watts can't collide distinct cases into one
+    # OUTDIR. Integer-valued int() would truncate 160.5 and 160.9 to the same dir.
+    return f"prebuncher/diags/P{power_w:g}_{phase}"
 
 
 _stage = Stage(

@@ -44,7 +44,7 @@ python pipeline/run_pipeline.py                  # full chain, live progress + f
 - **Run one stage off existing upstream output:** comment out the unwanted `<stage>.run()` calls in `pipeline/run_pipeline.py`, or just import the one you want (`import prebuncher; prebuncher.run()`) — each stage reads the previous stage's openPMD output from disk, so any unmodified upstream output is reused.
 - **Prebuncher power/phase scan:** call `prebuncher.run()` once per operating point in a Python loop, e.g. `for p in (160, 300, 500, 800): prebuncher.config(POWER_W=p, OUTDIR=f"prebuncher/diags/P{p}_zc"); prebuncher.run(plots=False)`. Then a single `prebuncher.plot()` aggregates every `diags/P*` directory (see `prebuncher/README.md`).
 - **Plots:** `<stage>.plot()` reads its `diags/` and writes PNGs to `results/`. `run()` calls `plot()` by default; pass `plots=False` to skip.
-- **Threads:** `OMP_THREADS` (default 6) — the MLMG Poisson solve is memory-bandwidth bound, so using all cores is *slower*. Override via env var or the `CONFIG` block.
+- **Threads:** `OMP_THREADS` (default 6) — the MLMG Poisson solve is memory-bandwidth bound, so using all cores is *slower*. Override via the `OMP_THREADS` env var (set before any pywarpx import; `config()` cannot set it).
 
 There is no test suite, linter, or build step — validation is physics sanity checks (energy gain, Child–Langmuir current, bunching) printed by each run and inspected in the `results/` plots.
 

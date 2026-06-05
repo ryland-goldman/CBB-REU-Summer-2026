@@ -27,8 +27,10 @@ before the run.
 `build_prebuncher_field` reads `fieldmaps/prebuncher_25D.gdf`; the sim reads the gun
 output from `gun/diags/particles/` (both paths repo-root-relative). To run the whole accelerator chain
 (cathode → gun → prebuncher), use **`pipeline/run_pipeline.py`** in the repo root. The
-results table below was produced by running several powers and the `P=0` drift baseline
-manually (`POWER_W=0` gives the baseline; `POWER_W=160/300/500/800`).
+results table below was produced by running several powers (`POWER_W=160/300/500/800`) and the
+`P=0` drift baseline manually. The baseline must be given an explicit
+`OUTDIR="prebuncher/diags/P0_drift"`: auto-derive turns `POWER_W=0` into `P0_zc`/`P0_crest`,
+which the plotter treats as a powered case, not the baseline (see **Outputs**).
 
 ## Field map
 
@@ -150,9 +152,12 @@ energy). The phase-space and σ_z curves show some space-charge filamentation ne
 
 ## Outputs
 
-Each `prebuncher.run(...)` call writes `diags/P{P}_{phase}/{fields,particles}/` (or
-`P0_drift/` for `POWER_W=0`). `prebuncher.plot()` reads every `diags/P*` directory present and writes to
-`results/`:
+Each `prebuncher.run(...)` call writes `diags/P{P}_{phase}/{fields,particles}/` when `OUTDIR`
+is left unset — the dir is auto-derived as `P{int(POWER_W)}_{PHASE}` (so `POWER_W=0` yields
+`P0_zc`/`P0_crest`, *not* `P0_drift`). The plotter recognises the drift baseline **only** by the
+exact name `P0_drift`, so to get a baseline that the comparison treats as the P=0 reference you
+must pass it explicitly: `prebuncher.config(POWER_W=0, OUTDIR="prebuncher/diags/P0_drift")`.
+`prebuncher.plot()` reads every `diags/P*` directory present and writes to `results/`:
 
 The per-case figures use **config-independent filenames** (the power/phase lives in the figure
 titles and the `diags/<case>` input dir, not the filename), so changing the operating point
