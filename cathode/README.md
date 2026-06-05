@@ -14,9 +14,19 @@ finite-cathode edges.
 Run with:
 ```bash
 conda activate CBB
-python warpx_cathode/cathode_diode.py   # ~1 min, writes openPMD to diags/
-python warpx_cathode/plot_cathode.py    # writes the 4 figures to results/
+python -c "import cathode; cathode.run()"   # sim + plots in one call
 ```
+
+or, equivalently, the individual scripts:
+```bash
+python cathode/cathode_diode.py   # ~1 min, writes openPMD to diags/
+python cathode/plot_cathode.py    # writes the figures to results/
+```
+
+To override the operating point without editing the source, call
+`cathode.config(V_anode=..., gap_d=..., R_cathode=..., T_cathode=..., MAX_STEPS=...)`
+before `cathode.run()`. Keys must match the module-level constants at the top of
+`cathode/cathode_diode.py`.
 
 ---
 

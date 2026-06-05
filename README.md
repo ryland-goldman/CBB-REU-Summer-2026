@@ -40,17 +40,19 @@ The end-to-end driver runs every stage in order with live progress bars and a fi
 python pipeline/run_pipeline.py
 ```
 
-Stage toggles and the prebuncher operating point are configured in the `CONFIG` block at the top
-of `run_pipeline.py`. See [`pipeline/README.md`](pipeline/README.md) for details.
+Each stage is also a top-level Python package — `import cathode; cathode.run()` (likewise
+`gun.run()`, `prebuncher.run()`) runs that stage alone. Use `cathode.config(V_anode=50)` etc. to
+override the module-level parameters before calling `.run()`. See
+[`pipeline/README.md`](pipeline/README.md) for details.
 
 ## Components
 
 | Stage | Directory | What it does |
 |-------|-----------|--------------|
-| **1. Cathode** | [`warpx_cathode/`](warpx_cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
-| **2. Gun** | [`warpx_gun/`](warpx_gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~148 keV. |
-| **3. Prebuncher** | [`warpx_prebuncher/`](warpx_prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
-| **Pipeline** | [`pipeline/`](pipeline/README.md) | Chains stages 1–3 as subprocesses; each reads the prior stage's openPMD output. |
+| **1. Cathode** | [`cathode/`](cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
+| **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~148 keV. |
+| **3. Prebuncher** | [`prebuncher/`](prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
+| **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the three stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. |
 
 Each directory's `README.md` documents its physics, field maps, and outputs.
 

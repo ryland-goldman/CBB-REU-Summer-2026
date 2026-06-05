@@ -1,7 +1,7 @@
 # CESR gun in WarpX (RZ)
 
 The second stage of the Cornell Linac electron source, simulated in WarpX. Stage 1
-(`../warpx_cathode/`) is the thermionic cathode at the Child–Langmuir limit; here we take
+(`../cathode/`) is the thermionic cathode at the Child–Langmuir limit; here we take
 its emitted electrons and accelerate them through the **CESR gun** — the electrostatic
 accelerating structure modelled in Adam Bartnik's Linac GUI with the Poisson–Superfish field
 map `CESR_gun.gdf` (the "Chili Gun Mk II", ~150 kV).
@@ -14,14 +14,21 @@ electrostatic solver supplies the self-consistent beam **space charge** on top. 
 
 ```bash
 conda activate CBB
-python warpx_gun/build_gun_field.py   # CESR_gun.gdf  ->  gun_field/gun_E.h5 (openPMD)
-python warpx_gun/gun_sim.py           # RZ WarpX run  ->  diags/{fields,particles}/
-python warpx_gun/plot_gun.py          # figures       ->  results/*.png
+python -c "import gun; gun.run()"   # build field map + sim + plots in one call
 ```
 
-`build_gun_field.py` reads `fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output
-from `warpx_cathode/diags/particles/`. Both paths are repo-root-relative (run from the repo
-root) and set near the top of each script.
+or, equivalently, the individual scripts:
+```bash
+python gun/build_gun_field.py   # CESR_gun.gdf  ->  gun_field/gun_E.h5 (openPMD)
+python gun/gun_sim.py           # RZ WarpX run  ->  diags/{fields,particles}/
+python gun/plot_gun.py          # figures       ->  results/*.png
+```
+
+To override the gun voltage or bunch charge: `gun.config(GUN_VOLTAGE=150e3,
+BUNCH_CHARGE=0.1e-9)` before `gun.run()`. Keys must match the module-level constants in
+`gun/build_gun_field.py` and `gun/gun_sim.py`. `build_gun_field.py` reads
+`fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
+`cathode/diags/particles/`. All paths are repo-root-relative.
 
 ## The gun field map
 
@@ -49,7 +56,7 @@ shape `(1, nr, nz)`. `gun_sim.py` then loads it via the raw WarpX inputs
 
 ```
 particles.E_ext_particle_init_style = read_from_file
-particles.read_fields_from_path     = warpx_gun/gun_field/gun_E.h5
+particles.read_fields_from_path     = gun/gun_field/gun_E.h5
 particles.B_ext_particle_init_style = none
 ```
 

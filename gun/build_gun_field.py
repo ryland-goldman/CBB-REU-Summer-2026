@@ -17,7 +17,7 @@ The gun is purely electrostatic (the GDF carries no magnetic field), so only an
 E mesh is written; `gun_sim.py` sets `particles.B_ext_particle_init_style = none`.
 
 Run with:
-    conda run -n CBB python warpx_gun/build_gun_field.py
+    conda run -n CBB python gun/build_gun_field.py
 """
 
 import os
@@ -27,7 +27,7 @@ import openpmd_api as io
 
 # ── Inputs / outputs ─────────────────────────────────────────────────────────
 GDF_PATH = "fieldmaps/CESR_gun.gdf"
-OUT_DIR = "warpx_gun/gun_field"
+OUT_DIR = "gun/gun_field"
 OUT_FILE = os.path.join(OUT_DIR, "gun_E.h5")
 
 # The map is normalised to a +1 kV cathode (V = +1000 at the cathode, 0 at the
@@ -37,7 +37,6 @@ OUT_FILE = os.path.join(OUT_DIR, "gun_E.h5")
 # a negative factor: real field = map × (-V_gun / V_map).
 GUN_VOLTAGE = 150.0e3        # CESR Chili Gun Mk II cathode potential magnitude [V]
 MAP_VOLTAGE = 1.0e3          # normalisation of CESR_gun.gdf [V]
-SCALE = -GUN_VOLTAGE / MAP_VOLTAGE   # = -150  (cathode at -150 kV)
 
 
 def load_gun_map(path):
@@ -67,14 +66,17 @@ def main():
     dr = float(r[1] - r[0])
     dz = float(z[1] - z[0])
 
-    Er = SCALE * Er
-    Ez = SCALE * Ez
+    # Recompute the scale here (not at import) so a config() override of
+    # GUN_VOLTAGE takes effect on the written field map.  = -150 by default.
+    scale = -GUN_VOLTAGE / MAP_VOLTAGE
+    Er = scale * Er
+    Ez = scale * Ez
     Et = np.zeros_like(Er)
 
     print(f"Gun field map: nr={nr} (0–{r[-1]*1e3:.2f} mm), "
           f"nz={nz} (0–{z[-1]*1e3:.2f} mm)")
     ipk = np.argmax(np.abs(Ez[0]))
-    print(f"Scaled by {SCALE:.0f}×  ->  -{GUN_VOLTAGE/1e3:.0f} kV cathode "
+    print(f"Scaled by {scale:.0f}×  ->  -{GUN_VOLTAGE/1e3:.0f} kV cathode "
           f"(electrons accelerate in +z; Ez < 0 on axis)")
     print(f"On-axis Ez: cathode {Ez[0, 0]/1e6:.3f} MV/m, "
           f"peak {Ez[0, ipk]/1e6:.3f} MV/m at z={z[ipk]*1e3:.1f} mm")

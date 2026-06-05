@@ -3,7 +3,7 @@
 Third stage of the Cornell Linac chain modelled in WarpX:
 
 ```
-cathode (warpx_cathode/)  ->  gun (warpx_gun/)  ->  prebuncher (this)
+cathode (cathode/)  ->  gun (gun/)  ->  prebuncher (this)
 ```
 
 The gun's exit beam (~148 keV, β ≈ 0.63, 0.1 nC, already RZ) is driven through the CESR
@@ -11,25 +11,26 @@ prebuncher — a standing-wave TM RF cavity — and bunches in the downstream dr
 
 ## Running
 
-```
-conda activate CBB
-python warpx_prebuncher/build_prebuncher_field.py   # prebuncher_25D.gdf -> prebuncher_field/prebuncher_EB.h5
-python warpx_prebuncher/prebuncher_sim.py           # one case (config at top of the script)
-python warpx_prebuncher/plot_prebuncher.py          # figures + summary table -> results/
-```
-
-`prebuncher_sim.py` runs a **single case**; set the operating point in its CONFIG block
-(`POWER_W`, `PHASE`) or override on the CLI:
-
-```
-python warpx_prebuncher/prebuncher_sim.py --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc
+```python
+# from repo root, in the CBB env:
+import prebuncher
+prebuncher.config(POWER_W=800, PHASE="zc",
+                  OUTDIR="prebuncher/diags/P800_zc")   # optional
+prebuncher.run()        # build field + sim + plots
+# prebuncher.plot()     # re-generate figures from existing diags/
 ```
 
-`build_prebuncher_field.py` reads `fieldmaps/prebuncher_25D.gdf`; the sim reads the gun
-output from `warpx_gun/diags/particles/` (both paths repo-root-relative). To run the whole accelerator chain
-(cathode → gun → prebuncher) with progress bars, use **`pipeline/run_pipeline.py`** in the repo
-root. The results table below was produced by running several powers and the `P=0` drift
-baseline manually (`--power 0` gives the baseline; `--power 160/300/500/800`).
+`prebuncher.run()` runs **a single case**. Defaults live at the top of
+`prebuncher/prebuncher_sim.py` (`POWER_W`, `PHASE`, `OUTDIR`); `config()` overrides them
+before the run.
+
+`build_prebuncher_field` reads `fieldmaps/prebuncher_25D.gdf`; the sim reads the gun
+output from `gun/diags/particles/` (both paths repo-root-relative). To run the whole accelerator chain
+(cathode → gun → prebuncher), use **`pipeline/run_pipeline.py`** in the repo root. The
+results table below was produced by running several powers (`POWER_W=160/300/500/800`) and the
+`P=0` drift baseline manually. The baseline must be given an explicit
+`OUTDIR="prebuncher/diags/P0_drift"`: auto-derive turns `POWER_W=0` into `P0_zc`/`P0_crest`,
+which the plotter treats as a powered case, not the baseline (see **Outputs**).
 
 ## Field map
 
@@ -127,8 +128,8 @@ negative through the cavity), not the (≈1, flat) RF-fundamental bunching facto
 
 WarpX's MLMG Poisson solve is memory-bandwidth bound, so a single run on all 14 cores
 (~0.78 s/step) is actually *slower* than on ~6 (`OMP_NUM_THREADS=6`); the pipeline sets this by
-default. To compare several powers, run `prebuncher_sim.py` once per power (e.g. in a shell
-loop), each writing its own `--outdir`; `plot_prebuncher.py` then picks up every `diags/P*`
+default. To compare several powers, call `prebuncher.run(plots=False)` once per power (e.g. in
+a Python loop), each with its own `OUTDIR`; a final `prebuncher.plot()` then picks up every `diags/P*`
 directory.
 
 ## Results
@@ -151,9 +152,12 @@ energy). The phase-space and σ_z curves show some space-charge filamentation ne
 
 ## Outputs
 
-Each `prebuncher_sim.py` run writes `diags/P{P}_{phase}/{fields,particles}/` (or `P0_drift/` for
-`--power 0`). `plot_prebuncher.py` reads every `diags/P*` directory present and writes to
-`results/`:
+Each `prebuncher.run(...)` call writes `diags/P{P}_{phase}/{fields,particles}/` when `OUTDIR`
+is left unset — the dir is auto-derived as `P{int(POWER_W)}_{PHASE}` (so `POWER_W=0` yields
+`P0_zc`/`P0_crest`, *not* `P0_drift`). The plotter recognises the drift baseline **only** by the
+exact name `P0_drift`, so to get a baseline that the comparison treats as the P=0 reference you
+must pass it explicitly: `prebuncher.config(POWER_W=0, OUTDIR="prebuncher/diags/P0_drift")`.
+`prebuncher.plot()` reads every `diags/P*` directory present and writes to `results/`:
 
 The per-case figures use **config-independent filenames** (the power/phase lives in the figure
 titles and the `diags/<case>` input dir, not the filename), so changing the operating point
