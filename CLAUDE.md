@@ -31,7 +31,7 @@ When in doubt, treat a doc update as part of "done" — a feature isn't complete
 
 ## Commands
 
-All commands run from the **repo root** in the `CBB` environment. Stage scripts use hard-coded relative paths (e.g. `warpx_gun/diags`), so running from anywhere else breaks the inter-stage handoff.
+All commands run from the **repo root** in the `CBB` environment. Stage scripts use hard-coded relative paths (e.g. `gun/diags`), so running from anywhere else breaks the inter-stage handoff.
 
 ```bash
 conda activate CBB
@@ -40,17 +40,17 @@ pip install -r requirements.txt                 # pywarpx/openpmd-api are best v
 python pipeline/run_pipeline.py                  # full chain, live progress + final-beam summary
 ```
 
-- **Run one stage off existing upstream output:** toggle `RUN_CATHODE / RUN_GUN / RUN_PREBUNCHER / MAKE_PLOTS` in the `CONFIG` block at the top of `pipeline/run_pipeline.py` (e.g. set cathode+gun `False` to re-run only the prebuncher against the saved gun beam). `PREBUNCHER_POWER_W` / `PREBUNCHER_PHASE` set the prebuncher operating point.
-- **Run a stage directly:** `python warpx_gun/gun_sim.py`, etc. The prebuncher takes CLI args: `python warpx_prebuncher/prebuncher_sim.py --power 800 --phase zc --outdir warpx_prebuncher/diags/P800_zc` (`--phase` is `zc` = zero-crossing bunching or `crest` = max energy gain; `--power 0` = drift-only baseline).
-- **Prebuncher power/phase scan:** run `prebuncher_sim.py` once per operating point (e.g. in a shell loop), each with its own `--power`/`--phase`/`--outdir warpx_prebuncher/diags/P<P>_<phase>`; `plot_prebuncher.py` then aggregates every `diags/P*` directory (see `warpx_prebuncher/README.md`).
-- **Plots:** each stage has a `plot_*.py` that reads its `diags/` and writes PNGs to `results/`.
+- **Stage API:** each stage package (`cathode/`, `gun/`, `prebuncher/`) is a top-level facade. `import cathode; cathode.run()` (likewise for `gun` and `prebuncher`) builds the field map (if any), runs the WarpX sim, and generates that stage's plots. Each exposes `config(**kwargs)` (override module-level constants — keys must match the names in each `<stage>/*.py`), `run(plots=True)`, and `plot()` (figures from existing diags). Implementation lives in `pipeline/_runner.py`.
+- **Run one stage off existing upstream output:** comment out the unwanted `<stage>.run()` calls in `pipeline/run_pipeline.py`, or just import the one you want (`import prebuncher; prebuncher.run()`) — each stage reads the previous stage's openPMD output from disk, so any unmodified upstream output is reused.
+- **Prebuncher power/phase scan:** call `prebuncher.run()` once per operating point in a Python loop, e.g. `for p in (160, 300, 500, 800): prebuncher.config(POWER_W=p, OUTDIR=f"prebuncher/diags/P{p}_zc"); prebuncher.run(plots=False)`. Then a single `prebuncher.plot()` aggregates every `diags/P*` directory (see `prebuncher/README.md`).
+- **Plots:** `<stage>.plot()` reads its `diags/` and writes PNGs to `results/`. `run()` calls `plot()` by default; pass `plots=False` to skip.
 - **Threads:** `OMP_THREADS` (default 6) — the MLMG Poisson solve is memory-bandwidth bound, so using all cores is *slower*. Override via env var or the `CONFIG` block.
 
 There is no test suite, linter, or build step — validation is physics sanity checks (energy gain, Child–Langmuir current, bunching) printed by each run and inspected in the `results/` plots.
 
 ## Project Architecture
 
-Each stage lives in its own `warpx_<stage>/` directory and follows the same script layout:
+Each stage lives in its own `<stage>/` directory and follows the same script layout:
 
 - `build_*_field.py` — converts a GPT `.gdf` field map from `fieldmaps/` into an openPMD `.h5` field mesh (via `easygdf` to read + `openPMD-api` to write) that WarpX loads as an external field. (The cathode has no field map; its field is self-consistent.)
 - `*_sim.py` — the WarpX/PICMI run. Reads the upstream beam with `openPMD-viewer`, injects it, tracks through the stage, writes openPMD particle diagnostics to its own `diags/`.
@@ -61,18 +61,18 @@ Each stage lives in its own `warpx_<stage>/` directory and follows the same scri
 
 | Stage | Reads | Writes |
 |-------|-------|--------|
-| `warpx_cathode/cathode_diode.py` | — (emits at cathode) | `warpx_cathode/diags/particles` |
-| `warpx_gun/gun_sim.py` | `warpx_cathode/diags/particles` + `warpx_gun/gun_field/gun_E.h5` | `warpx_gun/diags` |
-| `warpx_prebuncher/prebuncher_sim.py` | `warpx_gun/diags/particles` + `warpx_prebuncher/prebuncher_field/prebuncher_EB.h5` | `warpx_prebuncher/diags/<P..._...>` |
+| `cathode/cathode_diode.py` | — (emits at cathode) | `cathode/diags/particles` |
+| `gun/gun_sim.py` | `cathode/diags/particles` + `gun/gun_field/gun_E.h5` | `gun/diags` |
+| `prebuncher/prebuncher_sim.py` | `gun/diags/particles` + `prebuncher/prebuncher_field/prebuncher_EB.h5` | `prebuncher/diags/<P..._...>` |
 
-`pipeline/run_pipeline.py` orchestrates the whole chain as a sequence of subprocesses (cd's to repo root, runs each `build`/`sim`/`plot` in order), surfacing key physics lines and a live progress bar to the terminal while writing a full DEBUG log to `pipeline/logs/pipeline_<timestamp>.log`. The cathode is 2D x–z; the gun and prebuncher are RZ (cylindrically symmetric).
+`pipeline/run_pipeline.py` orchestrates the whole chain by calling `cathode.run()`, `gun.run()`, `prebuncher.run()` in order. The shared runner in `pipeline/_runner.py` builds field maps and generates plots **in-process**, but spawns a **fresh Python subprocess** (`pipeline/_launch_sim.py`) for each sim — pywarpx binds globally to one geometry (2D/RZ/3D) at first `.so` load and caches diagnostic state by name, so chaining cathode (2D) → gun (RZ) → prebuncher (RZ) in one interpreter would trip `AssertionError: Diagnostic attributes not consistent`. Inside each sim, `run_step(...)` installs a `pywarpx.callbacks.installcallback("afterstep", …)` hook to drive a tqdm progress bar and redirects WarpX's noisy per-step stdout to the pipeline log file, so the bar updates on a clean terminal line. A structured DEBUG log lands in `pipeline/logs/pipeline_<timestamp>.log`. The cathode is 2D x–z; the gun and prebuncher are RZ (cylindrically symmetric).
 
 Field maps (`CESR_gun.gdf`, `prebuncher_25D.gdf`) live in `fieldmaps/`; field-map paths are set near the top of each `build_*_field.py`. WarpX-specific gotchas accumulated per stage (negative field-scale conventions, thetaMode openPMD axis order, charge renormalization, where to stop the run to avoid MLMG aborts) are documented in each stage's `README.md` — read it before modifying a stage.
 
 **Conventions:**
 
 - Simulation outputs are git-ignored (`diags/`, `results/`, `*.h5`, `*.gdf`, logs); regenerate by re-running. Field maps in `fieldmaps/` are committed.
-- Commit convention (matches existing history): for a stage, commit its `*.py` scripts + `README.md`, and `git add -f warpx_<stage>/results/*.png` to include the result figures (since `results/` is git-ignored). Do **not** commit `diags/`, `.h5`, or logs.
+- Commit convention (matches existing history): for a stage, commit its `*.py` scripts + `README.md`, and `git add -f <stage>/results/*.png` to include the result figures (since `results/` is git-ignored). Do **not** commit `diags/`, `.h5`, or logs.
 
 ## Reference Materials
 
@@ -100,7 +100,7 @@ The tables below index what's available; `reference/Papers/README.md` indexes th
 | **Linac Sim GUI** | `reference/Linac Simulation Documentation/README.md` | Adam Bartnik's CESR Linac simulation GUI (Java). Chains a custom 1D cathode code → GPT (space charge, cylindrical symmetry) → BMAD (high-energy, 3D). Includes fieldmaps for the thermionic gun, prebunchers, solenoid lenses, and SLAC-design linac cavities. |
 | **LUME-Impact** | `reference/lume-impact Documentation/README.md` | Python interface for IMPACT-T and IMPACT-Z. Provides `Impact` and `ImpactZ` classes for input configuration, execution, output parsing, and plotting. Integrates with openPMD-beamphysics and BMAD. |
 | **openPMD-beamphysics** | `reference/openPMD-beamphysics Documentation/README.md` | Python tools for particle/field data in the openPMD beamphysics standard. `ParticleGroup` (particle data) and `FieldMesh` (field maps, e.g. `from_onaxis` for the DC gun field). |
-| **openPMD-viewer** | `reference/openPMD-viewer Documentation/README.md` | Python API + Jupyter GUI for reading/visualizing openPMD file series. `OpenPMDTimeSeries.get_field`/`get_particle`. Used to read WarpX diagnostics in `warpx_cathode/plot_cathode.py`. |
+| **openPMD-viewer** | `reference/openPMD-viewer Documentation/README.md` | Python API + Jupyter GUI for reading/visualizing openPMD file series. `OpenPMDTimeSeries.get_field`/`get_particle`. Used to read WarpX diagnostics in `cathode/plot_cathode.py`. |
 | **easygdf** | `reference/easygdf Documentation/README.md` | Pure-Python reader/writer for GPT's GDF binary format. `load`/`save` for raw blocks; `load_screens_touts`/`save_screens_touts` for GPT output; `load`/`save_initial_distribution` for GPT input distributions. |
 
 ### Key Concepts
