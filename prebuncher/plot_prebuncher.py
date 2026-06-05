@@ -121,8 +121,7 @@ def peak_current(z, w, v_beam, nbins=400):
         return 0.0
     edges = np.linspace(zlo, zhi, nbins + 1)
     dz = edges[1] - edges[0]
-    q_e = 1.602176634e-19
-    lam, _ = np.histogram(z, bins=edges, weights=w * q_e)
+    lam, _ = np.histogram(z, bins=edges, weights=w * Q_E)
     return float(lam.max() / dz * v_beam)
 
 
@@ -161,8 +160,8 @@ def analyse_case(path):
 def case_label(name):
     if name == "P0_drift":
         return (0, "drift")
-    m = re.match(r"P(\d+)_(zc|crest)$", name)
-    return (int(m.group(1)), m.group(2)) if m else None
+    m = re.match(r"P(\d+(?:\.\d+)?)_(zc|crest)$", name)   # accept fractional watts (P160.5_zc)
+    return (float(m.group(1)), m.group(2)) if m else None
 
 
 def snapshot_picks(rec, base):
@@ -387,6 +386,10 @@ def main(cases=None):
     else:
         dirs = sorted(glob.glob(f"{DIAG_ROOT}/P*"))
     cases = [(d, case_label(os.path.basename(d))) for d in dirs if os.path.isdir(d)]
+    for d, lab in cases:
+        if lab is None:
+            print(f"warning: skipping {os.path.basename(d)!r} — not a recognized case "
+                  f"dir (expected P<power>_<zc|crest> or P0_drift)", flush=True)
     cases = [(d, lab) for d, lab in cases if lab]
     if not cases:
         print(f"No case directories found under {DIAG_ROOT}/ "
@@ -467,7 +470,7 @@ def main(cases=None):
     for s in sorted(summary, key=lambda s: (s["phase"], s["power"])):
         ratio = f"{s['ratio']:7.2f}" if "ratio" in s else f"{'—':>7}"
         zbest = f"{s['zbest']*1e3:9.0f}" if "zbest" in s else f"{'—':>9}"
-        print(f"{s['name']:>10} {s['power']:5.0f} {s['phase']:>6} {s['sz0']*1e3:8.3f} "
+        print(f"{s['name']:>10} {s['power']:>5g} {s['phase']:>6} {s['sz0']*1e3:8.3f} "
               f"{s['szmin']*1e3:10.3f} {ratio} {zbest} {s['ipk_max']:7.2f} "
               f"{s['ke_end']:11.1f}")
     print("=" * 96)

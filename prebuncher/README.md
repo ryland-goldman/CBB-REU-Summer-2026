@@ -153,7 +153,7 @@ energy). The phase-space and σ_z curves show some space-charge filamentation ne
 ## Outputs
 
 Each `prebuncher.run(...)` call writes `diags/P{P}_{phase}/{fields,particles}/` when `OUTDIR`
-is left unset — the dir is auto-derived as `P{int(POWER_W)}_{PHASE}` (so `POWER_W=0` yields
+is left unset — the dir is auto-derived as `P{POWER_W:g}_{PHASE}` (so `POWER_W=0` yields
 `P0_zc`/`P0_crest`, *not* `P0_drift`). The plotter recognises the drift baseline **only** by the
 exact name `P0_drift`, so to get a baseline that the comparison treats as the P=0 reference you
 must pass it explicitly: `prebuncher.config(POWER_W=0, OUTDIR="prebuncher/diags/P0_drift")`.

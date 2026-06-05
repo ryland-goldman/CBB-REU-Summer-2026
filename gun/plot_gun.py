@@ -32,6 +32,8 @@ from openpmd_viewer import OpenPMDTimeSeries
 
 MC2 = 0.51099895e3           # electron rest energy [keV]
 GUN_FIELD = "gun/gun_field/gun_E.h5"
+GUN_VOLTAGE = 150.0e3        # [V]; module-level so gun.config(GUN_VOLTAGE=...) is reflected
+                             # in the energy-gain reference line (mirrors gun_sim.py)
 RESULTS = "gun/results"
 
 
@@ -53,8 +55,11 @@ def main():
     nz_map = ez_map.shape[1]
     z_map = np.arange(nz_map) * dz_map
     ez_axis = ez_map[0]                                  # r = 0 row
-    # Implied on-axis potential V(z) = -∫ Ez dz (referenced to the exit).
-    V_axis = -np.cumsum(ez_axis[::-1])[::-1] * dz_map
+    # Implied on-axis potential, exit-referenced (V(exit) = 0):
+    #   V(z) = -∫_exit^z Ez dz' = +∫_z^exit Ez dz'.
+    # With the accelerating field (Ez < 0 on axis) this gives V ≈ -GUN_VOLTAGE at the
+    # cathode rising to 0 at the exit — the physical negative-cathode potential.
+    V_axis = np.cumsum(ez_axis[::-1])[::-1] * dz_map
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.3), constrained_layout=True)
     a1.plot(z_map * 1e3, ez_axis / 1e6, color="C3")
@@ -124,7 +129,7 @@ def main():
     ok = np.isfinite(zmean)
     ax.plot(zmean[ok], ke_mean[ok], "o-", color="C2", ms=3, label="mean KE")
     ax.plot(zmean[ok], ke_max[ok], "^--", color="C1", ms=3, label="max KE")
-    ax.axhline(150.0, color="k", ls=":", label="150 keV (gun voltage)")
+    ax.axhline(GUN_VOLTAGE / 1e3, color="k", ls=":", label=f"{GUN_VOLTAGE/1e3:.0f} keV (gun voltage)")
     ax.set_xlabel("mean beam position  ⟨z⟩  [mm]")
     ax.set_ylabel("kinetic energy  [keV]")
     ax.set_title("Beam energy gain along the gun")
@@ -179,6 +184,9 @@ def main():
     cand = [it for it in field_iters
             if it in zmean_by_it and np.isfinite(zmean_by_it[it])
             and zmean_by_it[it] > 0.0]
+    if not cand:
+        print("skipping space_charge.png: no field snapshot with a positive-⟨z⟩ beam")
+        return
     it_sc = min(cand, key=lambda it: abs(zmean_by_it[it] - Z_TARGET))
     zmean_sc = zmean_by_it[it_sc]
 
