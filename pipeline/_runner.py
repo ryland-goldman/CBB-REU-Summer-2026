@@ -203,9 +203,15 @@ def _module_top_level_names(dotted):
 
 
 def _prepare_environment():
-    """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root."""
+    """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root.
+
+    Default 1: these stages are fastest single-threaded — small grids + a
+    memory-bandwidth-bound MLMG solve mean OpenMP threads only contend for the
+    memory bus and add barrier overhead. Keep single-threaded; see the OMP note
+    in run_pipeline.py / CLAUDE.md.
+    """
     os.environ.setdefault("OMP_NUM_THREADS",
-                          os.environ.get("OMP_THREADS", "6"))
+                          os.environ.get("OMP_THREADS", "1"))
     if os.getcwd() != _REPO_ROOT:
         os.chdir(_REPO_ROOT)
     if _REPO_ROOT not in sys.path:

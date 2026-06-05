@@ -22,7 +22,13 @@ import os
 import sys
 
 # Set OMP_NUM_THREADS BEFORE any pywarpx import (read by OpenMP at load time).
-os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "6"))
+# Default 1: these stages run fastest single-threaded — the grids are small and
+# the MLMG Poisson solve is memory-bandwidth bound, so OpenMP threads contend for
+# the same memory bus and add fork/join + barrier overhead without speeding up the
+# solve (measured: full chain ~1.1 min at OMP=1; OMP=14 showed only ~450% CPU and
+# no gain). Keep this single-threaded; only raise OMP_THREADS for the much larger
+# original-config grids, where per-thread work outgrows the overhead.
+os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
 
 # Run from the repo root so each stage's hard-coded relative paths resolve.
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
