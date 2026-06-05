@@ -438,7 +438,7 @@ def main(cases=None):
         for s in sorted([s for s in summary if s["phase"] == "zc"],
                         key=lambda s: s["power"]):
             r = s["rec"]
-            a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-", label=f"{s['power']:.0f} W")
+            a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-", label=f"{s['power']:g} W")
         a1.axvline(Z_GAP_CENTER * 1e3, color="C3", ls=":")
         a1.set_xlabel("⟨z⟩  [mm]"); a1.set_ylabel("σ_z  [mm]")
         a1.set_title("Bunch length: drift vs. zero-crossing cavity"); a1.legend(fontsize=8)
