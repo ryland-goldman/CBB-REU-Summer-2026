@@ -63,6 +63,15 @@ DIAG_DIR = "cathode/diags"
 # ── Run length ─────────────────────────────────────────────────────────────────
 MAX_STEPS = 2000                     # ~4× the gap-fill time → reaches steady state
 
+# ── Performance knobs (tunable via cathode.config(...); see pipeline/run_pipeline.py) ─
+# Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
+REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
+MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
+PPC = 10                             # macroparticles per cell (PseudoRandomLayout)
+CFL = 0.4                            # dt = CFL · dz / v_final
+DIAG_PERIOD = None                   # None → dense-early union slice (keeps figs 3,4);
+                                     # an int → uniform period for both diagnostics
+
 
 def main():
     # Child–Langmuir current density for electrons across a planar gap:
@@ -96,10 +105,12 @@ def main():
         warpx_blocking_factor=8,
     )
 
-    solver = picmi.ElectrostaticSolver(
-        grid=grid, method="Multigrid", required_precision=1e-5,
-        warpx_self_fields_verbosity=0,                # silence MLMG per-iteration chatter
-    )
+    solver_kw = dict(grid=grid, method="Multigrid",
+                     required_precision=REQUIRED_PRECISION,
+                     warpx_self_fields_verbosity=0)   # silence MLMG per-iteration chatter
+    if MAX_ITERS:                                     # omit when None → PICMI default
+        solver_kw["maximum_iterations"] = MAX_ITERS
+    solver = picmi.ElectrostaticSolver(**solver_kw)
 
     # ── Cathode emission (continuous space-charge-limited flux) ─────────────────
     dz = gap_d / nz
@@ -121,16 +132,19 @@ def main():
     )
 
     # ── Time step / duration ────────────────────────────────────────────────────
-    dt = 0.4 * dz / v_final
+    dt = CFL * dz / v_final
 
     # ── Diagnostics (openPMD) ───────────────────────────────────────────────────
     # Sample densely through the gap-fill transient (≤ 0.07 ns ≈ step 470, since
     # dt ≈ 1.49e-13 s) and sparsely once the diode reaches steady state.  WarpX's
     # interval syntax unions the slices: every 5 steps to 470, then every 80.
+    # DIAG_PERIOD=None keeps the dense-early union slice (figs 3/4 need it); an int
+    # override applies one uniform period (the field-diag period must be a string).
+    field_period = str(DIAG_PERIOD) if DIAG_PERIOD else f"0:470:5, 470:{MAX_STEPS}:80"
     field_diag = picmi.FieldDiagnostic(
         name="fields",
         grid=grid,
-        period=f"0:470:5, 470:{MAX_STEPS}:80",
+        period=field_period,
         data_list=["phi", "rho", "E", "J"],
         write_dir=DIAG_DIR,
         warpx_format="openpmd",
@@ -140,7 +154,7 @@ def main():
     )
     part_diag = picmi.ParticleDiagnostic(
         name="particles",
-        period=200,
+        period=(DIAG_PERIOD or 200),
         species=[electrons],
         data_list=["position", "momentum", "weighting"],
         write_dir=DIAG_DIR,
@@ -157,7 +171,7 @@ def main():
     )
     sim.add_species(
         electrons,
-        layout=picmi.PseudoRandomLayout(n_macroparticles_per_cell=10, grid=grid),
+        layout=picmi.PseudoRandomLayout(n_macroparticles_per_cell=PPC, grid=grid),
     )
     sim.add_diagnostic(field_diag)
     sim.add_diagnostic(part_diag)

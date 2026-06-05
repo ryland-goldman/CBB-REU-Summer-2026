@@ -31,7 +31,7 @@ python pipeline/run_pipeline.py
 
 ## Configuration
 
-`run_pipeline.py` is just three `.run()` calls. To change behaviour, either:
+`run_pipeline.py` is three `.run()` calls plus a `config()` header. To change behaviour, either:
 
 - **Comment out** the stages you don't want to re-run (each downstream stage still reads the
   previous stage's saved openPMD output from disk).
@@ -46,6 +46,21 @@ python pipeline/run_pipeline.py
 
   Keys must match the module-level constants in each `<stage>/*.py` — `config()` writes them
   through with `setattr`.
+- **Performance knobs (accuracy ↔ speed):** `run_pipeline.py` has a **PERFORMANCE KNOBS**
+  block — a *Balanced* profile (~1.7× faster, ~5 min) active by default, plus commented
+  *Conservative* (~1.3×) and *Aggressive* (~2.2×) presets. Measured runtime split is cathode 7%,
+  gun 17%, **prebuncher 75%** (its self-field MLMG solve dominates). The two RZ stages differ
+  (measured): the **gun** has near-isotropic cells and scales ≈ `nz²` (smaller `nz` ⇒ fewer cells
+  *and*, via `dz=zmax/nz`, fewer steps — halving `nz` ≈ 4× faster). The **prebuncher** is the
+  opposite — its long-thin box has anisotropic cells and a convergence-bound MLMG solve, so
+  coarsening `NZ` *slows* the per-step solve and under-resolves the ~1 mm bunch; keep `NZ=1024`
+  and speed it via `CFL` (fewer steps) and `MAX_ITERS`/`REQUIRED_PRECISION` (cheaper solve). The
+  prebuncher's space-charge solve over the full 1.3 m transit is the irreducible runtime floor.
+  Per-stage knobs (all `config()`-overridable module constants): grid (`nx/nz`, `nr/nz`, `NR/NZ`),
+  run length (`MAX_STEPS`, `CFL`, `TRANSIT_MARGIN`, `AVG_SPEED_FRAC`), Poisson solve
+  (`REQUIRED_PRECISION`, `MAX_ITERS`), macroparticles (`PPC` for the cathode, `MAX_PART` downsample
+  for gun/prebuncher), and diagnostic dumps (`N_DIAGS`, `DIAG_PERIOD`). Comment the Balanced block
+  to restore the exact original (8.8-min) physics.
 - **OMP threads:** set the `OMP_THREADS` environment variable (default 6; the MLMG solve is
   bandwidth-bound, so all cores is slower). The shim sets `OMP_NUM_THREADS` before any pywarpx
   import.

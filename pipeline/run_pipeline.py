@@ -36,10 +36,24 @@ import prebuncher
 
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 
-# ── Operating-point overrides (optional; defaults live in the stage modules) ──
+# ── Operating-point overrides (physics; defaults live in the stage modules) ──
 cathode.config(V_anode=50.0)
 gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=0.1e-9)
 prebuncher.config(POWER_W=800, PHASE="zc")
+
+# ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
+#    reason NZ must stay at 1024: see pipeline/README.md § Configuration. ──
+# Balanced profile: ACTIVE (~1.7×, ~5 min). Comment these 3 lines for the baseline.
+cathode.config(PPC=6, REQUIRED_PRECISION=3e-5)
+gun.config(nz=256, MAX_PART=50000, REQUIRED_PRECISION=1e-4)
+prebuncher.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
+# Conservative (~1.3×, near-identical):
+# gun.config(MAX_PART=80000, REQUIRED_PRECISION=1e-4)
+# prebuncher.config(REQUIRED_PRECISION=2e-4, MAX_ITERS=400)
+# Aggressive (~2.2×, looser space-charge solve):
+# cathode.config(nz=48, PPC=4, REQUIRED_PRECISION=5e-5, MAX_STEPS=1200)
+# gun.config(nz=192, MAX_PART=40000, REQUIRED_PRECISION=3e-4, N_DIAGS=20)
+# prebuncher.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
 
 
 def _final_beam_summary(diag):
