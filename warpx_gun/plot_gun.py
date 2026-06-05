@@ -1,8 +1,9 @@
 """
 Figures for the WarpX RZ CESR-gun simulation (gun_sim.py).
 
-Reads the applied gun field (warpx_gun/gun_field/gun_E.h5) and the openPMD beam
-output under warpx_gun/diags/, and writes four figures to warpx_gun/results/:
+Reads the applied gun field (warpx_gun/gun_field/gun_E.h5), the dumped beam
+self-field (warpx_gun/diags/fields/: phi, rho), and the openPMD beam output
+(warpx_gun/diags/particles/), and writes six figures to warpx_gun/results/:
 
   1. gun_field.png     — on-axis Ez(z) and implied potential of the scaled
                          CESR_gun.gdf map: the accelerating field the beam sees.
@@ -11,6 +12,10 @@ output under warpx_gun/diags/, and writes four figures to warpx_gun/results/:
   3. energy_gain.png   — mean/max kinetic energy of the beam vs. ⟨z⟩, climbing
                          toward the ~150 keV gun voltage.
   4. exit_phase_space.png — longitudinal (z–KE) and the final energy spectrum.
+  5. beam_envelope.png — RMS radial size σ_r and normalized transverse emittance
+                         εn,x vs. ⟨z⟩: the near-cathode focusing, quantified.
+  6. space_charge.png  — r–z maps of the beam self charge density ρ and its
+                         space-charge potential well φ at a near-launch snapshot.
 
 Run with:
     conda run -n CBB python warpx_gun/plot_gun.py
@@ -65,20 +70,33 @@ ts = OpenPMDTimeSeries("warpx_gun/diags/particles")
 iters = ts.iterations
 
 t_ns, zmean, ke_mean, ke_max, n_live = [], [], [], [], []
+sig_r, emit_nx = [], []           # for beam_envelope.png (filled in the same loop)
 for i, it in enumerate(iters):
-    z, ux, uy, uz = ts.get_particle(
-        ["z", "ux", "uy", "uz"], species="electrons", iteration=it)
+    z, x, ux, uy, uz = ts.get_particle(
+        ["z", "x", "ux", "uy", "uz"], species="electrons", iteration=it)
     n_live.append(len(z))
     t_ns.append(ts.t[i] * 1e9)
     if len(z) == 0:
         zmean.append(np.nan); ke_mean.append(np.nan); ke_max.append(np.nan)
+        sig_r.append(np.nan); emit_nx.append(np.nan)
         continue
     ke = (gamma_of(ux, uy, uz) - 1.0) * MC2
     zmean.append(z.mean() * 1e3)
     ke_mean.append(ke.mean()); ke_max.append(ke.max())
+    # ── Envelope diagnostics (one transverse plane; RZ ⇒ x and y are equivalent) ──
+    # RMS radial size: in RZ the cloud is azimuthally symmetric, so the radial RMS
+    # equals σ_x = sqrt(⟨x²⟩) (the per-plane RMS), reported in mm.
+    sig_r.append(np.sqrt(np.mean(x**2)) * 1e3)
+    # Normalized transverse emittance εn,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²): a phase-space
+    # area that is invariant under linear (and acceleration) forces; growth ⇒ nonlinear
+    # space-charge / field aberrations. ux is the normalized momentum γβx, so x[m]·ux
+    # gives [m·rad]; ×1e6 → mm·mrad.
+    e2 = np.mean(x**2) * np.mean(ux**2) - np.mean(x * ux)**2
+    emit_nx.append(np.sqrt(max(e2, 0.0)) * 1e6)
 
 t_ns = np.array(t_ns); zmean = np.array(zmean)
 ke_mean = np.array(ke_mean); ke_max = np.array(ke_max)
+sig_r = np.array(sig_r); emit_nx = np.array(emit_nx)
 print(f"beam: {n_live[0]} launched, {n_live[-1]} at last dump; "
       f"peak ⟨KE⟩ {np.nanmax(ke_mean):.1f} keV, max KE {np.nanmax(ke_max):.1f} keV")
 
@@ -127,3 +145,102 @@ a2.set_xlabel("KE  [keV]"); a2.set_ylabel("count")
 a2.set_title("Energy spectrum at last dump"); a2.legend()
 fig.savefig(f"{RESULTS}/exit_phase_space.png", dpi=140)
 print(f"wrote {RESULTS}/exit_phase_space.png")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fig 5: beam_envelope.png — RMS radial size σ_r and emittance εn,x vs ⟨z⟩
+# ──────────────────────────────────────────────────────────────────────────────
+# beam_rz.png shows the near-cathode pinch only qualitatively (three snapshots);
+# this quantifies it. The transverse envelope σ_r(z) contracts as the diverging
+# cathode emission is focused by the radial gun field, while the normalized
+# emittance εn,x tracks whether that focusing is clean (flat) or aberrated
+# (growing). Both are computed in the snapshot loop above; here we just plot them
+# against the mean longitudinal position ⟨z⟩, so the x-axis reads as "down the gun".
+# ══════════════════════════════════════════════════════════════════════════════
+ok = np.isfinite(zmean) & np.isfinite(sig_r)
+fig, ax = plt.subplots(figsize=(7.6, 4.6), constrained_layout=True)
+l1, = ax.plot(zmean[ok], sig_r[ok], "o-", color="C0", ms=3,
+              label=r"RMS size  $\sigma_r=\sqrt{\langle x^2\rangle}$")
+ax.set_xlabel("mean beam position  ⟨z⟩  [mm]")
+ax.set_ylabel(r"RMS radial size  $\sigma_r$  [mm]", color="C0")
+ax.tick_params(axis="y", labelcolor="C0")
+ax.set_title("Transverse envelope and emittance along the gun")
+# Twin axis: normalized transverse emittance (the phase-space area).
+ax2 = ax.twinx()
+l2, = ax2.plot(zmean[ok], emit_nx[ok], "s--", color="C3", ms=3,
+               label=r"norm. emittance  $\varepsilon_{n,x}$")
+ax2.set_ylabel(r"$\varepsilon_{n,x}$  [mm·mrad]", color="C3")
+ax2.tick_params(axis="y", labelcolor="C3")
+ax.legend(handles=[l1, l2], loc="best")
+fig.savefig(f"{RESULTS}/beam_envelope.png", dpi=140)
+print(f"wrote {RESULTS}/beam_envelope.png")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fig 6: space_charge.png — the beam SELF-FIELD (dumped ρ and φ) at near launch
+# ──────────────────────────────────────────────────────────────────────────────
+# Nothing else in this file plots warpx_gun/diags/fields. That is the beam's OWN
+# space charge — distinct from the applied gun field in gun_field.png. The README
+# renormalizes the bunch to 0.1 nC precisely because this self-field would
+# otherwise dwarf the gun field; here we make it visible. We pick an early
+# iteration where the dense bunch is still near the cathode (largest self-field),
+# and show two r–z half-plane (r ≥ 0) maps:
+#   • ρ(r,z): the bunch self charge density (electrons ⇒ ρ < 0), and
+#   • φ(r,z): the space-charge potential well it digs in the on-axis potential.
+# We read the openPMD field dump with the raw openpmd_api mode-0 reader (same
+# pattern as the applied-field reader at the top of this file): for RZ thetaMode
+# each scalar loads as (1, nz, nr); [0] drops the mode axis to a half-plane slice.
+# ══════════════════════════════════════════════════════════════════════════════
+# Choose a near-launch field snapshot whose dense bunch has just cleared the
+# cathode wall: the self-field is largest near launch, but the very first dumps
+# pin the cloud against z = 0 where it is a single-cell sliver. We target the
+# field dump whose bunch ⟨z⟩ is closest to ~0.4 mm — a few cells off the wall, so
+# the bunch resolves as a blob while still sitting at the cathode end of the gun.
+fs = io.Series("warpx_gun/diags/fields/openpmd_%06T.h5", io.Access.read_only)
+field_iters = [int(k) for k in fs.iterations]
+particle_iters = list(iters)
+# ⟨z⟩ keyed by iteration (mm), restricted to iterations that also have field dumps.
+zmean_by_it = {int(it): zm for it, zm in zip(particle_iters, zmean)}
+Z_TARGET = 0.4                                  # mm — near-cathode but off the wall
+cand = [it for it in field_iters
+        if it in zmean_by_it and np.isfinite(zmean_by_it[it])
+        and zmean_by_it[it] > 0.0]            # skip the t=0 launch (cloud on the wall)
+it_sc = min(cand, key=lambda it: abs(zmean_by_it[it] - Z_TARGET))
+zmean_sc = zmean_by_it[it_sc]
+
+itr = fs.iterations[it_sc]
+t_sc = itr.time * itr.time_unit_SI * 1e9            # snapshot time [ns]
+rho_m = itr.meshes["rho"]; phi_m = itr.meshes["phi"]
+rho = rho_m[io.Mesh_Record_Component.SCALAR].load_chunk()
+phi = phi_m[io.Mesh_Record_Component.SCALAR].load_chunk()
+fs.flush()
+rho = rho[0]; phi = phi[0]                           # (nz, nr) mode-0 half-plane
+dz_sc, dr_sc = rho_m.grid_spacing                    # axis order ['z','r']
+nz_sc, nr_sc = rho.shape
+# r–z extent in mm, with z on the horizontal axis (matching beam_rz.png).
+extent = [0.0, nz_sc * dz_sc * 1e3, 0.0, nr_sc * dr_sc * 1e3]   # [z0,z1,r0,r1] mm
+# Transpose to (nr, nz) so imshow rows = r (vertical), cols = z (horizontal).
+rho_img = rho.T * 1e6                                 # C/m³ → µC/m³ for readability
+phi_img = phi.T                                       # V
+
+fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.6, 6.4), constrained_layout=True,
+                             sharex=True)
+# ρ: electron self charge density (negative). Symmetric color scale about 0.
+rmax = np.nanmax(np.abs(rho_img)) or 1.0
+im1 = a1.imshow(rho_img, origin="lower", extent=extent, aspect="auto",
+                cmap="RdBu_r", vmin=-rmax, vmax=rmax)
+a1.set_ylabel("r  [mm]")
+a1.set_title(f"Beam self charge density  ρ(r, z)   "
+             f"(t = {t_sc:.3f} ns,  ⟨z⟩ = {zmean_sc:.3f} mm)")
+cb1 = fig.colorbar(im1, ax=a1); cb1.set_label(r"ρ  [µC/m$^3$]")
+# φ: the space-charge potential well the bunch digs (φ < 0 for an electron cloud).
+im2 = a2.imshow(phi_img, origin="lower", extent=extent, aspect="auto",
+                cmap="viridis")
+a2.set_xlabel("z  [mm]"); a2.set_ylabel("r  [mm]")
+a2.set_title("Space-charge potential well  φ(r, z)   (beam self-field only)")
+cb2 = fig.colorbar(im2, ax=a2); cb2.set_label("φ  [V]")
+# Zoom both panels onto the near-cathode region where the bunch actually sits.
+z_zoom = max(5.0, 6.0 * zmean_sc)                    # mm; show a few mm past ⟨z⟩
+a1.set_xlim(0.0, min(z_zoom, extent[1]))
+fig.suptitle("Beam self-field near launch (separate from the applied gun field)",
+             fontsize=12)
+fig.savefig(f"{RESULTS}/space_charge.png", dpi=140)
+print(f"wrote {RESULTS}/space_charge.png")

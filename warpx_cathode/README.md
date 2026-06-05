@@ -100,6 +100,20 @@ On-axis charge density `|ρ|(z, t)` (√ scale) over the turn-on transient: the
 space-charge cloud building up and filling the gap (gap-fill ≈ 480 steps), drawn
 with `pcolormesh` on the true (non-uniform) time coordinates.
 
+### `field_lines.png` — the 2D cathode-edge field transition
+φ equipotential contours + E-field streamlines across the gap, with a zoom on the `+x` edge. At the
+cathode edges `x = ±6 mm` the equipotentials **crowd together** and the streamlines **splay** as
+`|E|` climbs from its space-charge-suppressed value on the emitting surface to the full vacuum field
+outside — the field **transition** at the emission edge (monotonic, no overshoot above `V/d`), the
+finite-cathode effect the 1D Child–Langmuir picture omits. (Contour companion to the `φ` panel of
+`cathode_2d.png`.)
+
+### `emission_phase_space.png` — intrinsic thermal emittance
+Transverse phase space `x` vs. `ux = γβ_x` and the histogram of `ux`, from the last particle
+snapshot. The RMS normalized emittance `εn,x ≈ 1.57 mm·mrad` (annotated) is the source's intrinsic
+thermal emittance, set by the 1200 K cathode — the beam quality handed to the gun. The run
+reproduces the expected thermal momentum spread `√(kT/mₑc²)`.
+
 ---
 
 ## Notes & possible extensions

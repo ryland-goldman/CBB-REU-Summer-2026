@@ -1,7 +1,7 @@
 """
 Figures for the finite-cathode space-charge-limited diode (cathode_diode.py).
 
-Reads the openPMD output under warpx_cathode/diags/ and writes four figures to
+Reads the openPMD output under warpx_cathode/diags/ and writes six figures to
 warpx_cathode/results/:
 
   1. cathode_2d.png       — 2D maps of charge density, potential, |E|: shows the
@@ -12,6 +12,12 @@ warpx_cathode/results/:
                             even though we inject 2× J_CL.
   4. rho_z_time.png       — on-axis charge density rho(z, t): build-up of the
                             space-charge cloud filling the gap during turn-on.
+  5. field_lines.png      — equipotentials + E-field streamlines over the gap,
+                            with a zoom on the +x cathode edge, making the 2D
+                            edge field transition directly visible.
+  6. emission_phase_space.png — the cathode's intrinsic thermal transverse phase
+                            space (x vs. ux = γβ_x) and the RMS normalized
+                            emittance handed downstream to the gun.
 
 Run with:
     conda run -n CBB python warpx_cathode/plot_cathode.py
@@ -178,9 +184,150 @@ ax.set_title("On-axis charge density vs. time — space-charge cloud fills the g
 fig.savefig(f"{RESULTS}/rho_z_time.png", dpi=140)
 print(f"wrote {RESULTS}/rho_z_time.png")
 
+# ════════════════════════════════════════════════════════════════════════════════
+# Figure 5 — equipotentials + E-field streamlines: the 2D cathode-EDGE transition
+# ════════════════════════════════════════════════════════════════════════════════
+# Planar Child–Langmuir theory is purely 1D: flat equipotentials, straight Ez.
+# But the cathode is FINITE (emits only |x| < R), so the space-charge-suppressed
+# emitting strip abruptly meets the full vacuum field outside x = ±R.  At that
+# boundary the equipotentials crowd together and the field lines splay outward as
+# |E| climbs from its suppressed value on the emitting surface (≈0 at the cathode)
+# up to the uniform vacuum field outside — the field TRANSITION at the emission
+# edge that the planar theory cannot show.  (It is a transition, not an
+# overshoot: |E| rises monotonically to the vacuum value V/d and does not exceed
+# it.)  This figure makes that visible with φ contours overlaid on E-field
+# streamlines, in the full gap and zoomed onto the +x edge.
+#
+# streamplot needs 1-D coordinate vectors whose lengths match the array axes:
+# the field arrays are (nz, nx), so the call is streamplot(x_mm, z_mm, Ex, Ez)
+# with len(x_mm)=nx (columns) and len(z_mm)=nz (rows).
+x_mm = x * 1e3                       # nx, transverse [mm]
+z_mm = z * 1e3                       # nz, longitudinal [mm]
+# E in kV/m for the streamline colour/speed scale; sign/orientation untouched.
+Ex_k, Ez_k = ex * 1e-3, ez * 1e-3
+speed = np.sqrt(Ex_k**2 + Ez_k**2)   # |E| [kV/m], colours the streamlines
+phi_levels = np.linspace(phi.min(), V_anode, 12)   # ~12 equipotential lines
+
+fig, (p1, p2) = plt.subplots(1, 2, figsize=(13, 4.8), constrained_layout=True)
+
+
+def draw_field(ax, lw_speed=True):
+    """φ contours + E streamlines on the (x, z) gap; shared by both panels."""
+    cs = ax.contour(x_mm, z_mm, phi, levels=phi_levels,
+                    colors="0.25", linewidths=0.8)
+    ax.clabel(cs, inline=True, fontsize=6, fmt="%.0f V")
+    # streamline line width grows with |E| so the edge transition reads visually
+    lw = (1.4 * speed / speed.max() + 0.3) if lw_speed else 1.0
+    strm = ax.streamplot(x_mm, z_mm, Ex_k, Ez_k, color=speed, cmap="inferno",
+                         density=1.4, linewidth=lw, arrowsize=0.8)
+    # emitting patch (z = 0, |x| < R) as a white bar; cathode edges as dotted lines
+    ax.plot([-R_cathode * 1e3, R_cathode * 1e3], [0, 0], "w-", lw=4,
+            solid_capstyle="butt", zorder=5)
+    for xe in (-R_cathode * 1e3, R_cathode * 1e3):
+        ax.axvline(xe, color="cyan", ls=":", lw=1.2, zorder=4)
+    ax.set_xlabel("x  [mm]")
+    return strm
+
+
+# Panel 1 — full gap: equipotentials are flat in the cathode interior and bend
+# sharply right at x = ±R, where the emitting strip ends.
+strm = draw_field(p1)
+p1.set_ylabel("z  [mm]   (cathode → anode)")
+p1.set_xlim(x_mm.min(), x_mm.max())
+p1.set_ylim(0, z_mm.max())
+p1.set_title("Full gap: equipotentials + E streamlines")
+
+# Panel 2 — zoom on the +x edge (x ≈ 3–9 mm): the equipotential crowding and
+# streamline splay at x = +6 mm are the field transition, magnified.
+draw_field(p2)
+p2.set_xlim(3.0, 9.0)
+p2.set_ylim(0, z_mm.max())
+p2.set_xlabel("x  [mm]")
+p2.set_title("Zoom on +x cathode edge (x = +6 mm)")
+
+fig.colorbar(strm.lines, ax=[p1, p2], shrink=0.85, label="|E|  [kV/m]")
+fig.suptitle("2D field at the finite cathode — equipotentials crowd and field "
+             "lines splay at the edges x = ±6 mm (the field transition at the "
+             "emission edge)", fontsize=12)
+fig.savefig(f"{RESULTS}/field_lines.png", dpi=140)
+print(f"wrote {RESULTS}/field_lines.png")
+plt.close(fig)
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Figure 6 — intrinsic thermal transverse phase space + emittance of the source
+# ════════════════════════════════════════════════════════════════════════════════
+# The 1200 K cathode emits electrons with a small Maxwellian transverse momentum
+# spread.  That thermal spread is the source's INTRINSIC (thermal) emittance — the
+# irreducible beam quality that every downstream stage (gun, prebuncher) inherits.
+# We read the last particle snapshot and form the transverse trace space x vs.
+# ux, where openPMD/WarpX store ux = γβ_x already (normalized transverse momentum),
+# so the RMS normalized emittance is εn,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) directly.
+tsp = OpenPMDTimeSeries("warpx_cathode/diags/particles")
+itp = tsp.iterations[-1]                 # last particle snapshot
+xp, uxp, uzp, wp = tsp.get_particle(["x", "ux", "uz", "w"], iteration=itp)
+
+# Weighted central moments (all macroparticles carry equal weight here, but weight
+# the moments anyway so the emittance is correct for any weighting).
+xbar  = np.average(xp,  weights=wp)
+uxbar = np.average(uxp, weights=wp)
+x2  = np.average((xp - xbar) ** 2, weights=wp)
+ux2 = np.average((uxp - uxbar) ** 2, weights=wp)
+xux = np.average((xp - xbar) * (uxp - uxbar), weights=wp)
+emit_n = np.sqrt(max(x2 * ux2 - xux ** 2, 0.0))      # [m·rad]; ux is γβ_x
+emit_n_mm_mrad = emit_n * 1e6                         # m·rad → mm·mrad
+
+# Display the transverse momentum in keV/c:  p_x = γβ_x · m_e c²  (in keV/c, since
+# p_x·c = γβ_x·m_ec² is an energy).  The emittance above stays in γβ (mm·mrad).
+from scipy.constants import k as k_B, c
+MC2_keV = m_e * c ** 2 / q_e / 1e3                   # electron rest energy [keV]
+px = uxp * MC2_keV                                   # transverse momentum [keV/c]
+# Expected thermal momentum scale: p_th = √(m_e kT) = √(kT/m_ec²)·m_ec², i.e. in
+# keV/c, p_th = √(kT[keV]·m_ec²[keV]).
+T_cathode = 1200.0
+u_th  = np.sqrt(k_B * T_cathode / (m_e * c ** 2))    # rms of γβ_x (dimensionless)
+p_th  = u_th * MC2_keV                               # rms thermal momentum [keV/c]
+
+fig, (b1, b2) = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True)
+
+# Panel 1 — transverse phase space x [mm] vs p_x [keV/c], density via hexbin.
+hb = b1.hexbin(xp * 1e3, px, gridsize=70, cmap="viridis", mincnt=1)
+fig.colorbar(hb, ax=b1, label="macroparticles / bin")
+b1.set_xlabel("x  [mm]")
+b1.set_ylabel(r"$p_x$  [keV/$c$]")
+b1.set_title("Transverse phase space at the cathode")
+# Report the normalized emittance — the beam quality handed to the gun.
+b1.text(0.03, 0.97,
+        rf"$\varepsilon_{{n,x}} = {emit_n_mm_mrad:.3f}$ mm·mrad"
+        "\n" rf"$\sqrt{{\langle x^2\rangle}} = {np.sqrt(x2)*1e3:.2f}$ mm",
+        transform=b1.transAxes, va="top", ha="left", fontsize=9,
+        bbox=dict(boxstyle="round", fc="white", alpha=0.85))
+
+# Panel 2 — histogram of p_x: the thermal (1200 K) momentum spread [keV/c], with
+# the expected ±√(kT·m_ec²) scale overlaid.
+b2.hist(px, bins=120, color="C0", alpha=0.8, density=True)
+for s, lbl in ((+1, r"$\pm\sqrt{kT\,m_ec^2}$"), (-1, None)):
+    b2.axvline(s * p_th, color="k", ls="--", lw=1.2, label=lbl)
+b2.set_xlabel(r"$p_x$  [keV/$c$]")
+b2.set_ylabel("probability density")
+b2.set_title(f"Thermal transverse momentum spread ({T_cathode:.0f} K)")
+b2.legend(loc="upper right", fontsize=9)
+b2.text(0.03, 0.97,
+        rf"rms $p_x = {np.sqrt(ux2)*MC2_keV:.3f}$ keV/$c$"
+        "\n" rf"$\sqrt{{kT\,m_ec^2}} = {p_th:.3f}$ keV/$c$",
+        transform=b2.transAxes, va="top", ha="left", fontsize=9,
+        bbox=dict(boxstyle="round", fc="white", alpha=0.85))
+
+fig.suptitle("Intrinsic thermal emittance of the cathode — the source beam "
+             "quality inherited by the downstream gun", fontsize=12)
+fig.savefig(f"{RESULTS}/emission_phase_space.png", dpi=140)
+print(f"wrote {RESULTS}/emission_phase_space.png")
+plt.close(fig)
+
 # ── Quantitative sanity check ───────────────────────────────────────────────────
 J_final = J_trans[-1]
 print(f"\nJ_CL (theory)          = {J_CL:8.1f} A/m²")
 print(f"injected               = {over_inject*J_CL:8.1f} A/m²")
 print(f"transmitted (steady)   = {J_final:8.1f} A/m²  "
       f"({100*J_final/J_CL:.0f}% of J_CL)")
+print(f"thermal emittance εn,x = {emit_n_mm_mrad:8.4f} mm·mrad  "
+      f"(rms u_x = {np.sqrt(ux2)*1e3:.3f}e-3 vs √(kT/mc²) = {u_th*1e3:.3f}e-3)")

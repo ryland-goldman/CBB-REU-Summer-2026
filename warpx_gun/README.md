@@ -106,6 +106,12 @@ single-pass gun demo, but note it if pushing to higher voltage.
 3. **`energy_gain.png`** — mean and max kinetic energy vs. ⟨z⟩, climbing toward ~150 keV.
 4. **`exit_phase_space.png`** — longitudinal `z–KE` phase space and the energy spectrum at the
    last dump.
+5. **`beam_envelope.png`** — RMS radial size `σ_r = √⟨x²⟩` and normalized transverse emittance
+   `εn,x` vs. `⟨z⟩`: the near-cathode radial focusing of `beam_rz.png` made quantitative, plus the
+   space-charge / aberration emittance growth along the gun.
+6. **`space_charge.png`** — `r–z` maps of the beam **self-field** (`ρ` and the space-charge
+   potential well `φ`, ≈ −250 V) at a near-launch snapshot — the dumped self-field nothing else
+   plots, and the well that motivates renormalizing the bunch to 0.1 nC.
 
 ## Notes / extensions
 

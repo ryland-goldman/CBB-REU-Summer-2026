@@ -112,7 +112,12 @@ def load_cathode_bunch():
     print(f"Imported {r.size} macroparticles from cathode (iter {it}); "
           f"renormalized to {BUNCH_CHARGE*1e9:.3f} nC, r ≤ {r.max()*1e3:.2f} mm",
           flush=True)
-    return dict(x=xpos, y=ypos, z=zpos, ux=uxn, uy=uyn, uz=uz, w=w)
+    # openPMD ux/uy/uz are the dimensionless normalized momenta γβ; PICMI's
+    # ParticleListDistribution wants proper velocity u = γβc in m/s, so ×c.
+    # (Without this the beam is injected essentially at rest and the cathode's
+    # thermal transverse momentum — hence its emittance — is lost; the energy
+    # gain is insensitive because the cathode KE ≪ 150 keV gun voltage.)
+    return dict(x=xpos, y=ypos, z=zpos, ux=uxn * c, uy=uyn * c, uz=uz * c, w=w)
 
 
 bunch = load_cathode_bunch()
