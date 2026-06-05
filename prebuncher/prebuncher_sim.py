@@ -49,6 +49,16 @@ MAX_PART = 50000                 # downsample the gun snapshot (reweighted) for 
 RNG_SEED = 0
 CFL = 0.8                        # dt = CFL · Δz / v_beam
 
+# ── Performance knobs (tunable via prebuncher.config(...); see run_pipeline.py) ─
+# This stage dominates the pipeline (≈75% of runtime). Runtime ≈ NZ² (per-step cost
+# ∝ cells, and dz=zmax/NZ ⇒ fewer derived steps as NZ drops). Defaults reproduce the
+# original run; lower them to trade accuracy for speed.
+REQUIRED_PRECISION = 1e-4        # MLMG relative tolerance (relaxed for the long-thin box)
+MAX_ITERS = 500                  # MLMG iteration cap
+MAX_STEPS = 0                    # 0 → auto-derive from transit; >0 → fixed
+TRANSIT_MARGIN = 0.97            # stop just before the bunch centre reaches the exit
+N_DIAGS = 60                     # number of openPMD dumps over the run
+
 # ── Domain (RZ, single azimuthal mode — the cavity field is m = 0) ─────────────
 RMAX = 0.036                     # covers the field-map bore (0–36.07 mm)
 ZMAX = 1.30                      # entrance drift + 305 mm cavity + bunching drift
@@ -119,6 +129,10 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
         from . import _derive_outdir
         outdir = _derive_outdir(power, phase)
 
+    # Recompute OMEGA here (not just at import) so a config(F_RF=...) override stays
+    # consistent — the module-level OMEGA is frozen at import, before the override lands.
+    omega = 2.0 * np.pi * F_RF
+
     bunch, v_beam, ke_mean = load_gun_bunch()
 
     # ── RF amplitude and phase ────────────────────────────────────────────────
@@ -132,9 +146,9 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     # crest: φ = -ω t_gap + π    (-cos = +1 -> maximum energy gain, little bunching)
     t_gap = (Z_GAP_CENTER - Z_INJECT) / v_beam
     if phase == "zc":
-        phi = -OMEGA * t_gap + np.pi / 2.0
+        phi = -omega * t_gap + np.pi / 2.0
     else:
-        phi = -OMEGA * t_gap + np.pi
+        phi = -omega * t_gap + np.pi
     print(f"Case: P={power:g} W, phase={phase}, scale={scale:.3f}, "
           f"f_RF={F_RF/1e6:.2f} MHz, φ={phi:.3f} rad, t_gap={t_gap*1e9:.3f} ns",
           flush=True)
@@ -155,8 +169,8 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     # space-charge field is a small perturbation on the 148 keV beam, so a
     # relative precision of 1e-4 is ample and far cheaper than 1e-5.
     solver = picmi.ElectrostaticSolver(
-        grid=grid, method="Multigrid", required_precision=1e-4,
-        maximum_iterations=500, warpx_self_fields_verbosity=0,
+        grid=grid, method="Multigrid", required_precision=REQUIRED_PRECISION,
+        maximum_iterations=MAX_ITERS, warpx_self_fields_verbosity=0,
     )
 
     # ── Cavity field: 1-J map × scale × cos/sin(ω t + φ), read from file ───────
@@ -166,8 +180,8 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     # P = 0 is the drift-only baseline (no cavity) used to isolate bunching.
     prebuncher = None
     if power > 0:
-        e_time = f"{scale:.10e}*cos({OMEGA:.10e}*t + ({phi:.10e}))"
-        b_time = f"{scale:.10e}*sin({OMEGA:.10e}*t + ({phi:.10e}))"
+        e_time = f"{scale:.10e}*cos({omega:.10e}*t + ({phi:.10e}))"
+        b_time = f"{scale:.10e}*sin({omega:.10e}*t + ({phi:.10e}))"
         prebuncher = picmi.LoadAppliedField(
             read_fields_from_path=PREBUNCH_FIELD,
             load_E=True, load_B=True,
@@ -200,13 +214,13 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
                    + (zmax - Z_GAP_CENTER) / v_final)
     else:
         transit = (zmax - Z_INJECT) / v_beam
-    n_steps = max_steps or int(0.97 * transit / dt)
+    n_steps = max_steps or MAX_STEPS or int(TRANSIT_MARGIN * transit / dt)
     print(f"dt = {dt:.3e} s, max_steps = {n_steps}, "
           f"RF period = {1/F_RF*1e9:.2f} ns ({1/F_RF/dt:.0f} steps/period)",
           flush=True)
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
-    period = max(1, n_steps // 60)
+    period = max(1, n_steps // N_DIAGS)
     field_diag = picmi.FieldDiagnostic(
         name="fields", grid=grid, period=period,
         data_list=["phi", "rho", "E"],

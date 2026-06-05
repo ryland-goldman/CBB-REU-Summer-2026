@@ -28,6 +28,15 @@ To override the operating point without editing the source, call
 before `cathode.run()`. Keys must match the module-level constants at the top of
 `cathode/cathode_diode.py`.
 
+**Performance knobs** (also `config()`-overridable module constants; defaults reproduce
+the original run): `REQUIRED_PRECISION` (1e-5, MLMG tolerance), `MAX_ITERS` (None →
+PICMI default), `PPC` (10, macroparticles/cell), `CFL` (0.4, `dt = CFL·dz/v_final`),
+`DIAG_PERIOD` (None), and the grid `nx, nz`. The cathode is only ~7% of pipeline runtime;
+**leave `DIAG_PERIOD=None`** — `current_saturation.png` and `rho_z_time.png` iterate every
+field dump over the 0–0.15 ns turn-on window and need the default dense-early union slice
+(`0:470:5, 470:MAX_STEPS:80`). An integer `DIAG_PERIOD` applies one uniform period to both
+diagnostics and under-resolves those two figures.
+
 ---
 
 ## The physics: Child–Langmuir / space-charge-limited emission

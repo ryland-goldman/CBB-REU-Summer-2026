@@ -59,6 +59,19 @@ nr, nz = 96, 384             # divisible by the blocking factor (8)
 # ── Diagnostics output directory ──────────────────────────────────────────────
 DIAG_DIR = "gun/diags"
 
+# ── Performance knobs (tunable via gun.config(...); see pipeline/run_pipeline.py) ─
+# Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
+# Runtime ≈ nz² (per-step cost ∝ cells, and dz=ZMAX/nz ⇒ fewer derived steps as nz drops).
+REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
+MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
+CFL = 0.4                            # dt = CFL · dz / v_exit
+TRANSIT_MARGIN = 1.15                # run length = TRANSIT_MARGIN × gun-transit time
+AVG_SPEED_FRAC = 0.6                 # bunch average speed as a fraction of v_exit
+MAX_STEPS = 0                        # 0 → auto-derive from CFL/margins; >0 → fixed
+N_DIAGS = 40                         # number of openPMD dumps over the run (≥20 keeps
+                                     # space_charge.png's near-launch field snapshot)
+MAX_PART = 0                         # 0/None → keep all cathode particles; >0 → cap
+
 
 def load_cathode_bunch():
     """Import the last cathode snapshot and remap the (x, z) slab into RZ.
@@ -82,13 +95,23 @@ def load_cathode_bunch():
         raise RuntimeError(
             f"no cathode particles with r < RMAX={RMAX} m; check RMAX or the "
             f"upstream cathode output")
+    # Keep `xk` (the masked signed x) alongside the kept arrays so the radial-momentum
+    # sign below survives the optional downsample (x[keep] would re-mask the full set).
+    xk = x[keep]
     r, z, ux, uy, uz, w = (a[keep] for a in (r, z, ux, uy, uz, w))
+
+    # Optionally downsample (reweighted to preserve total charge) to cap the cost.
+    if MAX_PART and r.size > MAX_PART:
+        sel = rng.choice(r.size, MAX_PART, replace=False)
+        scale_w = r.size / MAX_PART
+        xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
+        w = w * scale_w
 
     theta = rng.uniform(0.0, 2.0 * np.pi, size=r.size)
     ct, st = np.cos(theta), np.sin(theta)
 
     # slab x -> radius; transverse momentum: radial = ux·sign(x), azimuthal = uy
-    ur = ux * np.sign(np.where(x[keep] == 0.0, 1.0, x[keep]))
+    ur = ux * np.sign(np.where(xk == 0.0, 1.0, xk))
     ut = uy
     xpos = r * ct
     ypos = r * st
@@ -126,10 +149,12 @@ def main():
     )
 
     # Electrostatic solver for the beam self-field only.
-    solver = picmi.ElectrostaticSolver(
-        grid=grid, method="Multigrid", required_precision=1e-5,
-        warpx_self_fields_verbosity=0,                # silence MLMG per-iteration chatter
-    )
+    solver_kw = dict(grid=grid, method="Multigrid",
+                     required_precision=REQUIRED_PRECISION,
+                     warpx_self_fields_verbosity=0)   # silence MLMG per-iteration chatter
+    if MAX_ITERS:                                     # omit when None → PICMI default
+        solver_kw["maximum_iterations"] = MAX_ITERS
+    solver = picmi.ElectrostaticSolver(**solver_kw)
 
     # ── Applied gun field: the scaled CESR_gun.gdf map, read from file ────────
     # Applied directly to particles every step (the electrode field), on top of the
@@ -155,18 +180,20 @@ def main():
     gamma = 1.0 + q_e * GUN_VOLTAGE / (m_e * c**2)
     v_exit = c * np.sqrt(1.0 - 1.0 / gamma**2)
     dz = ZMAX / nz
-    dt = 0.4 * dz / v_exit
-    # Steps for the bunch to just cross the full gun (average speed ~0.6·v_exit).
+    dt = CFL * dz / v_exit
+    # Steps for the bunch to just cross the full gun (average speed ~AVG_SPEED_FRAC·v_exit).
     # We stop as the beam reaches the exit: running longer empties the domain, and
     # the Multigrid self-field solve aborts when there is essentially no charge left.
-    max_steps = int(1.15 * ZMAX / (0.6 * v_exit) / dt)
+    # MAX_STEPS (module constant, 0 = auto) overrides the derived value when set.
+    max_steps = MAX_STEPS or int(
+        TRANSIT_MARGIN * ZMAX / (AVG_SPEED_FRAC * v_exit) / dt)
 
     print(f"Gun: {GUN_VOLTAGE/1e3:.0f} kV  ->  γ={gamma:.3f}, β={v_exit/c:.3f}, "
           f"v_exit={v_exit:.2e} m/s", flush=True)
     print(f"dt = {dt:.3e} s, max_steps = {max_steps}", flush=True)
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
-    period = max(1, max_steps // 40)
+    period = max(1, max_steps // N_DIAGS)
     field_diag = picmi.FieldDiagnostic(
         name="fields",
         grid=grid,

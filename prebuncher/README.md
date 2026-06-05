@@ -119,12 +119,34 @@ negative through the cavity), not the (≈1, flat) RF-fundamental bunching facto
 | parameter | value |
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
-| grid | 80 (r) × 1024 (z), r ∈ [0, 36 mm], z ∈ [0, 1.30 m] |
-| solver | electrostatic, lab frame, Multigrid (self-field only), 1e-4, ≤ 500 iters |
+| grid | `NR`=80 (r) × `NZ`=1024 (z), r ∈ [0, 36 mm], z ∈ [0, 1.30 m] |
+| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤500 |
 | applied field | 1-J `prebuncher_25D.gdf` map × `scale` × cos/sin(ω t + φ), E + B, read from file |
-| beam | gun-exit snapshot, downsampled to 50k macroparticles (reweighted), 0.1 nC, z ≈ 5 mm |
-| time step | `dt = 0.8 · Δz / v_beam` (≈ 5 ps; RF period 4.67 ns) |
-| duration | bunch transit of the 1.30 m domain (crest uses the accelerated v) |
+| beam | gun-exit snapshot, downsampled to `MAX_PART`=50k macroparticles (reweighted), 0.1 nC, z ≈ 5 mm |
+| time step | `dt = CFL · Δz / v_beam` (`CFL`=0.8; ≈ 5 ps; RF period 4.67 ns) |
+| duration | `TRANSIT_MARGIN`×bunch transit of the 1.30 m domain (=0.97; crest uses the accelerated v), or fixed via `MAX_STEPS`; `N_DIAGS`=60 openPMD dumps |
+
+**Performance knobs** (`config()`-overridable module constants; defaults reproduce the
+original run). This stage is ≈75% of pipeline runtime — its self-field MLMG solve dominates
+— so it is the main optimization target. Tunables: `NR, NZ` (grid), `CFL` (dt / step count),
+`MAX_STEPS`/`TRANSIT_MARGIN` (run length), `REQUIRED_PRECISION` and `MAX_ITERS` (MLMG solve),
+`MAX_PART` (gun-snapshot downsample), `N_DIAGS` (dump count; the plotter is robust down to
+~6–8).
+
+**Gotcha — do NOT coarsen `NZ` to go faster (measured).** Unlike the gun (near-isotropic
+cells, where `nz` scales ≈ `nz²`), this box is long and thin (1.3 m × 36 mm), so its cells are
+anisotropic and the MLMG Poisson solve is **convergence-bound, not cell-bound**. Lowering `NZ`
+*raises* `dz/dr` (1024→512: 2.8→5.6) and slows MLMG convergence faster than it removes cells —
+measured **1.37× slower per step** at `NZ=512` than at `NZ=1024`, so the fewer-steps win is more
+than cancelled. And `dz` at `NZ=512` is 2.5 mm > the ~1 mm bunch, so it can't resolve the
+bunching being measured. **Keep `NZ=1024`.** The effective levers are `CFL` (0.8→0.95 ⇒ ~16%
+fewer steps, no per-step penalty) and `MAX_ITERS`/`REQUIRED_PRECISION` (500/1e-4 → 150/1e-3 ⇒
+~20% cheaper per-step solve). `MAX_PART` barely affects runtime here (the run is solve-bound,
+not particle-bound) — keep it generous for accuracy. The default Balanced profile in
+`run_pipeline.py` uses `CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3` (the space-charge field
+is a small perturbation on the 148 keV beam, so the looser solve shifts the bunching only
+slightly); since space charge *drives* the bunching, check the σ_z(z) figure if you loosen it
+further.
 
 WarpX's MLMG Poisson solve is memory-bandwidth bound, so a single run on all 14 cores
 (~0.78 s/step) is actually *slower* than on ~6 (`OMP_NUM_THREADS=6`); the pipeline sets this by

@@ -30,6 +30,18 @@ BUNCH_CHARGE=0.1e-9)` before `gun.run()`. Keys must match the module-level const
 `fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
 `cathode/diags/particles/`. All paths are repo-root-relative.
 
+**Performance knobs** (`config()`-overridable module constants; defaults reproduce the
+original run): `REQUIRED_PRECISION` (1e-5) and `MAX_ITERS` (None) for the MLMG solve;
+`CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and `AVG_SPEED_FRAC` (0.6) for
+the auto-derived run length, or `MAX_STEPS` (>0) to fix it; `N_DIAGS` (40) for the openPMD
+dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (reweighted,
+charge-preserving); and the grid `nr, nz`. Runtime ≈ `nz²` (per-step cost ∝ cells, and
+`dz = ZMAX/nz` ⇒ fewer steps as `nz` drops), so halving `nz` ≈ 4× faster. This holds because the
+gun's cells are near-isotropic (`dz/dr ≈ 1.3`) so the MLMG solve stays well-conditioned as `nz`
+drops — **unlike the prebuncher's long-thin box**, where coarsening `NZ` slows the solve instead
+(see `prebuncher/README.md`). Keep `N_DIAGS ≥ 20` so `space_charge.png` still finds its
+near-launch field snapshot (it self-skips otherwise).
+
 ## The gun field map
 
 `CESR_gun.gdf` is a 2D cylindrical `(R, Z)` map of the gun's electrostatic field from
@@ -96,9 +108,9 @@ true cylindrical emission). The DC beam is treated as a single injected bunch.
 | grid | 96 (r) × 384 (z), r ∈ [0, 15 mm], z ∈ [0, 51.77 mm] |
 | solver | electrostatic, lab frame, Multigrid (self-field only) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
-| bunch | 0.1 nC, imported cathode phase space, ~222k macroparticles |
-| time step | `dt = 0.4·Δz/v_exit` (v_exit ≈ 0.63 c at 150 keV) |
-| duration | ~1.15× gun-transit time (bunch average speed ≈ 0.6·v_exit); stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
+| bunch | 0.1 nC, imported cathode phase space, ~222k macroparticles (optionally capped by `MAX_PART`, reweighted) |
+| time step | `dt = CFL·Δz/v_exit` (`CFL`=0.4; v_exit ≈ 0.63 c at 150 keV) |
+| duration | `TRANSIT_MARGIN`×gun-transit time (=1.15; bunch average speed ≈ `AVG_SPEED_FRAC`·v_exit, =0.6), or fixed via `MAX_STEPS`; stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
 
 The lab-frame electrostatic solver is non-relativistic in its self-field treatment; at the
 gun exit (β ≈ 0.63) this mildly overestimates the space-charge field — acceptable for a
