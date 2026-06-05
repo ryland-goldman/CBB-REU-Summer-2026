@@ -14,6 +14,17 @@ Parameter names match the module-level constants in `prebuncher/build_prebuncher
 
 from pipeline._runner import Stage
 
+# Defaults mirrored by prebuncher_sim.py — single source of truth so the parent
+# can resolve OUTDIR without importing the sim module (which would pull in pywarpx
+# and defeat the per-stage subprocess isolation).
+DEFAULT_POWER_W = 800.0
+DEFAULT_PHASE = "zc"
+
+
+def _derive_outdir(power_w, phase):
+    return f"prebuncher/diags/P{int(power_w)}_{phase}"
+
+
 _stage = Stage(
     name="prebuncher",
     build_module="prebuncher.build_prebuncher_field",
@@ -23,3 +34,17 @@ _stage = Stage(
 config = _stage.config
 run = _stage.run
 plot = _stage.plot
+
+
+def resolve_outdir():
+    """Return the OUTDIR the next run() will write to, given the current config().
+
+    OUTDIR explicitly set via config() wins; otherwise derive from POWER_W/PHASE
+    (falling back to the module defaults). Used by `pipeline/run_pipeline.py` so
+    the final-beam summary reads the same directory the sim wrote.
+    """
+    p = _stage._params
+    if p.get("OUTDIR"):
+        return p["OUTDIR"]
+    return _derive_outdir(p.get("POWER_W", DEFAULT_POWER_W),
+                          p.get("PHASE", DEFAULT_PHASE))

@@ -26,8 +26,12 @@ Physics setup (electrostatic lab frame):
     current; WarpX's self-consistent self-fields build a virtual cathode that
     reflects the excess, so the transmitted current self-limits to J_CL.
 
-Run with:
-    conda run -n CBB python cathode/cathode_diode.py
+Run with (from the repo root, with `conda activate CBB`):
+    python -c "import cathode; cathode.run()"            # sim + plots
+    python -c "import cathode; cathode.run(plots=False)" # sim only
+Direct script invocation (`python cathode/cathode_diode.py`) does NOT work —
+this module imports `pipeline._runner`, which is only on sys.path when launched
+from the repo root (either via the facade above or `python -m cathode.cathode_diode`).
 """
 
 import numpy as np

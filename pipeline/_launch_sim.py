@@ -60,15 +60,18 @@ def main():
         if hasattr(sim, key):
             setattr(sim, key, value)
 
-    sim.main()
-
-    # Silence pywarpx/AMReX teardown chatter (TinyProfiler, memory tables)
-    # before returning — Python interpreter shutdown will trigger AMReX
-    # finalize next, and we want its output in the log, not on the parent's
-    # terminal between stages.
-    sys.stdout.flush()
-    sys.stderr.flush()
-    _silence_finalize()
+    # Run sim.main() guarded so AMReX/pywarpx teardown chatter (TinyProfiler,
+    # memory tables) is redirected to the log on the failure path too — Python
+    # interpreter shutdown will trigger AMReX finalize next either way, and we
+    # don't want it on the parent's terminal between stages.
+    try:
+        sim.main()
+    finally:
+        try: sys.stdout.flush()
+        except Exception: pass
+        try: sys.stderr.flush()
+        except Exception: pass
+        _silence_finalize()
 
 
 if __name__ == "__main__":

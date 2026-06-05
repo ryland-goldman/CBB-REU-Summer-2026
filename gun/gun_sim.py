@@ -11,10 +11,13 @@ particles, while WarpX's electrostatic solver supplies the beam self-field.
 
 Geometry is RZ (cylindrical), matching the gun field map's native symmetry.
 
-Pipeline:
-    conda run -n CBB python gun/build_gun_field.py   # writes gun_field/gun_E.h5
-    conda run -n CBB python gun/gun_sim.py           # this script
-    conda run -n CBB python gun/plot_gun.py
+Run with (from the repo root, with `conda activate CBB`):
+    python -c "import gun; gun.run()"               # build field map + sim + plots
+    python -c "import gun; gun.run(plots=False)"    # build + sim only
+    python -c "import gun; gun.plot()"              # plots only
+Direct script invocation (`python gun/gun_sim.py`) does NOT work — this module
+imports `pipeline._runner`, which is only on sys.path when launched from the
+repo root (either via the facade above or `python -m gun.gun_sim`).
 
 Beam source — see README: the cathode run is a continuous (DC) emitter, so the
 weights in its last particle snapshot encode the steady-state population in

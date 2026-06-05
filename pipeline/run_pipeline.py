@@ -77,8 +77,7 @@ def main():
     gun.run()
     prebuncher.run()
 
-    from prebuncher import prebuncher_sim
-    _final_beam_summary(prebuncher_sim.OUTDIR)
+    _final_beam_summary(prebuncher.resolve_outdir())
 
     _cl("\n" + "=" * 72)
     _cl(f" Pipeline complete in {(time.time()-t0)/60:.1f} min.")

@@ -53,10 +53,13 @@ ZMAX = 1.30                      # entrance drift + 305 mm cavity + bunching dri
 NR, NZ = 80, 1024                # divisible by the blocking factor (8)
 
 # ── Operating point (the two undocumented prebuncher inputs; see details.md) ───
-# POWER_W = 0 runs the drift-only baseline (no cavity).
-POWER_W = 800.0                  # dissipated RF power [W]  (V_gap ≈ scale·430 kV)
-PHASE = "zc"                     # "zc" = zero-crossing (bunching), "crest" = max gain
-OUTDIR = "prebuncher/diags/P800_zc"
+# POWER_W = 0 runs the drift-only baseline (no cavity). OUTDIR defaults to None
+# and is derived from POWER_W/PHASE in main() — see prebuncher.resolve_outdir()
+# so the parent process can compute the same path without importing pywarpx.
+from . import DEFAULT_POWER_W, DEFAULT_PHASE
+POWER_W = DEFAULT_POWER_W        # dissipated RF power [W]  (V_gap ≈ scale·430 kV)
+PHASE = DEFAULT_PHASE            # "zc" = zero-crossing (bunching), "crest" = max gain
+OUTDIR = None                    # if None at main(), derived from POWER_W/PHASE
 
 
 def load_gun_bunch():
@@ -106,6 +109,9 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     if outdir is None:  outdir = OUTDIR
     if nz is None:      nz = NZ
     if zmax is None:    zmax = ZMAX
+    if outdir is None:
+        from . import _derive_outdir
+        outdir = _derive_outdir(power, phase)
 
     bunch, v_beam, ke_mean = load_gun_bunch()
 
