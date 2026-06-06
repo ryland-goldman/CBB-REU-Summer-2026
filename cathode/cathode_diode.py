@@ -34,6 +34,9 @@ this module imports `pipeline._runner`, which is only on sys.path when launched
 from the repo root (either via the facade above or `python -m cathode.cathode_diode`).
 """
 
+import os
+import shutil
+
 import numpy as np
 from pywarpx import picmi
 
@@ -138,6 +141,13 @@ def main():
     dt = CFL * dz / v_final
 
     # ── Diagnostics (openPMD) ───────────────────────────────────────────────────
+    # Fresh diags: the h5 backend appends one file per dump, so re-running with a
+    # different step count/period would leave stale files that interleave with the
+    # new ones and corrupt the plots (a fan of overlapping curves). diags are
+    # git-ignored and regenerated, so clearing is safe. (Mirrors the other stages.)
+    if os.path.isdir(DIAG_DIR):
+        shutil.rmtree(DIAG_DIR)
+
     # Sample densely through the gap-fill transient (≤ 0.07 ns ≈ step 470, since
     # dt ≈ 1.49e-13 s) and sparsely once the diode reaches steady state.  WarpX's
     # interval syntax unions the slices: every 5 steps to 470, then every 80.

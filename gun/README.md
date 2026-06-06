@@ -152,3 +152,8 @@ to higher voltage or interpreting the absolute σ_r / emittance.
   current directly rather than a single snapshot.
 - A solenoid (magnetic focusing) could be added via a second `read_from_file` B map if the
   downstream Linac optics are included.
+- **Fresh diags on rerun:** WarpX *appends* one openPMD file per dump, so `gun_sim.py`
+  `shutil.rmtree`s `gun/diags/` at the start of each run. Without this, re-running with a
+  different grid/step count (hence different diag step numbers) leaves stale files that
+  interleave with the new ones; the plots then read both runs as a single series and show a
+  fan of overlapping curves. (Mirrors `prebuncher_sim.py` / `linac_sec1_sim.py`.)
