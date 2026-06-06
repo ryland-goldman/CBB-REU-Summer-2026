@@ -24,13 +24,18 @@ same names as keyword overrides for direct/script use (e.g.
 applies config() values by setattr on the module before calling bare main().
 """
 
+import os
+import shutil
+
 import numpy as np
 import pywarpx
 from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
-from .build_prebuncher_field import Z_GAP_CENTER, V1J_KEV   # keep field/phasing in sync
+# F_RF/Q_L/V1J_KEV live in the (pywarpx-free) build module as the single source of
+# truth, so the sim and plot_prebuncher.py cannot drift apart on the RF drive.
+from .build_prebuncher_field import Z_GAP_CENTER, V1J_KEV, F_RF, Q_L
 
 c = picmi.constants.c
 m_e = picmi.constants.m_e
@@ -38,9 +43,7 @@ q_e = picmi.constants.q_e
 
 # ── Prebuncher / field-map parameters (must match build_prebuncher_field.py) ───
 PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
-F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
-Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
-# V1J_KEV (1-J effective gap voltage) is imported from build_prebuncher_field.
+# F_RF (214.18 MHz), Q_L (3000), and V1J_KEV are imported from build_prebuncher_field.
 
 GUN_DIAG = "gun/diags/particles"
 Z_INJECT = 0.005                 # lab z where the bunch tail (smallest z) is placed [m]
@@ -49,9 +52,11 @@ RNG_SEED = 0
 CFL = 0.8                        # dt = CFL · Δz / v_beam
 
 # ── Performance knobs (tunable via prebuncher.config(...); see run_pipeline.py) ─
-# This stage dominates the pipeline (≈75% of runtime). Runtime ≈ NZ² (per-step cost
-# ∝ cells, and dz=zmax/NZ ⇒ fewer derived steps as NZ drops). Defaults reproduce the
-# original run; lower them to trade accuracy for speed.
+# This stage dominates the pipeline (≈75% of runtime). Unlike the gun, do NOT coarsen
+# NZ to go faster: this long-thin box is convergence-bound, not cell-bound, so the MLMG
+# solve is ~1.37× slower per step at NZ=512 than NZ=1024 (and dz=2.5 mm then under-
+# resolves the ~1 mm bunch) — see the README. Speed it via CFL (fewer steps) and
+# MAX_ITERS/REQUIRED_PRECISION (cheaper solve). Defaults reproduce the original run.
 REQUIRED_PRECISION = 1e-4        # MLMG relative tolerance (relaxed for the long-thin box)
 MAX_ITERS = 500                  # MLMG iteration cap
 MAX_STEPS = 0                    # 0 → auto-derive from transit; >0 → fixed
@@ -128,6 +133,13 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
         from . import _derive_outdir
         outdir = _derive_outdir(power, phase)
 
+    # Fresh diags: WarpX appends one openPMD file per dump, so re-running the same case
+    # (e.g. a power/phase scan point) would otherwise mix old and new iterations into one
+    # series and corrupt the focus/σ_z analysis. diags are git-ignored and regenerated,
+    # so clearing the case dir is safe. (Mirrors linac_sec1_sim.py.)
+    if os.path.isdir(outdir):
+        shutil.rmtree(outdir)
+
     # Compute omega here, not at import, so a config(F_RF=...) override is honored
     # (an import-time module constant would be frozen before the override lands).
     omega = 2.0 * np.pi * F_RF
@@ -138,9 +150,12 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     # scale = sqrt(stored_energy / 1 J),  stored_energy = 1e3·Q·P/(2π f_RF).
     # Power is in kW (GPT convention), hence the 1e3 kW->W factor.
     scale = float(np.sqrt(1e3 * Q_L * power / (2.0 * np.pi * F_RF)))
-    # Time at which the bunch centre reaches the gap. The energy kick of an
-    # electron is ΔW(t) ∝ -cos(ω t + φ) (on-axis Ez is single-signed positive),
-    # so bunching needs the *tail* (later arrival) to gain energy:
+    # Time at which the bunch *tail* (placed at Z_INJECT) reaches the gap — the phase
+    # reference. (Tail, not centre: the centre is ~σ_z/2 ≈ 0.5 mm farther, a <1° RF-phase
+    # shift at 214 MHz, negligible; plot_prebuncher.py uses the same Z_INJECT reference so
+    # the drawn waveform matches the run.) The energy kick of an electron is
+    # ΔW(t) ∝ -cos(ω t + φ) (on-axis Ez is single-signed positive), so bunching needs the
+    # *tail* (later arrival) to gain energy:
     #   d/dt[-cos] = ω sin(ω t_gap + φ) > 0  ->  sin(ω t_gap + φ) = +1.
     # zc:    φ = -ω t_gap + π/2  (zero net kick, max +slope -> velocity bunching)
     # crest: φ = -ω t_gap + π    (-cos = +1 -> maximum energy gain, little bunching)

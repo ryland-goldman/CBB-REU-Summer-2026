@@ -121,7 +121,10 @@ def main():
         flux_direction=+1,                          # into the gap (+z)
         lower_bound=[-R_cathode, None, None],       # finite cathode patch in x …
         upper_bound=[ R_cathode, None, None],       # … emission is zero outside |x|<R
-        rms_velocity=[v_th, v_th, v_th],            # thermal spread
+        rms_velocity=[v_th, v_th, v_th],            # thermal spread (the y component is
+                                                    # inert in this 2D x–z run, but the gun
+                                                    # reuses cathode uy as the RZ azimuthal
+                                                    # thermal momentum — keep it)
         directed_velocity=[0.0, 0.0, 0.0],          # emitted ~at rest, field-accelerated
         gaussian_flux_momentum_distribution=True,   # half-Maxwellian normal to surface
     )
@@ -140,7 +143,10 @@ def main():
     # interval syntax unions the slices: every 5 steps to 470, then every 80.
     # DIAG_PERIOD=None keeps the dense-early union slice (figs 3/4 need it); an int
     # override applies one uniform period (the field-diag period must be a string).
-    field_period = str(DIAG_PERIOD) if DIAG_PERIOD else f"0:470:5, 470:{MAX_STEPS}:80"
+    # max(MAX_STEPS, 471) guards the second slice against inverting if a caller sets
+    # MAX_STEPS ≤ 470 (the default is 2000, so this is defensive only).
+    field_period = (str(DIAG_PERIOD) if DIAG_PERIOD
+                    else f"0:470:5, 470:{max(MAX_STEPS, 471)}:80")
     field_diag = picmi.FieldDiagnostic(
         name="fields",
         grid=grid,

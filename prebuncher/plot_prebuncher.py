@@ -48,7 +48,9 @@ import matplotlib.pyplot as plt
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-from .build_prebuncher_field import V1J_KEV   # 1-J gap voltage [keV], kept in sync
+# RF drive constants (F_RF, Q_L, V1J_KEV) come from the single source of truth in the
+# build module so this figure's re-derived scale/phase cannot drift from the actual run.
+from .build_prebuncher_field import V1J_KEV, F_RF, Q_L
 
 c = 299792458.0
 MC2 = 0.51099895e3                # electron rest energy [keV]
@@ -58,13 +60,12 @@ RESULTS = "prebuncher/results"
 PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
 Z_GAP_CENTER = 0.20              # [m] cavity gap (for marking plots)
 
-# ── RF-drive constants (must match prebuncher_sim.py) ─────────────────────────
+# ── RF-drive constants ────────────────────────────────────────────────────────
 # The cavity map is stored 1-J-normalised; the run multiplies it by `scale` and
 # modulates E ∝ cos(ω t + φ), B ∝ sin(ω t + φ). To draw the field the beam
-# actually sees we re-derive scale and φ here from the same formulae the sim uses.
-F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
+# actually sees we re-derive scale and φ here from the same formulae the sim uses,
+# using the F_RF/Q_L imported above from build_prebuncher_field (shared with the sim).
 OMEGA = 2.0 * np.pi * F_RF       # RF angular frequency [rad/s]
-Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
 Z_INJECT = 0.005                 # [m] lab z where the bunch tail (smallest z) is launched
 os.makedirs(RESULTS, exist_ok=True)
 
@@ -81,7 +82,7 @@ def rf_scale(power):
 
 
 def rf_phase(phase, t_gap):
-    """RF phase φ that puts the bunch-centre gap arrival at zero-crossing/crest.
+    """RF phase φ that puts the bunch-tail gap arrival at zero-crossing/crest.
 
     Mirrors prebuncher_sim.py: zc → φ = -ω t_gap + π/2 (max +slope, zero net
     kick → velocity bunching); crest → φ = -ω t_gap + π (-cos = +1 → max gain).
@@ -204,7 +205,7 @@ def snapshot_picks(rec, base):
 #   left  — the on-axis Ez(z) spatial profile of the 1-J map × scale, placed at
 #           the lab gap (Z_GAP_CENTER) via the map's grid_global_offset, in MV/m.
 #   right — the temporal RF waveform E ∝ cos(ω t+φ), B ∝ sin(ω t+φ) over ~2 RF
-#           periods around the bunch-centre gap-arrival time t_gap, each normalised
+#           periods around the bunch-tail gap-arrival time t_gap, each normalised
 #           to ±1, with the bunch σ_t width shaded. Whether the bunch centre lands
 #           on the field ZERO-CROSSING (zc) or the CREST (crest) — i.e. velocity
 #           bunching vs. pure acceleration — is exactly what this panel makes visual.
@@ -212,7 +213,7 @@ def snapshot_picks(rec, base):
 def cavity_figure(name, rec, power, phase):
     v_beam = rec["v_beam"]
     scale = rf_scale(power)
-    t_gap = (Z_GAP_CENTER - Z_INJECT) / v_beam     # bunch-centre gap arrival [s]
+    t_gap = (Z_GAP_CENTER - Z_INJECT) / v_beam     # bunch-tail gap arrival [s] (matches the sim)
     phi = rf_phase(phase, t_gap)
 
     z_lab, ez_axis = load_cavity_axis()            # raw 1-J on-axis Ez [V/m]

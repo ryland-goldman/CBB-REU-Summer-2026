@@ -160,6 +160,8 @@ writing five figures to `results/`:
 - The r-zero-padding of the RF maps at the 9.55 mm bore is a sharp truncation (the metal iris); a
   beam focused well inside the bore rarely samples it, and particles that reach the domain wall are
   treated as lost on the iris (counted against the capture fraction).
-- The lab-frame electrostatic self-field uses a single relativistic factor while the beam spans
-  148 keV → 37 MeV; space charge is a small perturbation that becomes negligible once captured
-  (γ ≫ 1), so this is acceptable for the demonstration.
+- The lab-frame electrostatic self-field omits the `1/γ²` magnetic-pinch cancellation (it applies
+  the rest-frame Coulomb force `qE_r`, not `qE_r/γ²`), so it overestimates the transverse
+  space-charge force by ~γ² — largest at injection (148 keV → ~66 %, as in `gun/README.md`) and
+  shrinking toward negligible once captured (γ ≫ 1). Space charge is a small perturbation here, so
+  this is acceptable for the demonstration.
