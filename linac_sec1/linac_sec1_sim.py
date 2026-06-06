@@ -29,13 +29,14 @@ static solenoid field) on the particles. The synchronous phase is undocumented, 
 """
 
 import os
+import json
 import shutil
 import numpy as np
 from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
-from .build_linac_sec1_field import Z_STRUCT, RMAX, SOL_Z, V1KW_KEV   # keep field/phasing/domain in sync
+from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R, SOL_Z, V1KW_KEV   # keep field/phasing/domain in sync
 from . import DEFAULT_OUTDIR
 
 c = picmi.constants.c
@@ -111,20 +112,28 @@ def load_prebuncher_bunch():
     min_count = max(50, MAX_PART // 50)
     recs = []
     for it in ts.iterations:
-        z, w = ts.get_particle(["z", "w"], species="electrons", iteration=it)
+        x, y, z, w = ts.get_particle(["x", "y", "z", "w"], species="electrons", iteration=it)
         if len(z) < min_count:
             continue
         zm = np.average(z, weights=w)
         sz = np.sqrt(np.average((z - zm) ** 2, weights=w))
-        recs.append((it, len(z), zm, sz))
+        # Charge that fits the structure bore — the only charge the linac can capture; the
+        # rest scrapes the iris/domain wall at injection no matter how strong the solenoid.
+        q_bore = float(w[np.hypot(x, y) <= BORE_R].sum())
+        recs.append((it, len(z), zm, sz, q_bore))
     if not recs:
         raise RuntimeError(
             f"{PREBUNCH_DIAG}: no snapshot with ≥{min_count} macroparticles")
-    nmax = max(n for _, n, _, _ in recs)
-    cands = [(it, sz) for it, n, zm, sz in recs if n >= 0.8 * nmax and zm > Z_FOCUS_MIN]
+    nmax = max(n for _, n, _, _, _ in recs)
+    cands = [(it, sz, qb) for it, n, zm, sz, qb in recs if n >= 0.8 * nmax and zm > Z_FOCUS_MIN]
     if not cands:                      # fallback: no snapshot past the gate
-        cands = [(it, sz) for it, n, zm, sz in recs if n >= 0.8 * nmax]
-    it_focus, _ = min(cands, key=lambda t: t[1])
+        cands = [(it, sz, qb) for it, n, zm, sz, qb in recs if n >= 0.8 * nmax]
+    # Bore-aware focus: maximize the in-bore (capturable) charge, breaking ties toward the
+    # tightest longitudinal focus (−σ_z). For a well-contained beam every post-cavity snapshot
+    # is fully in-bore, so q_bore ties and this reduces to the original min-σ_z bunching focus;
+    # for a radially over-expanded beam (e.g. the low-power prebuncher drift, where σ_z AND σ_r
+    # both grow with z) it picks the least-scraped snapshot instead of chasing σ_z into the iris.
+    it_focus = max(cands, key=lambda t: (t[2], -t[1]))[0]
 
     x, y, z, ux, uy, uz, w = ts.get_particle(
         ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it_focus)
@@ -142,13 +151,32 @@ def load_prebuncher_bunch():
     v_beam = float(np.average(uz / gb, weights=w) * c)
     ke_mean = float(np.average(gb - 1.0, weights=w) * MC2_KEV)
     sz = float(np.sqrt(np.average((z - np.average(z, weights=w)) ** 2, weights=w)))
-    rmax = float(np.sqrt(x**2 + y**2).max())
+    r = np.hypot(x, y)
+    rmax = float(r.max())
+    # Injection-loss bookkeeping. WarpX silently drops particles initialised at r > RMAX
+    # before the first diagnostic dump, so the first dump's charge is already the post-scrape
+    # (in-domain) charge. Capture must therefore be reported against the TRUE injected charge
+    # recorded here — otherwise the dominant loss (radial scraping at t=0) is invisible.
+    q_inj = float(w.sum()) * q_e                         # total injected [C]
+    q_dom = float(w[r <= RMAX].sum()) * q_e              # within the 12 mm domain (survives step 0)
+    q_bore = float(w[r <= BORE_R].sum()) * q_e           # within the 9.55 mm RF bore (capturable)
+    inj = dict(it_focus=int(it_focus), n_injected=int(z.size),
+               q_injected_C=q_inj, q_in_domain_C=q_dom, q_in_bore_C=q_bore,
+               z_inject_mean_m=float(np.average(z, weights=w)),
+               rmax_m=rmax, sigma_z_m=sz, ke_mean_keV=ke_mean)
     print(f"Injected {z.size} macroparticles from prebuncher focus (iter {it_focus}); "
           f"⟨KE⟩ {ke_mean:.1f} keV, σ_z {sz*1e3:.2f} mm, r_max {rmax*1e3:.2f} mm, "
-          f"v_beam {v_beam:.3e} m/s, q {w.sum()*q_e*1e9:.4f} nC", flush=True)
+          f"v_beam {v_beam:.3e} m/s, q {q_inj*1e9:.4f} nC", flush=True)
+    print(f"  injection radial fit: {q_dom/q_inj*100:.1f}% of charge within RMAX={RMAX*1e3:.0f} mm "
+          f"({q_dom*1e12:.1f} pC enters the domain), {q_bore/q_inj*100:.1f}% within the "
+          f"{BORE_R*1e3:.2f} mm bore — the rest scrapes the wall at injection.", flush=True)
+    if q_dom < 0.9 * q_inj:
+        print(f"  WARNING: {(1-q_dom/q_inj)*100:.0f}% of the injected beam starts outside the "
+              f"radial domain and is lost at step 0; reported capture is vs the {q_inj*1e9:.4f} nC "
+              f"injected, not the {q_dom*1e9:.4f} nC that enters.", flush=True)
     # openPMD ux/uy/uz are γβ; PICMI wants proper velocity γβc in m/s → ×c.
     return (dict(x=x, y=y, z=z, ux=ux * c, uy=uy * c, uz=uz * c, w=w),
-            v_beam, ke_mean)
+            v_beam, ke_mean, inj)
 
 
 def main():
@@ -162,8 +190,14 @@ def main():
     # which lands after import, is honoured rather than frozen at the import-time value.
     omega = 2.0 * np.pi * F_RF
 
-    bunch, v_beam, ke_mean = load_prebuncher_bunch()
+    bunch, v_beam, ke_mean, inj = load_prebuncher_bunch()
     z_center = float(np.average(bunch["z"], weights=bunch["w"]))
+    # Persist the true injected charge (+ in-domain/in-bore breakdown) so the plotter reports
+    # capture against what was actually injected, not the post-scrape first-dump charge. WarpX
+    # creates `outdir` when it writes the first diagnostic; create it up front for this sidecar.
+    os.makedirs(outdir, exist_ok=True)
+    with open(os.path.join(outdir, "injection_summary.json"), "w") as fh:
+        json.dump(inj, fh, indent=2)
 
     # ── RF amplitude + phase ──────────────────────────────────────────────────
     scale = float(np.sqrt(POWER_MW / RF_NORM_MW))

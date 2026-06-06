@@ -18,6 +18,7 @@ Run with:
 """
 
 import os
+import json
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -25,14 +26,13 @@ import matplotlib.pyplot as plt
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-from .build_linac_sec1_field import Z_STRUCT, RMAX            # geometry, kept in sync
+from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R   # geometry, kept in sync
 from . import DEFAULT_OUTDIR                                  # default diags dir for run()
 
 MC2 = 0.51099895                 # electron rest energy [MeV]
 Q_E = 1.602176634e-19
 RF_NORM_MW = 0.001
 POWER_MW = 15.0                  # config(POWER_MW=...) updates this too (mirrors the sim)
-BORE_R = 0.00955                 # structure bore radius [m] (SLAC map r-extent)
 L_STRUCT = 3.016                 # structure length [m]
 
 RF1 = "linac_sec1/linac_sec1_field/linac_rf1.h5"
@@ -75,12 +75,12 @@ def beam_track(diag):
         return None
     rec = dict(z=[], ke=[], kemax=[], beta=[], sigx=[], q=[])
     snaps = {}                                    # cache raw (z, ke, w) for the figures
-    q0 = None
+    q_entered = None                              # charge in the FIRST dump (already post-scrape)
     for it in its:
         x, y, z, ux, uy, uz, w = ts.get_particle(
             ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
-        if q0 is None:
-            q0 = w.sum()
+        if q_entered is None:
+            q_entered = w.sum()
         if len(z) < 5:
             continue
         g = gamma_of(ux, uy, uz)
@@ -96,9 +96,21 @@ def beam_track(diag):
         rec[k] = np.asarray(rec[k])
     if not rec["z"].size:                         # every snapshot near-empty -> no usable beam
         return None
-    if not q0:                                    # degenerate injection (zero baseline charge)
+    if not q_entered:                             # degenerate injection (zero baseline charge)
         return None
-    rec["q0"] = q0
+    # The TRUE injected charge is recorded by the sim (injection_summary.json), because WarpX
+    # drops r>RMAX particles before the first dump — so q_entered already hides the injection
+    # loss. Report capture against the injected charge; fall back to q_entered if the sidecar
+    # is missing (e.g. an old run), in which case the injection loss is simply not shown.
+    summ_path = os.path.join(diag, "injection_summary.json")
+    inj = None
+    if os.path.isfile(summ_path):
+        with open(summ_path) as fh:
+            inj = json.load(fh)
+    q_inj = (inj["q_injected_C"] / Q_E) if inj else q_entered   # in macroparticle-weight units
+    rec["q_entered"] = q_entered                  # entered the domain (first dump)
+    rec["q0"] = q_inj                             # capture denominator = true injected charge
+    rec["inj"] = inj
     rec["snaps"] = snaps
     return rec
 
@@ -189,29 +201,50 @@ def main():
     a1.axhline(BORE_R * 1e3, color="k", ls=":", lw=1, label="structure bore")
     a1.axhline(RMAX * 1e3, color="0.5", ls=":", lw=1, label="domain wall")
     a1.set_ylabel(r"RMS size  $\sigma_x$  [mm]")
-    a1.set_title("Transverse envelope and beam survival (solenoid focused, on crest)")
+    a1.set_title("Transverse envelope and beam survival")
     a1.legend(loc="upper right", fontsize=8)
+    # Normalised to the TRUE injected charge (q0). The first tracked dump already sits below 1
+    # because WarpX scrapes the r>RMAX particles at injection; prepend the injection point
+    # (q/q0 = 1 at ⟨z⟩_inject) so that step-0 radial loss is visible rather than hidden.
     qfrac = rec["q"] / rec["q0"]
-    a2.plot(rec["z"] * 1e3, qfrac, "o-", color="C0", ms=3)
+    zmm_q = rec["z"] * 1e3
+    if rec.get("inj"):
+        z_inj_mm = rec["inj"]["z_inject_mean_m"] * 1e3
+        zmm_q = np.concatenate([[z_inj_mm], zmm_q])
+        qfrac = np.concatenate([[1.0], qfrac])
+        a2.annotate("injection scraping\n(r > domain wall)",
+                    xy=(rec["z"][0] * 1e3, rec["q"][0] / rec["q0"]),
+                    xytext=(0.30, 0.55), textcoords="axes fraction", fontsize=8,
+                    arrowprops=dict(arrowstyle="->", color="C3", lw=1), color="C3")
+    a2.plot(zmm_q, qfrac, "o-", color="C0", ms=3)
     a2.set_xlabel("mean beam position  ⟨z⟩  [mm]")
-    a2.set_ylabel("surviving charge  q/q₀")
-    # Fit the y-range to the data (the focused run barely dips below 1) with headroom.
-    span = max(0.02, 1.0 - qfrac.min())
-    a2.set_ylim(qfrac.min() - 0.25 * span, 1.0 + 0.1 * span)
+    a2.set_ylabel("surviving charge  q / q$_{inj}$")
+    a2.set_ylim(-0.03, 1.05)
     fig.savefig(f"{RESULTS}/beam_envelope.png", dpi=140)
     print(f"wrote {RESULTS}/beam_envelope.png")
 
     # ══ Fig 5: exit energy spectrum + capture fraction ══════════════════════════
     z, ke, w = snaps[its[-1]]                         # cached exit snapshot
     km, sk = wstat(ke, w)
-    cap = rec["q"][-1] / rec["q0"]
+    cap = rec["q"][-1] / rec["q0"]                    # captured / TRUE injected
+    q_cap_pC = rec["q"][-1] * Q_E * 1e12
+    q_inj_pC = rec["q0"] * Q_E * 1e12
     fig, ax = plt.subplots(figsize=(7.8, 4.8), constrained_layout=True)
     cnt, edges, _ = ax.hist(ke, bins=60, weights=w * Q_E * 1e12, color="C3", alpha=0.85)
     ax.axvline(km, color="k", ls="--", label=f"⟨KE⟩ = {km:.1f} ± {sk:.1f} MeV")
     ax.set_xlabel("KE  [MeV]"); ax.set_ylabel("charge per bin  [pC]")
-    ax.set_title(f"Exit energy spectrum — captured fraction {cap*100:.0f}% "
-                 f"({rec['q'][-1]*Q_E*1e12:.1f} pC of {rec['q0']*Q_E*1e12:.1f} pC)")
+    ax.set_title(f"Exit energy spectrum — captured {q_cap_pC:.1f} pC "
+                 f"= {cap*100:.1f}% of {q_inj_pC:.1f} pC injected")
     ax.legend(loc="upper left")
+    # Make the injection loss explicit: how much charge ever entered the domain, and the
+    # capture fraction relative to that in-domain charge (so both denominators are visible).
+    if rec.get("inj"):
+        q_ent_pC = rec["q_entered"] * Q_E * 1e12
+        ax.text(0.985, 0.97,
+                f"{q_ent_pC:.0f} pC entered the {RMAX*1e3:.0f} mm domain\n"
+                f"({rec['q'][-1]/rec['q_entered']*100:.0f}% of those captured;\n"
+                f"{(1-rec['q_entered']/rec['q0'])*100:.0f}% scraped at injection)",
+                transform=ax.transAxes, ha="right", va="top", fontsize=7.5, color="0.3")
     # Inset: zoom into the low-energy tail (phase-slipped / off-crest captured particles),
     # which the dominant captured-energy peak otherwise hides. Same bins; y-axis fit to the tail.
     centers = 0.5 * (edges[:-1] + edges[1:])

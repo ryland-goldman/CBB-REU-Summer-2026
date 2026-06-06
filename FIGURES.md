@@ -246,10 +246,14 @@ bunching factor, focus z, I_peak, final KE).
 
 SLAC-design 3 m, 86-cell, **2π/3 traveling-wave** accelerating structure in **RZ** (f = 2856 MHz),
 synthesised from the two quadrature field maps and driven at the original LinacSim **P = 11 MW**,
-with a solenoid focusing channel. At the faithful-to-LinacSim **Sol 0 = 40 A**, the weak focusing
-captures only **~2 %** of the ~137 keV beam, to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV). Produced by
+with a solenoid focusing channel. The injected 8 kW prebuncher beam (0.83 nC) has diverged to
+r_max ≈ 26 mm, so only **~32 % (≈ 267 pC) enters the 12 mm domain** — the rest is scraped at
+injection. At the faithful-to-LinacSim **Sol 0 = 40 A**, capture is **~0.7 % of the injected
+0.83 nC** (≈ 5.7 pC; ~2 % of what enters the domain), to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV). Produced by
 `plot_linac_sec1.py` from the run (`diags/main`) at `PHASE_DEG = 0`, `I_sol = 40 A` (set
-`I_sol = 1000 A` to recover the strongly-focused ~97 % / ~37 MeV case).
+`I_sol = 1000 A` for the stronger-focus case — still only ~7 % of injected; capture here is
+injection-limited by the over-filled domain, not focusing-limited). Capture fractions are reported
+against the **true injected charge** (sidecar `injection_summary.json`), not the post-scrape first dump.
 
 ### `linac_field.png` — the traveling wave
 ![Linac: on-axis |Ez| amplitude and a field snapshot](linac_sec1/results/linac_field.png)
@@ -281,17 +285,21 @@ signature of capturing a sub-relativistic, weakly-focused beam into a phase-velo
 ![Linac: σ_r and surviving charge](linac_sec1/results/beam_envelope.png)
 
 **Top:** RMS transverse size σ_x vs ⟨z⟩ with the structure bore (9.55 mm) and domain wall marked;
-**bottom:** surviving charge fraction q/q₀. At the faithful-to-LinacSim `I_SOL = 40 A`, the weak
-solenoid cannot hold the diverging injected beam inside the bore, so only **~2 %** survives — most
-is scraped on the 9.55 mm bore early. The surviving slice adiabatically damps (σ_r ∝ 1/√(γβ)) as it
-accelerates. Raising the current (`config(I_SOL=1000)`) holds the beam in the bore and lifts capture
-to ~97 % — the focusing channel is what makes high capture possible.
+**bottom:** surviving charge fraction q/q_inj normalised to the **injected** charge. The curve
+starts at 1.0 at injection and drops to ~0.32 at the first dump — the **injection-scraping cliff**
+(68 % starts outside the 12 mm wall and is lost at step 0; the annotated arrow marks it) — then
+decays to ~0.007 by the exit at the weak `I_SOL = 40 A`. The surviving slice adiabatically damps
+(σ_r ∝ 1/√(γβ)) as it accelerates. Raising the current (`config(I_SOL=1000)`) lifts capture to
+~7 % of injected, but cannot recover the charge already scraped at injection — the loss is
+injection-limited (bore fit), not focusing-limited.
 
 ### `exit_spectrum_capture.png` — the output beam
 ![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
 
 Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, titled with the
-captured-charge fraction (here **~2 %**, ~5.7 pC of the ~267 pC injected focus snapshot). At the faithful-to-LinacSim 40 A /
-11 MW operating point the surviving particles span a broad ~5–30 MeV distribution (max ≈ 29.9 MeV)
-with charge-weighted ⟨KE⟩ ≈ 15.5 ± 7.9 MeV (σ_KE ≈ 51 %) — wide because the weak focusing captures
-only a thin, phase-spread slice. Raising `I_SOL` to ~1000 A recovers the ~97 %-capture, ~37 MeV core.
+captured fraction **of the injected charge** (here **~0.7 %**, ≈ 5.7 pC of the 0.83 nC injected),
+and annotated with how much entered the 12 mm domain (≈ 267 pC, of which ~2 % is captured). At the
+faithful-to-LinacSim 40 A / 11 MW operating point the surviving particles span a broad ~5–30 MeV
+distribution (max ≈ 30 MeV) with charge-weighted ⟨KE⟩ ≈ 15.5 ± 7.9 MeV (σ_KE ≈ 51 %) — wide because
+the weak focusing captures only a thin, phase-spread slice. Raising `I_SOL` to ~1000 A lifts capture
+to ~7 % of injected (≈ 59.9 pC, ⟨KE⟩ ≈ 18.2 MeV) — still injection-limited by the over-filled domain.
