@@ -6,14 +6,14 @@ Bright Beams (CBB) / Cornell Laboratory for Accelerator ScienceS and Education (
 
 The project rebuilds the front end of the **Cornell Linac** — Adam Bartnik's
 [LinacSim](https://cesrwww.lepp.cornell.edu/wiki/CESR/LinacSim) thermionic
-source → gun → prebuncher chain — from first principles in [WarpX](https://warpx.readthedocs.io),
+source → gun → prebuncher → linac chain — from first principles in [WarpX](https://warpx.readthedocs.io),
 the massively-parallel particle-in-cell code, using its Python/PICMI interface (`pywarpx`). Each
 stage reads the previous stage's openPMD beam as input, so the simulations form a single
 self-consistent accelerator chain.
 
 ```
-cathode  ─►  gun  ─►  prebuncher
-(SCL diode)  (~148 keV)  (RF bunching)
+cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
+(SCL diode)  (~148 keV)  (RF bunching)  (~37 MeV)
 ```
 
 ## Setup
@@ -41,9 +41,10 @@ python pipeline/run_pipeline.py
 ```
 
 Each stage is also a top-level Python package — `import cathode; cathode.run()` (likewise
-`gun.run()`, `prebuncher.run()`) runs that stage alone. Use `cathode.config(V_anode=50)` etc. to
-override the module-level parameters before calling `.run()`. See
-[`pipeline/README.md`](pipeline/README.md) for details.
+`gun.run()`, `prebuncher.run()`, `linac_sec1.run()`) runs that stage alone. Use
+`cathode.config(V_anode=50)` etc. to override the module-level parameters before calling
+`.run()`. The linac section also exposes `linac_sec1.demo()` (RF-phase acceptance scan + headline
++ focus-off comparison + figures). See [`pipeline/README.md`](pipeline/README.md) for details.
 
 ## Components
 
@@ -52,7 +53,8 @@ override the module-level parameters before calling `.run()`. See
 | **1. Cathode** | [`cathode/`](cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
 | **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~148 keV. |
 | **3. Prebuncher** | [`prebuncher/`](prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
-| **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the three stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. |
+| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ) with solenoid focusing — captures the bunched ~148 keV beam and accelerates it to ~37 MeV. |
+| **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the four stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. |
 
 Each directory's `README.md` documents its physics, field maps, and outputs.
 
