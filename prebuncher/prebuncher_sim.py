@@ -18,9 +18,10 @@ mode, reproducing GPT's `Map25D_TM` convention:
 with f_RF = 18 × master RF = 214.18 MHz and scale = sqrt(1e3·Q·P / (2π f_RF))
 from the loaded-Q (Q = 3000) / dissipated-power (P) normalisation documented in
 `reference/Linac Simulation Documentation/details.md`. The operating point
-(POWER_W, PHASE, OUTDIR) is set at module level below; main() also accepts the
-same names as keyword overrides, so the pipeline (or a scan driver) can call
-`prebuncher_sim.main(power=400, phase="zc", outdir=...)` without editing the file.
+(POWER_KW, PHASE, OUTDIR) is set at module level below. main() also accepts the
+same names as keyword overrides for direct/script use (e.g.
+`prebuncher_sim.main(power=400, phase="zc", outdir=...)`); the pipeline instead
+applies config() values by setattr on the module before calling bare main().
 """
 
 import numpy as np
@@ -38,10 +39,9 @@ q_e = picmi.constants.q_e
 # ── Prebuncher / field-map parameters (must match build_prebuncher_field.py) ───
 PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
 F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
-OMEGA = 2.0 * np.pi * F_RF
 Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
-V1J_KEV = 430.2                  # 1-J effective gap voltage [keV] (∫|Ez|dz of the map,
-                                 # computed in build_prebuncher_field.py; mirrored here)
+V1J_KEV = 438.6                  # 1-J effective gap voltage [keV] (∫|Ez|dz of the map,
+                                 # computed & printed by build_prebuncher_field.py; mirrored here)
 
 GUN_DIAG = "gun/diags/particles"
 Z_INJECT = 0.005                 # lab z where the bunch head is placed [m]
@@ -65,13 +65,13 @@ ZMAX = 1.30                      # entrance drift + 305 mm cavity + bunching dri
 NR, NZ = 80, 1024                # divisible by the blocking factor (8)
 
 # ── Operating point (the two undocumented prebuncher inputs; see details.md) ───
-# POWER_W = 0 runs the drift-only baseline (no cavity). OUTDIR defaults to None
-# and is derived from POWER_W/PHASE in main() — see prebuncher.resolve_outdir()
+# POWER_KW = 0 runs the drift-only baseline (no cavity). OUTDIR defaults to None
+# and is derived from POWER_KW/PHASE in main() — see prebuncher.resolve_outdir()
 # so the parent process can compute the same path without importing pywarpx.
-from . import DEFAULT_POWER_W, DEFAULT_PHASE
-POWER_W = DEFAULT_POWER_W        # dissipated RF power [W]  (V_gap ≈ scale·430 kV)
+from . import DEFAULT_POWER_KW, DEFAULT_PHASE
+POWER_KW = DEFAULT_POWER_KW      # dissipated RF power [kW]  (V_gap ≈ scale·439 kV)
 PHASE = DEFAULT_PHASE            # "zc" = zero-crossing (bunching), "crest" = max gain
-OUTDIR = None                    # if None at main(), derived from POWER_W/PHASE
+OUTDIR = None                    # if None at main(), derived from POWER_KW/PHASE
 
 
 def load_gun_bunch():
@@ -116,11 +116,11 @@ def load_gun_bunch():
 def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     """Run one prebuncher case.
 
-    All arguments default to the module-level constants (POWER_W, PHASE, OUTDIR,
+    All arguments default to the module-level constants (POWER_KW, PHASE, OUTDIR,
     NZ, ZMAX); pass keyword overrides to run a different operating point without
     editing the file.
     """
-    if power is None:   power = POWER_W
+    if power is None:   power = POWER_KW
     if phase is None:   phase = PHASE
     if outdir is None:  outdir = OUTDIR
     if nz is None:      nz = NZ
@@ -129,14 +129,15 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
         from . import _derive_outdir
         outdir = _derive_outdir(power, phase)
 
-    # Recompute OMEGA here (not just at import) so a config(F_RF=...) override stays
-    # consistent — the module-level OMEGA is frozen at import, before the override lands.
+    # Compute omega here, not at import, so a config(F_RF=...) override is honored
+    # (an import-time module constant would be frozen before the override lands).
     omega = 2.0 * np.pi * F_RF
 
     bunch, v_beam, ke_mean = load_gun_bunch()
 
     # ── RF amplitude and phase ────────────────────────────────────────────────
     # scale = sqrt(stored_energy / 1 J),  stored_energy = 1e3·Q·P/(2π f_RF).
+    # Power is in kW (GPT convention), hence the 1e3 kW->W factor.
     scale = float(np.sqrt(1e3 * Q_L * power / (2.0 * np.pi * F_RF)))
     # Time at which the bunch centre reaches the gap. The energy kick of an
     # electron is ΔW(t) ∝ -cos(ω t + φ) (on-axis Ez is single-signed positive),
@@ -149,7 +150,7 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
         phi = -omega * t_gap + np.pi / 2.0
     else:
         phi = -omega * t_gap + np.pi
-    print(f"Case: P={power:g} W, phase={phase}, scale={scale:.3f}, "
+    print(f"Case: P={power:g} kW, phase={phase}, scale={scale:.3f}, "
           f"f_RF={F_RF/1e6:.2f} MHz, φ={phi:.3f} rad, t_gap={t_gap*1e9:.3f} ns",
           flush=True)
 
@@ -221,11 +222,6 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
     period = max(1, n_steps // N_DIAGS)
-    field_diag = picmi.FieldDiagnostic(
-        name="fields", grid=grid, period=period,
-        data_list=["phi", "rho", "E"],
-        write_dir=outdir, warpx_format="openpmd", warpx_openpmd_backend="h5",
-    )
     part_diag = picmi.ParticleDiagnostic(
         name="particles", period=period, species=[electrons],
         data_list=["position", "momentum", "weighting"],
@@ -245,7 +241,6 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     )
     if prebuncher is not None:
         sim.add_applied_field(prebuncher)
-    sim.add_diagnostic(field_diag)
     sim.add_diagnostic(part_diag)
 
     print(f"\nRunning {n_steps} steps (diag every {period}) -> {outdir}/")

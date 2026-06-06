@@ -34,7 +34,7 @@ from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
-from .build_linac_sec1_field import Z_STRUCT, RMAX, SOL_Z   # keep field/phasing/domain in sync
+from .build_linac_sec1_field import Z_STRUCT, RMAX, SOL_Z, V1KW_KEV   # keep field/phasing/domain in sync
 from . import DEFAULT_OUTDIR
 
 c = picmi.constants.c
@@ -48,7 +48,6 @@ RF2_FIELD = "linac_sec1/linac_sec1_field/linac_rf2.h5"
 SOL_FIELD = "linac_sec1/linac_sec1_field/linac_sol.h5"
 
 F_RF = 2856.0e6                  # SLAC S-band [Hz] (Linac_RF in details.md)
-OMEGA = 2.0 * np.pi * F_RF
 RF_NORM_MW = 0.001               # field-map power normalisation (1 kW)
 
 # ── Upstream input ────────────────────────────────────────────────────────────
@@ -150,8 +149,8 @@ def main():
     # are git-ignored and regenerated, so clearing the case dir is safe.
     if os.path.isdir(outdir):
         shutil.rmtree(outdir)
-    # Recompute OMEGA here (not just at import) so a config(F_RF=...) override stays
-    # consistent — the module-level OMEGA is frozen at import, before the override lands.
+    # Compute omega in main() (not at module import) so a config(F_RF=...) override,
+    # which lands after import, is honoured rather than frozen at the import-time value.
     omega = 2.0 * np.pi * F_RF
 
     bunch, v_beam, ke_mean = load_prebuncher_bunch()
@@ -226,7 +225,7 @@ def main():
     dz = ZMAX / NZ
     dt = CFL * dz / v_beam
     beta_in = v_beam / c
-    gain_keV = scale * 331.0                       # ≈ on-crest gain [keV] (1-kW V1kW≈331 kV)
+    gain_keV = scale * V1KW_KEV                     # ≈ on-crest gain [keV] (1-kW V1kW from the maps)
     gamma_hi = 1.0 + (ke_mean + gain_keV) / MC2_KEV
     beta_hi = float(np.sqrt(1.0 - 1.0 / gamma_hi**2))
     z_end = ZMAX - 0.20                            # stop in the drift, clear of the wall
@@ -242,10 +241,6 @@ def main():
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
     period = max(1, n_steps // N_DIAGS)
-    field_diag = picmi.FieldDiagnostic(
-        name="fields", grid=grid, period=period,
-        data_list=["phi", "rho", "E"],
-        write_dir=outdir, warpx_format="openpmd", warpx_openpmd_backend="h5")
     part_diag = picmi.ParticleDiagnostic(
         name="particles", period=period, species=[electrons],
         data_list=["position", "momentum", "weighting"],
@@ -259,7 +254,6 @@ def main():
         layout=picmi.PseudoRandomLayout(n_macroparticles_per_cell=1, grid=grid))
     for fld in applied:
         sim.add_applied_field(fld)
-    sim.add_diagnostic(field_diag)
     sim.add_diagnostic(part_diag)
 
     print(f"\nRunning {n_steps} steps (diag every {period}) → {outdir}/")

@@ -236,7 +236,7 @@ class Stage:
 
         **Cumulative:** keys accumulate across calls (`dict.update`) and are
         never auto-cleared, so a key set once persists into every later
-        run() until overwritten. A scan loop that varies, say, POWER_W but
+        run() until overwritten. A scan loop that varies, say, POWER_KW but
         also writes per-point OUTDIRs must set OUTDIR every iteration (as the
         documented prebuncher scan does) — set it once and the stale value
         leaks into subsequent runs, silently overwriting the same directory.

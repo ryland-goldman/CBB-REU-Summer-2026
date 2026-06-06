@@ -6,7 +6,7 @@ cathode/results/:
 
   1. cathode_2d.png       — 2D maps of charge density, potential, |E|: shows the
                             beam emitted from the finite cathode and the field
-                            enhancement at the cathode edges.
+                            transition at the cathode edges.
   2. child_langmuir.png   — on-axis phi(z), Ez(z) vs. the Child–Langmuir laws.
   3. current_saturation.png — transmitted current vs. time, saturating at J_CL
                             even though we inject 2× J_CL.

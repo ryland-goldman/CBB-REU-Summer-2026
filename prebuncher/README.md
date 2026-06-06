@@ -14,22 +14,22 @@ prebuncher — a standing-wave TM RF cavity — and bunches in the downstream dr
 ```python
 # from repo root, in the CBB env:
 import prebuncher
-prebuncher.config(POWER_W=800, PHASE="zc",
+prebuncher.config(POWER_KW=800, PHASE="zc",
                   OUTDIR="prebuncher/diags/P800_zc")   # optional
 prebuncher.run()        # build field + sim + plots
 # prebuncher.plot()     # re-generate figures from existing diags/
 ```
 
 `prebuncher.run()` runs **a single case**. Defaults live at the top of
-`prebuncher/prebuncher_sim.py` (`POWER_W`, `PHASE`, `OUTDIR`); `config()` overrides them
+`prebuncher/prebuncher_sim.py` (`POWER_KW`, `PHASE`, `OUTDIR`); `config()` overrides them
 before the run.
 
 `build_prebuncher_field` reads `fieldmaps/prebuncher_25D.gdf`; the sim reads the gun
 output from `gun/diags/particles/` (both paths repo-root-relative). To run the whole accelerator chain
 (cathode → gun → prebuncher), use **`pipeline/run_pipeline.py`** in the repo root. The
-results table below was produced by running several powers (`POWER_W=160/300/500/800`) and the
+results table below was produced by running several powers (`POWER_KW=160/300/500/800`) and the
 `P=0` drift baseline manually. The baseline must be given an explicit
-`OUTDIR="prebuncher/diags/P0_drift"`: auto-derive turns `POWER_W=0` into `P0_zc`/`P0_crest`,
+`OUTDIR="prebuncher/diags/P0_drift"`: auto-derive turns `POWER_KW=0` into `P0_zc`/`P0_crest`,
 which the plotter treats as a powered case, not the baseline (see **Outputs**).
 
 ## Field map
@@ -70,14 +70,14 @@ Parameters fixed by `reference/Linac Simulation Documentation/details.md`:
 
 - **Frequency** `f_RF = 18 × master RF = 18 × (499.7645 MHz / 42) = 214.18 MHz`.
 - **Scale** `scale = sqrt(1e3 · Q · P / (2π f_RF) / 1 J)`, loaded **Q = 3000** (prebuncher 1).
-  The map's 1-J transit-weighted effective gap voltage is **V1J ≈ 430 kV**, so the physical
+  The map's 1-J transit-weighted effective gap voltage is **V1J ≈ 439 kV**, so the physical
   gap voltage of a case is `V_gap = scale · V1J`.
 
 Two inputs are left to the operator by design ("the user specifies dissipated power and
 relative phase"):
 
-- **Power P** — set per run (default `800 W`; characterised over `[160, 300, 500, 800] W`,
-  ⇒ V_gap ≈ 257–574 kV; see the intrinsic-chirp threshold below for why these are higher than a
+- **Power P** — set per run (default `800 kW`; characterised over `[160, 300, 500, 800] kW`,
+  ⇒ V_gap ≈ 262–586 kV; see the intrinsic-chirp threshold below for why these are higher than a
   textbook prebuncher).
 - **Phase** — `zc` or `crest` (both characterised below):
   - `zc` (zero-crossing): bunch centre crosses the gap at the field zero-crossing → head
@@ -102,12 +102,12 @@ adds **−3.05 keV/mm per unit field scale**, so the net chirp is
 c_net = 1.40 − 3.05 · scale   [keV/mm]   (scale = sqrt(stored_energy / 1 J))
 ```
 
-A single-particle estimate gives a bunching threshold of `scale ≳ 0.46` (≈95 W, V_gap ≈
-205 kV) — already higher than a textbook low-voltage prebuncher, because the cavity must
-first cancel the gun's intrinsic chirp — which is why the scanned powers are 160–800 W.
+A single-particle estimate gives a bunching threshold of `scale ≳ 0.46` (≈95 kW, V_gap ≈
+202 kV) — already higher than a textbook low-voltage prebuncher, because the cavity must
+first cancel the gun's intrinsic chirp — which is why the scanned powers are 160–800 kW.
 
 **Space charge dominates the real result.** At 0.1 nC the ~1 mm bunch is dense: in free drift
-it expands to ~19 mm over the 1.3 m line, and even the strongest cavity (800 W) cannot
+it expands to ~19 mm over the 1.3 m line, and even the strongest cavity (800 kW) cannot
 compress it *below* the injected 0.985 mm at these powers. So the meaningful, space-charge-
 honest metric is **bunching relative to a drift-only baseline (P = 0)**: `σ_z,drift(z) /
 σ_z,cavity(z)` at matched ⟨z⟩. The diagnostics track **σ_z(z)** (vs. the drift baseline), that
@@ -148,9 +148,12 @@ is a small perturbation on the 148 keV beam, so the looser solve shifts the bunc
 slightly); since space charge *drives* the bunching, check the σ_z(z) figure if you loosen it
 further.
 
-WarpX's MLMG Poisson solve is memory-bandwidth bound, so a single run on all 14 cores
-(~0.78 s/step) is actually *slower* than on ~6 (`OMP_NUM_THREADS=6`); the pipeline sets this by
-default. To compare several powers, call `prebuncher.run(plots=False)` once per power (e.g. in
+WarpX's MLMG Poisson solve is memory-bandwidth bound, so these small grids gain nothing from
+OpenMP threads — threads contend for the same memory bus and add fork/join overhead with no
+speedup (full Balanced chain ~1.1 min at `OMP_THREADS=1`; `OMP_THREADS=14` showed no gain). The
+pipeline therefore runs **single-threaded by default** (`OMP_THREADS=1`); raise `OMP_THREADS`
+only for the much larger original-config grids, where per-thread work outgrows the overhead.
+To compare several powers, call `prebuncher.run(plots=False)` once per power (e.g. in
 a Python loop), each with its own `OUTDIR`; a final `prebuncher.plot()` then picks up every `diags/P*`
 directory.
 
@@ -158,27 +161,27 @@ directory.
 
 Bunching ratio = max over z of σ_z,drift / σ_z,cavity (>1 ⇒ the cavity is bunching):
 
-| P [W] | V_gap [kV] | zero-crossing bunching | focus z | on-crest |
+| P [kW] | V_gap [kV] | zero-crossing bunching | focus z | on-crest |
 |-------|-----------|------------------------|---------|----------|
-| 160 | 257 | 2.05× | 1.09 m | accelerates to 402 keV |
-| 300 | 352 | 2.84× | 1.09 m | → 499 keV |
-| 500 | 454 | 3.89× | 0.62 m | → 604 keV |
-| 800 | 575 | 5.40× | 0.49 m | → 721 keV |
+| 160 | 262 | 2.05× | 1.09 m | accelerates to 402 keV |
+| 300 | 359 | 2.84× | 1.09 m | → 499 keV |
+| 500 | 463 | 3.89× | 0.62 m | → 604 keV |
+| 800 | 586 | 5.40× | 0.49 m | → 721 keV |
 
 The drift beam expands 0.985 → ~19 mm; the zero-crossing cavity suppresses this increasingly
 with power, reaching a transient focus that moves upstream (1.09 → 0.49 m) and nearly recovers
-the injected length at 800 W. **On-crest** mainly *accelerates* the beam (KE up to 721 keV) with
+the injected length at 800 kW. **On-crest** mainly *accelerates* the beam (KE up to 721 keV) with
 no chirp-flip focus — its apparent ratio is relativistic suppression of debunching, not true
 bunching (see the z–KE phase-space panels: zc flips the chirp negative; crest just shifts up in
 energy). The phase-space and σ_z curves show some space-charge filamentation near the focus.
 
 ## Outputs
 
-Each `prebuncher.run(...)` call writes `diags/P{P}_{phase}/{fields,particles}/` when `OUTDIR`
-is left unset — the dir is auto-derived as `P{POWER_W:g}_{PHASE}` (so `POWER_W=0` yields
+Each `prebuncher.run(...)` call writes `diags/P{P}_{phase}/particles/` when `OUTDIR`
+is left unset — the dir is auto-derived as `P{POWER_KW:g}_{PHASE}` (so `POWER_KW=0` yields
 `P0_zc`/`P0_crest`, *not* `P0_drift`). The plotter recognises the drift baseline **only** by the
 exact name `P0_drift`, so to get a baseline that the comparison treats as the P=0 reference you
-must pass it explicitly: `prebuncher.config(POWER_W=0, OUTDIR="prebuncher/diags/P0_drift")`.
+must pass it explicitly: `prebuncher.config(POWER_KW=0, OUTDIR="prebuncher/diags/P0_drift")`.
 `prebuncher.plot()` reads every `diags/P*` directory present and writes to `results/`:
 
 The per-case figures use **config-independent filenames** (the power/phase lives in the figure
@@ -212,7 +215,7 @@ wins) — use `compare_power_phase.png` for the cross-case scan.
   as the gun); acceptable for this stage.
 - **Absolute compression below the injected σ_z would need lower bunch charge, a shorter
   gun→cavity drift, or higher V_gap.** Here the bunch is already short and space-charge dense,
-  so we report bunching relative to the drift baseline. Set `BUNCH`/`MAX_PART` or `Z_GAP_CENTER`
+  so we report bunching relative to the drift baseline. Set `MAX_PART` or `Z_GAP_CENTER`
   in `prebuncher_sim.py` to explore.
 - If a lower-power focus falls outside the 1.30 m domain, raise `ZMAX` in `prebuncher_sim.py`.
 - The drift baseline and crest curves drop sharply at the last 1–2 points as the beam clears the

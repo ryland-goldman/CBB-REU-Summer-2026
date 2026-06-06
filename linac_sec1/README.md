@@ -137,7 +137,7 @@ the beam is both bunched and still inside the 9.5 mm bore. (The global σ_z mini
 
 ## Outputs
 
-`linac_sec1.run()` writes `diags/main/{fields,particles}/` and `linac_sec1.plot()` reads it,
+`linac_sec1.run()` writes `diags/main/particles/` and `linac_sec1.plot()` reads it,
 writing five figures to `results/`:
 
 - `linac_field.png` — the on-axis traveling-wave `|Ez|` amplitude (× scale) and a fixed-t field

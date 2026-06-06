@@ -25,6 +25,7 @@ import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
 from .build_linac_sec1_field import Z_STRUCT, RMAX            # geometry, kept in sync
+from . import DEFAULT_OUTDIR                                  # default diags dir for run()
 
 MC2 = 0.51099895                 # electron rest energy [MeV]
 Q_E = 1.602176634e-19
@@ -35,7 +36,7 @@ L_STRUCT = 3.016                 # structure length [m]
 
 RF1 = "linac_sec1/linac_sec1_field/linac_rf1.h5"
 RF2 = "linac_sec1/linac_sec1_field/linac_rf2.h5"
-MAIN = "linac_sec1/diags/main"
+OUTDIR = None                    # config(OUTDIR=...) sets this; None → DEFAULT_OUTDIR
 RESULTS = "linac_sec1/results"
 
 
@@ -94,6 +95,8 @@ def beam_track(diag):
         rec[k] = np.asarray(rec[k])
     if not rec["z"].size:                         # every snapshot near-empty -> no usable beam
         return None
+    if not q0:                                    # degenerate injection (zero baseline charge)
+        return None
     rec["q0"] = q0
     rec["snaps"] = snaps
     return rec
@@ -127,9 +130,10 @@ def main():
         fig.savefig(f"{RESULTS}/linac_field.png", dpi=140)
         print(f"wrote {RESULTS}/linac_field.png")
 
-    rec = beam_track(MAIN)
+    main_diag = OUTDIR or DEFAULT_OUTDIR           # honour config(OUTDIR=...) overrides
+    rec = beam_track(main_diag)
     if rec is None:
-        print(f"no beam diagnostics in {MAIN}; run the sim first. Skipping beam figures.")
+        print(f"no beam diagnostics in {main_diag}; run the sim first. Skipping beam figures.")
         return
 
     # ══ Fig 2: energy gain — KE with both the Lorentz factor γ and β ═══════════
@@ -161,7 +165,12 @@ def main():
     # ══ Fig 3: longitudinal phase space at injection / mid / exit ═══════════════
     snaps = rec["snaps"]
     its = list(snaps)
-    picks = [its[0], its[len(its) // 2], its[-1]]
+    # Pick the mid panel by beam position (⟨z⟩ nearest the capture region, ≈Z_STRUCT
+    # + 0.2 m), not the middle iteration index — the latter lands ~1.65 m downstream,
+    # well past where the RF bucket forms.
+    zmeans = {it: np.average(snaps[it][0], weights=snaps[it][2]) for it in its}
+    mid = min(its, key=lambda it: abs(zmeans[it] - (Z_STRUCT + 0.2)))
+    picks = [its[0], mid, its[-1]]
     fig, axs = plt.subplots(1, 3, figsize=(13, 4.2), constrained_layout=True, squeeze=False)
     for ax, it in zip(axs[0], picks):
         z, ke, w = snaps[it]                          # cached from beam_track

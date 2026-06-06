@@ -61,6 +61,13 @@ SOL_MAP = "SOL_0"
 RF_NORM_MW = 0.001           # field-map power normalisation (1 kW)
 POWER_MW = 15.0              # RF input power [MW]  (~37 MeV on crest)
 
+# Traveling-wave 1-kW synchronous voltage ∫|Ez|dz of the committed SLAC maps
+# (RF1_GDF + RF2_GDF), reported by the build below. Imported by linac_sec1_sim.py
+# as the on-crest gain coefficient (gain = sqrt(P_MW/1e-3)·V1KW_KEV) so the sim's
+# transit estimate stays in sync with the maps. Defined as a literal (not computed
+# at import) to keep importing the module cheap; main() asserts it matches.
+V1KW_KEV = 331.2             # [keV] = on-axis ∫|Ez|dz of the 1-kW maps
+
 # ── Shared geometry (imported by linac_sec1_sim.py so field/phasing/domain agree) ─
 # Lab-frame z of grid index 0 of each map (openPMD grid_global_offset). The SLAC
 # map's own z runs −3.3…3012 mm; placing index 0 at Z_STRUCT puts the structure
@@ -69,8 +76,10 @@ Z_STRUCT = 0.10              # [m] structure entrance (after a short injection d
 # Solenoid map index-0 z. SOL_0 peaks 813 mm into its own grid; a negative offset
 # slides that peak to ≈ lab z 0.21 m so the strongest focusing sits in the
 # low-energy capture region just inside the structure entrance (the beam is most
-# rigid-limited at ~148 keV there). The solenoid field is 0 at its grid edges, so
-# the clipped (lab z < 0) tail carries no field.
+# rigid-limited at ~148 keV there). The strongly-focusing peak sits inside the
+# domain (lab z ≈ 0.21 m); the rising edge below lab z = 0 is clipped — note the
+# clip plane is already at ~98% of peak |Bz|, so it is the map's far grid edge
+# (native z = 0), not this clip plane, where Bz → 0.
 SOL_Z = -0.60                # [m]
 RMAX = 0.012                 # [m] sim radial domain; RF maps are zero-padded in r to here
 
@@ -167,6 +176,9 @@ def main():
     # 1-kW synchronous voltage. Physical gain (on crest) = sqrt(P_MW/1e-3)·this.
     env = np.sqrt(ez1**2 + ez2**2)
     v1kW = float(np.trapezoid(env, z))
+    assert abs(v1kW / 1e3 - V1KW_KEV) < 0.5, (
+        f"1-kW voltage {v1kW/1e3:.2f} kV drifted from V1KW_KEV={V1KW_KEV}; "
+        "update the constant if the SLAC maps changed")
     print(f"SLAC Section 1 RF: nr={nr} (0–{r[-1]*1e3:.2f} mm, padded to RMAX="
           f"{RMAX*1e3:.0f} mm), nz={nz}, L={L:.3f} m, entrance at lab z={Z_STRUCT*1e3:.0f} mm")
     print(f"  peak on-axis |Ez| {env.max()/1e3:.2f} kV/m (1 kW); traveling-wave "
