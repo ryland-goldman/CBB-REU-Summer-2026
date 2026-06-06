@@ -48,7 +48,6 @@ RF2_FIELD = "linac_sec1/linac_sec1_field/linac_rf2.h5"
 SOL_FIELD = "linac_sec1/linac_sec1_field/linac_sol.h5"
 
 F_RF = 2856.0e6                  # SLAC S-band [Hz] (Linac_RF in details.md)
-OMEGA = 2.0 * np.pi * F_RF
 RF_NORM_MW = 0.001               # field-map power normalisation (1 kW)
 
 # ── Upstream input ────────────────────────────────────────────────────────────
@@ -150,8 +149,8 @@ def main():
     # are git-ignored and regenerated, so clearing the case dir is safe.
     if os.path.isdir(outdir):
         shutil.rmtree(outdir)
-    # Recompute OMEGA here (not just at import) so a config(F_RF=...) override stays
-    # consistent — the module-level OMEGA is frozen at import, before the override lands.
+    # Compute omega in main() (not at module import) so a config(F_RF=...) override,
+    # which lands after import, is honoured rather than frozen at the import-time value.
     omega = 2.0 * np.pi * F_RF
 
     bunch, v_beam, ke_mean = load_prebuncher_bunch()

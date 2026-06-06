@@ -66,7 +66,7 @@ POWER_MW = 15.0              # RF input power [MW]  (~37 MeV on crest)
 # as the on-crest gain coefficient (gain = sqrt(P_MW/1e-3)·V1KW_KEV) so the sim's
 # transit estimate stays in sync with the maps. Defined as a literal (not computed
 # at import) to keep importing the module cheap; main() asserts it matches.
-V1KW_KEV = 331.2             # [keV per kV·... ] = on-axis ∫|Ez|dz of the 1-kW maps
+V1KW_KEV = 331.2             # [keV] = on-axis ∫|Ez|dz of the 1-kW maps
 
 # ── Shared geometry (imported by linac_sec1_sim.py so field/phasing/domain agree) ─
 # Lab-frame z of grid index 0 of each map (openPMD grid_global_offset). The SLAC
