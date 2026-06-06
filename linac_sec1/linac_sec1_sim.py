@@ -64,7 +64,11 @@ RNG_SEED = 0
 # ── Operating point (tunable via linac_sec1.config(...)) ──────────────────────
 POWER_MW = 15.0                  # RF input power [MW]  (~37 MeV on crest)
 PHASE_DEG = 0.0                  # injection RF phase offset [deg] (scanned for crest)
-I_SOL = 400.0                    # solenoid current [A] (0 → focusing off)
+# Solenoid current [A] (0 → focusing off). The prebuncher beam arrives diverging
+# (it lacked focusing over its 1.3 m drift), so strong focusing is needed to keep it
+# in the bore: capture rises from ~4% (I=0) to ~95% (I≈1000 A → 0.15 T peak). 0 is the
+# focus-off comparison case.
+I_SOL = 1000.0
 
 # ── Performance / domain knobs ────────────────────────────────────────────────
 CFL = 0.5                        # dt = CFL · Δz / v_inject
