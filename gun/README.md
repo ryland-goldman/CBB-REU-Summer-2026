@@ -86,7 +86,12 @@ bunch charge. We:
    cathode snapshot.
 2. Remap the 2D `(x, z)` slab into RZ: treat `|x|` as the radius `r` and smear the particles
    uniformly in azimuth (`x = r cosθ, y = r sinθ`), rotating the transverse momentum
-   accordingly.
+   accordingly. Crucially, the revolution carries a **2πr Jacobian**: a slab uniform in `x`
+   has a flat `dN/dr`, which—revolved naively with `r = |x|` and unchanged weight—would give
+   areal density `n(r) ∝ 1/r`, a spurious on-axis charge cusp. We therefore
+   **importance-resample by `r`** (draw particles with probability ∝ `r`, with replacement),
+   so `dN/dr → r·dN/dr` and `n(r)` matches the cathode's true radial profile (a flat-top
+   emitting strip → a uniform-density disc). This keeps the macroparticle weights uniform.
 3. **Renormalize** the total weight to a physical gun bunch charge `BUNCH_CHARGE = 0.1 nC`
    (the CESR gun is grid-pulse gated; 0.1 nC matches the prior IMPACT-T gun model).
 
@@ -97,8 +102,10 @@ transports cleanly and accelerates. Set `BUNCH_CHARGE` at the top of `gun_sim.py
 the space-charge regime.
 
 **Approximations.** The cathode model is a 2D Cartesian slab, not RZ, so the slab→radius
-remap is an approximation (it preserves the radial profile and momentum spread but not the
-true cylindrical emission). The DC beam is treated as a single injected bunch.
+remap is an approximation: the `r`-importance resample (step 2) makes the **areal density**
+match the cathode's radial profile, but the reconstructed azimuthal distribution is assumed
+uniform (it cannot recover the true cylindrical emission, which the 2D slab never had). The DC
+beam is treated as a single injected bunch.
 
 ## Simulation parameters (`gun_sim.py`)
 
@@ -112,9 +119,14 @@ true cylindrical emission). The DC beam is treated as a single injected bunch.
 | time step | `dt = CFL·Δz/v_exit` (`CFL`=0.4; v_exit ≈ 0.63 c at 150 keV) |
 | duration | `TRANSIT_MARGIN`×gun-transit time (=1.15; bunch average speed ≈ `AVG_SPEED_FRAC`·v_exit, =0.6), or fixed via `MAX_STEPS`; stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
 
-The lab-frame electrostatic solver is non-relativistic in its self-field treatment; at the
-gun exit (β ≈ 0.63) this mildly overestimates the space-charge field — acceptable for a
-single-pass gun demo, but note it if pushing to higher voltage.
+The lab-frame electrostatic solver is non-relativistic in its self-field treatment: it applies
+the rest-frame Coulomb field `qE_r` with no magnetic-pinch cancellation, whereas the true net
+transverse force is `qE_r/γ²`. At the gun exit (148 keV, γ ≈ 1.29) this **overestimates the
+transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** — ramping from a few % near the
+cathode (10 keV) to ~66 % at exit. (The genuine fix is WarpX's relativistic ES mode, out of
+scope for this single-pass demo; the same caveat applies, but shrinks, in the more relativistic
+prebuncher/linac stages — see those READMEs.) Acceptable for the demo, but note it if pushing
+to higher voltage or interpreting the absolute σ_r / emittance.
 
 ## Figures (`results/`)
 

@@ -24,7 +24,9 @@ weights in its last particle snapshot encode the steady-state population in
 transit through the diode (~102 nC), not a bunch charge. We import the emitted
 **phase-space distribution** (positions + momenta), remap the 2D (x, z) slab
 into RZ by treating |x| as the radius r and smearing the particles uniformly in
-azimuth, and renormalize the total weight to a physical gun bunch charge
+azimuth — importance-resampling by r so the revolution supplies its 2πr Jacobian
+(a uniform-in-x slab → a uniform-density disc, not a spurious 1/r on-axis cusp) —
+and renormalize the total weight to a physical gun bunch charge
 `BUNCH_CHARGE` (the CESR gun is pulse-grid gated). The full 102 nC injected as
 one instantaneous bunch is unphysical — its radial space-charge field (~50 MV/m)
 dwarfs the gun field and blows the beam apart before it accelerates.
@@ -106,6 +108,20 @@ def load_cathode_bunch():
         scale_w = r.size / MAX_PART
         xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
         w = w * scale_w
+
+    # slab(x) → RZ disc: supply the 2πr revolution Jacobian that the naive r=|x|
+    # map omits. A 2D Cartesian slab uniform in x has a flat dN/dr; revolving it
+    # with r=|x| and unchanged weight yields areal density n(r) ∝ 1/r — a spurious
+    # on-axis charge cusp that gives a radially-flat (nonlinear) self-field and
+    # corrupts the σ_r, φ-well, and emittance this stage is meant to deliver.
+    # Importance-resample (with replacement) with probability ∝ r, so dN/dr → r·dN/dr
+    # and the areal density matches the cathode's true radial profile (a flat-top
+    # emitting strip → a uniform-density disc). Drawing from the actual particles
+    # keeps weights uniform (no weight-variance, so downstream RMS/emittance stay
+    # unweighted-valid) and preserves the cathode-edge position–momentum correlations.
+    if r.max() > 0.0:
+        sel = rng.choice(r.size, r.size, replace=True, p=r / r.sum())
+        xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
 
     theta = rng.uniform(0.0, 2.0 * np.pi, size=r.size)
     ct, st = np.cos(theta), np.sin(theta)

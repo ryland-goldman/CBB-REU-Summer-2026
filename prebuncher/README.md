@@ -211,8 +211,10 @@ wins) — use `compare_power_phase.png` for the cross-case scan.
   them.
 - The **gun→prebuncher drift distance** (`Z_prebuncher1`) is undocumented; we use a short
   entrance drift with the gap at `Z_GAP_CENTER = 0.20 m`. Adjust if a real spacing is known.
-- The lab-frame electrostatic self-field is mildly non-relativistic at β ≈ 0.63 (same caveat
-  as the gun); acceptable for this stage.
+- The lab-frame electrostatic self-field is non-relativistic: it omits the `1/γ²` magnetic-pinch
+  cancellation, overestimating the transverse space-charge force by ~γ² (the gun-exit β ≈ 0.63 →
+  ~66 %; see `gun/README.md`). The error shrinks as the beam is captured and γ grows, and space
+  charge is only a small perturbation on the 148 keV beam — acceptable for this stage.
 - **Absolute compression below the injected σ_z would need lower bunch charge, a shorter
   gun→cavity drift, or higher V_gap.** Here the bunch is already short and space-charge dense,
   so we report bunching relative to the drift baseline. Set `MAX_PART` or `Z_GAP_CENTER`
