@@ -65,7 +65,7 @@ Each stage lives in its own `<stage>/` directory and follows the same script lay
 | `cathode/cathode_diode.py` | — (emits at cathode) | `cathode/diags/particles` |
 | `gun/gun_sim.py` | `cathode/diags/particles` + `gun/gun_field/gun_E.h5` | `gun/diags` |
 | `prebuncher/prebuncher_sim.py` | `gun/diags/particles` + `prebuncher/prebuncher_field/prebuncher_EB.h5` | `prebuncher/diags/<P..._...>` |
-| `linac_sec1/linac_sec1_sim.py` | `prebuncher/diags/P800_zc/particles` + `linac_sec1/linac_sec1_field/linac_{rf1,rf2,sol}.h5` | `linac_sec1/diags/main` |
+| `linac_sec1/linac_sec1_sim.py` | `prebuncher/diags/P8_zc/particles` + `linac_sec1/linac_sec1_field/linac_{rf1,rf2,sol}.h5` | `linac_sec1/diags/main` |
 
 `pipeline/run_pipeline.py` orchestrates the whole chain by calling `cathode.run()`, `gun.run()`, `prebuncher.run()`, `linac_sec1.run()` in order. The shared runner in `pipeline/_runner.py` builds field maps and generates plots **in-process**, but spawns a **fresh Python subprocess** (`pipeline/_launch_sim.py`) for each sim — pywarpx binds globally to one geometry (2D/RZ/3D) at first `.so` load and caches diagnostic state by name, so chaining cathode (2D) → gun (RZ) → prebuncher (RZ) in one interpreter would trip `AssertionError: Diagnostic attributes not consistent`. Inside each sim, `run_step(...)` installs a `pywarpx.callbacks.installcallback("afterstep", …)` hook to drive a tqdm progress bar and redirects WarpX's noisy per-step stdout to the pipeline log file, so the bar updates on a clean terminal line. A structured DEBUG log lands in `pipeline/logs/pipeline_<timestamp>.log`. The cathode is 2D x–z; the gun, prebuncher, and linac_sec1 are RZ (cylindrically symmetric).
 

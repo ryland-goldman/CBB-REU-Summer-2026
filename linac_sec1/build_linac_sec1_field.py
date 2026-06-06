@@ -59,7 +59,7 @@ SOL_MAP = "SOL_0"
 # themselves are power-independent, 1-kW-normalised). Mirrors linac_sec1_sim.py so
 # a config(POWER_MW=...) override makes the report track the actual run.
 RF_NORM_MW = 0.001           # field-map power normalisation (1 kW)
-POWER_MW = 15.0              # RF input power [MW]  (~37 MeV on crest)
+POWER_MW = 11.0              # RF input power [MW] (sec1_input_power in the original LinacSim gpt_master.in)
 
 # Traveling-wave 1-kW synchronous voltage ∫|Ez|dz of the committed SLAC maps
 # (RF1_GDF + RF2_GDF), reported by the build below. Imported by linac_sec1_sim.py

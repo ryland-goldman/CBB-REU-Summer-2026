@@ -29,7 +29,7 @@ overridable via `config()` — e.g. `linac_sec1.config(I_SOL=0); linac_sec1.run(
 `PHASE_DEG` sweep in a Python loop if you want the acceptance curve.
 
 `build_linac_sec1_field` reads the maps from `fieldmaps/`; the sim reads the prebuncher output
-from `prebuncher/diags/P800_zc/particles/` (repo-root-relative). To run the whole chain
+from `prebuncher/diags/P8_zc/particles/` (repo-root-relative). To run the whole chain
 (cathode → gun → prebuncher → linac_sec1), use **`pipeline/run_pipeline.py`**.
 
 ## Field maps

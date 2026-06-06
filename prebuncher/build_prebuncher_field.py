@@ -43,7 +43,7 @@ OUT_FILE = os.path.join(OUT_DIR, "prebuncher_EB.h5")
 
 # Lab-frame z of the cavity gap centre (the map is gap-centred at its own z=0).
 # Imported by prebuncher_sim.py so the field placement and the beam phasing agree.
-Z_GAP_CENTER = 0.20          # [m]
+Z_GAP_CENTER = 0.534         # [m] (Z_prebuncher1 in the original LinacSim gpt_master.in)
 MAP_HALF_Z = 0.1524          # [m] half-length of the map (±152.4 mm)
 
 # On-axis 1-J effective gap voltage ∫|Ez(r=0,z)|dz of the committed map, in keV.

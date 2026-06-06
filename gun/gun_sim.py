@@ -54,8 +54,9 @@ RMAX = 0.015                 # field-map R extent [m]
 ZMAX = 0.051765              # field-map Z extent [m]
 
 CATHODE_DIAG = "cathode/diags/particles"
-BUNCH_CHARGE = 0.1e-9        # renormalized gun bunch charge [C] (matches the 0.1 nC
-                             # IMPACT-T gun model); raw cathode snapshot is ~102 nC
+BUNCH_CHARGE = 1.0e-9        # renormalized gun bunch charge [C] = 1 nC, matching the
+                             # original LinacSim gpt_master.in total_charge = -1e-9;
+                             # raw cathode snapshot is ~102 nC
 RNG_SEED = 0
 
 # ── Grid (RZ, single azimuthal mode — the gun field is m = 0) ─────────────────

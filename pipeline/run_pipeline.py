@@ -49,10 +49,13 @@ import linac_sec1
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 
 # ── Operating-point overrides (physics; defaults live in the stage modules) ──
-cathode.config(V_anode=50.0)
-gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=0.1e-9)
-prebuncher.config(POWER_KW=800, PHASE="zc")
-linac_sec1.config(POWER_MW=15.0)            # SLAC Section 1 input power (~37 MeV on crest)
+# Matched to the original LinacSim input files (reference/Linac Simulation
+# Documentation/input_files/): cathode_master.in + gpt_master.in (gun, prebuncher,
+# section-1) GUI defaults.
+cathode.config(V_anode=60.0)                          # Vpulse = 60 V
+gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)    # total_charge = -1e-9 (1 nC)
+prebuncher.config(POWER_KW=8, PHASE="zc")             # prebuncher1_input_power = 8 kW
+linac_sec1.config(POWER_MW=11.0, I_SOL=40.0)          # sec1_input_power = 11 MW; Sol 0 = 40 A
 
 # ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
 #    reason NZ must stay at 1024: see pipeline/README.md § Configuration. ──

@@ -51,7 +51,7 @@ F_RF = 2856.0e6                  # SLAC S-band [Hz] (Linac_RF in details.md)
 RF_NORM_MW = 0.001               # field-map power normalisation (1 kW)
 
 # ── Upstream input ────────────────────────────────────────────────────────────
-PREBUNCH_DIAG = "prebuncher/diags/P800_zc/particles"   # bunched gun→prebuncher beam
+PREBUNCH_DIAG = "prebuncher/diags/P8_zc/particles"   # bunched gun→prebuncher beam
 Z_INJECT = 0.005                 # lab z where the bunch head is placed [m]
 Z_FOCUS_MIN = 0.30               # only seek the bunch focus past the cavity (drift), so
                                  # the pre-modulation injection snapshots near z=0 (which
@@ -60,14 +60,15 @@ MAX_PART = 50000                 # downsample the injected snapshot (reweighted)
 RNG_SEED = 0
 
 # ── Operating point (tunable via linac_sec1.config(...)) ──────────────────────
-POWER_MW = 15.0                  # RF input power [MW]  (~37 MeV on crest)
-PHASE_DEG = 0.0                  # injection RF phase offset [deg] (scanned for crest)
-# Solenoid current [A] (0 → focusing off). The prebuncher beam arrives diverging
-# (it lacked focusing over its 1.3 m drift), so strong focusing is needed to keep it
-# in the bore: capture rises from ~4% (I=0) to ~95% (I≈1000 A → 0.15 T peak), so the
-# default is the strongly focused, on-crest operating point. Set I_SOL=0 (via config)
-# to run the unfocused case.
-I_SOL = 1000.0
+# Matched to the original LinacSim gpt_master.in section-1 GUI defaults:
+# sec1_input_power = 11.0 MW, Sol 0 current = 40 A, relative phase phi_sec1_off = 0.
+POWER_MW = 11.0                  # RF input power [MW] (sec1_input_power)
+PHASE_DEG = 0.0                  # injection RF phase offset [deg] (= phi_sec1_off; crest found empirically)
+# Solenoid current [A] (0 → focusing off), from the original Sol 0 current = 40 A.
+# NOTE: at 40 A the focusing is far weaker than the I≈1000 A the rebuild previously
+# used to reach ~95% capture into the 9.5 mm bore (capture was ~4% unfocused), so
+# expect low capture at this faithful-to-original current. Set I_SOL via config to scan.
+I_SOL = 40.0
 
 # ── Performance / domain knobs ────────────────────────────────────────────────
 CFL = 0.5                        # dt = CFL · Δz / v_inject
