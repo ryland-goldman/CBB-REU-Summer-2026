@@ -32,6 +32,9 @@ one instantaneous bunch is unphysical — its radial space-charge field (~50 MV/
 dwarfs the gun field and blows the beam apart before it accelerates.
 """
 
+import os
+import shutil
+
 import numpy as np
 import pywarpx
 from pywarpx import picmi
@@ -209,6 +212,14 @@ def main():
     print(f"dt = {dt:.3e} s, max_steps = {max_steps}", flush=True)
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
+    # Fresh diags: WarpX appends one openPMD file per dump, so re-running with a
+    # different grid/step count would otherwise mix old and new iterations (whose
+    # diag steps interleave) into one series — the plots then show a fan of
+    # overlapping curves. diags are git-ignored and regenerated, so clearing is
+    # safe. (Mirrors prebuncher_sim.py / linac_sec1_sim.py.)
+    if os.path.isdir(DIAG_DIR):
+        shutil.rmtree(DIAG_DIR)
+
     period = max(1, max_steps // N_DIAGS)
     field_diag = picmi.FieldDiagnostic(
         name="fields",
