@@ -53,6 +53,13 @@ MAP_HALF_Z = 0.1524          # [m] half-length of the map (±152.4 mm)
 # the module cheap; main() asserts it matches the integral of the loaded map.
 V1J_KEV = 438.6              # [keV]
 
+# RF-drive constants from reference/Linac Simulation Documentation/details.md. Defined
+# here (this module is pywarpx-free) as the single source of truth, imported by BOTH
+# prebuncher_sim.py (the run) and plot_prebuncher.py (which re-derives the RF scale and
+# phase for its waveform figure) so the two cannot drift. Mirrors the V1J_KEV pattern.
+F_RF = 499.7645e6 / 42 * 18  # 18 × master RF = 214.18 MHz
+Q_L = 3000                   # loaded Q of prebuncher 1
+
 
 def load_prebuncher_map(path):
     """Return regular-grid (r, z, Er, Ez, Bphi) arrays from the GPT GDF map.
