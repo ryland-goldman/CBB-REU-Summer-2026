@@ -129,7 +129,7 @@ def run_step(sim, nsteps, desc):
     # From here on every acquired fd / installed callback is released in the
     # finally, so a failure mid-setup (e.g. os.open on a bad PIPELINE_LOG_PATH)
     # can't leak the bar fd or leave the afterstep hook installed.
-    saved_out = saved_err = None
+    saved_out = saved_err = redir_fd = None
     try:
         installcallback("afterstep", tick)
         # In a subprocess child, PIPELINE_LOG_PATH points at the parent's log.
@@ -137,14 +137,14 @@ def run_step(sim, nsteps, desc):
         redir_fd = os.open(target, os.O_WRONLY | os.O_APPEND)
         saved_out = os.dup(1)
         saved_err = os.dup(2)
-        try:
-            os.dup2(redir_fd, 1)
-            os.dup2(redir_fd, 2)
-        finally:
-            os.close(redir_fd)
+        os.dup2(redir_fd, 1)
+        os.dup2(redir_fd, 2)
 
         sim.step(nsteps)
     finally:
+        if redir_fd is not None:
+            try: os.close(redir_fd)
+            except Exception: pass
         try: sys.stdout.flush()
         except Exception: pass
         try: sys.stderr.flush()
@@ -211,8 +211,13 @@ def _prepare_environment():
     memory bus and add barrier overhead. Keep single-threaded; see the OMP note
     in run_pipeline.py / CLAUDE.md.
     """
-    os.environ.setdefault("OMP_NUM_THREADS",
-                          os.environ.get("OMP_THREADS", "1"))
+    # An explicitly-set OMP_THREADS always wins, even if OMP_NUM_THREADS was
+    # already exported (e.g. inherited from a conda profile or prior run);
+    # otherwise fall back to the documented single-threaded default.
+    if "OMP_THREADS" in os.environ:
+        os.environ["OMP_NUM_THREADS"] = os.environ["OMP_THREADS"]
+    else:
+        os.environ.setdefault("OMP_NUM_THREADS", "1")
     if os.getcwd() != _REPO_ROOT:
         os.chdir(_REPO_ROOT)
     if _REPO_ROOT not in sys.path:

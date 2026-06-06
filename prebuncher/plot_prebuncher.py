@@ -48,6 +48,8 @@ import matplotlib.pyplot as plt
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
+from .build_prebuncher_field import V1J_KEV   # 1-J gap voltage [keV], kept in sync
+
 c = 299792458.0
 MC2 = 0.51099895e3                # electron rest energy [keV]
 Q_E = 1.602176634e-19            # elementary charge [C]
@@ -63,9 +65,7 @@ Z_GAP_CENTER = 0.20              # [m] cavity gap (for marking plots)
 F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
 OMEGA = 2.0 * np.pi * F_RF       # RF angular frequency [rad/s]
 Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
-Z_INJECT = 0.005                 # [m] lab z where the bunch head is launched
-V1J_KEV = 438.6                  # 1-J effective gap voltage [keV] (for V_gap label;
-                                 # computed & printed by build_prebuncher_field.py)
+Z_INJECT = 0.005                 # [m] lab z where the bunch tail (smallest z) is launched
 os.makedirs(RESULTS, exist_ok=True)
 
 
