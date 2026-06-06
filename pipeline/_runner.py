@@ -1,7 +1,8 @@
-"""Stage shim + progress/log helpers shared by the cathode/gun/prebuncher facades.
+"""Stage shim + progress/log helpers shared by each <stage>/ facade
+(cathode, gun, prebuncher, linac_sec1, …).
 
-Each top-level package (cathode/, gun/, prebuncher/) instantiates a `Stage` in
-its __init__.py and re-exports `config`, `run`, `plot`. The Stage object:
+Each top-level package (cathode/, gun/, prebuncher/, linac_sec1/, …) instantiates
+a `Stage` in its __init__.py and re-exports `config`, `run`, `plot`. The Stage object:
 
   * Sets `OMP_NUM_THREADS` once (read by OpenMP at WarpX library load) and
     chdirs to the repo root so each stage's hard-coded relative paths resolve.
@@ -219,7 +220,8 @@ def _prepare_environment():
 
 
 class Stage:
-    """Facade for one accelerator stage. See cathode/gun/prebuncher __init__.py."""
+    """Facade for one accelerator stage. See each <stage>/__init__.py
+    (cathode, gun, prebuncher, linac_sec1, …)."""
 
     def __init__(self, name, sim_module, plot_module, build_module=None):
         self.name = name

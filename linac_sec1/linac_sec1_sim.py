@@ -30,7 +30,6 @@ static solenoid field) on the particles. The synchronous phase is undocumented, 
 import os
 import shutil
 import numpy as np
-import pywarpx
 from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
@@ -94,7 +93,7 @@ OUTDIR = None                    # if None at main(), use DEFAULT_OUTDIR
 def load_prebuncher_bunch():
     """Import the prebuncher beam at its min-σ_z focus and shift it to the entrance.
 
-    Returns (dict for ParticleListDistribution, v_beam, mean KE [keV], focus info).
+    Returns (dict for ParticleListDistribution, v_beam, mean KE [keV]).
     """
     ts = OpenPMDTimeSeries(PREBUNCH_DIAG)
     if len(ts.iterations) == 0:
@@ -141,7 +140,7 @@ def load_prebuncher_bunch():
           f"v_beam {v_beam:.3e} m/s, q {w.sum()*q_e*1e9:.4f} nC", flush=True)
     # openPMD ux/uy/uz are γβ; PICMI wants proper velocity γβc in m/s → ×c.
     return (dict(x=x, y=y, z=z, ux=ux * c, uy=uy * c, uz=uz * c, w=w),
-            v_beam, ke_mean, it_focus)
+            v_beam, ke_mean)
 
 
 def main():
@@ -151,9 +150,11 @@ def main():
     # are git-ignored and regenerated, so clearing the case dir is safe.
     if os.path.isdir(outdir):
         shutil.rmtree(outdir)
-    omega = 2.0 * np.pi * F_RF        # recompute (config(F_RF=...) safety, mirrors prebuncher)
+    # Recompute OMEGA here (not just at import) so a config(F_RF=...) override stays
+    # consistent — the module-level OMEGA is frozen at import, before the override lands.
+    omega = 2.0 * np.pi * F_RF
 
-    bunch, v_beam, ke_mean, it_focus = load_prebuncher_bunch()
+    bunch, v_beam, ke_mean = load_prebuncher_bunch()
     z_center = float(np.average(bunch["z"], weights=bunch["w"]))
 
     # ── RF amplitude + phase ──────────────────────────────────────────────────

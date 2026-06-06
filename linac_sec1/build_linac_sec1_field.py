@@ -55,6 +55,12 @@ SOL_FILE = os.path.join(OUT_DIR, "linac_sol.h5")
 # rebuilt in main() so a config(SOL_MAP=...) override lands.
 SOL_MAP = "SOL_0"
 
+# RF operating point used only for the build-time gradient/gain report (the maps
+# themselves are power-independent, 1-kW-normalised). Mirrors linac_sec1_sim.py so
+# a config(POWER_MW=...) override makes the report track the actual run.
+RF_NORM_MW = 0.001           # field-map power normalisation (1 kW)
+POWER_MW = 15.0              # RF input power [MW]  (~37 MeV on crest)
+
 # ── Shared geometry (imported by linac_sec1_sim.py so field/phasing/domain agree) ─
 # Lab-frame z of grid index 0 of each map (openPMD grid_global_offset). The SLAC
 # map's own z runs −3.3…3012 mm; placing index 0 at Z_STRUCT puts the structure
@@ -165,10 +171,9 @@ def main():
           f"{RMAX*1e3:.0f} mm), nz={nz}, L={L:.3f} m, entrance at lab z={Z_STRUCT*1e3:.0f} mm")
     print(f"  peak on-axis |Ez| {env.max()/1e3:.2f} kV/m (1 kW); traveling-wave "
           f"1-kW voltage ∫|Ez|dz = {v1kW/1e3:.1f} kV")
-    for P in (15.0,):
-        sc = np.sqrt(P / 0.001)
-        print(f"  → at P={P:g} MW (scale={sc:.1f}): peak gradient "
-              f"{env.max()*sc/1e6:.2f} MV/m, on-crest gain ≈ {sc*v1kW/1e6:.1f} MeV")
+    sc = np.sqrt(POWER_MW / RF_NORM_MW)
+    print(f"  → at P={POWER_MW:g} MW (scale={sc:.1f}): peak gradient "
+          f"{env.max()*sc/1e6:.2f} MV/m, on-crest gain ≈ {sc*v1kW/1e6:.1f} MeV")
 
     # ── Solenoid: static focusing map (Br, Bz), per-Ampere ────────────────────
     sol_gdf = f"fieldmaps/{SOL_MAP}.gdf"
