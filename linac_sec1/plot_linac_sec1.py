@@ -124,21 +124,29 @@ def main():
         print(f"no beam diagnostics in {MAIN}; run the sim first. Skipping beam figures.")
         return
 
-    # ══ Fig 2: energy gain + β ══════════════════════════════════════════════════
+    # ══ Fig 2: energy gain — KE with both the Lorentz factor γ and β ═══════════
     zmm = rec["z"] * 1e3
-    fig, ax = plt.subplots(figsize=(7.8, 4.8), constrained_layout=True)
-    ax.plot(zmm, rec["ke"], "o-", color="C2", ms=3, label="mean KE")
-    ax.plot(zmm, rec["kemax"], "^--", color="C1", ms=3, label="max KE")
-    ax.axvspan(Z_STRUCT * 1e3, (Z_STRUCT + L_STRUCT) * 1e3, color="0.9", zorder=0,
-               label="structure")
+    gamma = 1.0 + rec["ke"] / MC2                       # γ = 1 + KE/mc²
+    fig, ax = plt.subplots(figsize=(9.2, 4.8))
+    fig.subplots_adjust(left=0.08, right=0.79, bottom=0.13, top=0.91)
+    h_struct = ax.axvspan(Z_STRUCT * 1e3, (Z_STRUCT + L_STRUCT) * 1e3, color="0.92",
+                          zorder=0, label="structure")
+    hmean, = ax.plot(zmm, rec["ke"], "o-", color="C2", ms=3, label="mean KE")
+    hmax, = ax.plot(zmm, rec["kemax"], "^--", color="C1", ms=3, label="max KE")
     ax.set_xlabel("mean beam position  ⟨z⟩  [mm]")
     ax.set_ylabel("kinetic energy  [MeV]")
     ax.set_title("Beam energy gain through SLAC Section 1")
+    # γ (energy, → ~70) on the inner right axis; β (velocity, → 1) on an offset right axis.
+    axg = ax.twinx()
+    hg, = axg.plot(zmm, gamma, "-.", color="C5", lw=1.6, label=r"$\gamma$ (Lorentz factor)")
+    axg.set_ylabel(r"Lorentz factor  $\gamma$", color="C5")
+    axg.tick_params(axis="y", labelcolor="C5"); axg.set_ylim(0, gamma.max() * 1.08)
     axb = ax.twinx()
-    axb.plot(zmm, rec["beta"], ":", color="C4", label=r"$\beta$")
-    axb.set_ylabel(r"$\beta = v/c$", color="C4"); axb.tick_params(axis="y", labelcolor="C4")
-    axb.set_ylim(0.5, 1.02)
-    ax.legend(loc="lower right")
+    axb.spines["right"].set_position(("axes", 1.14))
+    hb, = axb.plot(zmm, rec["beta"], ":", color="C4", lw=1.8, label=r"$\beta = v/c$")
+    axb.set_ylabel(r"$\beta = v/c$", color="C4")
+    axb.tick_params(axis="y", labelcolor="C4"); axb.set_ylim(0.5, 1.02)
+    ax.legend(handles=[hmean, hmax, hg, hb, h_struct], loc="center right", fontsize=8)
     fig.savefig(f"{RESULTS}/energy_gain.png", dpi=140)
     print(f"wrote {RESULTS}/energy_gain.png")
 
@@ -167,9 +175,13 @@ def main():
     a1.set_ylabel(r"RMS size  $\sigma_x$  [mm]")
     a1.set_title("Transverse envelope and beam survival (solenoid focused, on crest)")
     a1.legend(loc="upper right", fontsize=8)
-    a2.plot(rec["z"] * 1e3, rec["q"] / rec["q0"], "o-", color="C0", ms=3)
+    qfrac = rec["q"] / rec["q0"]
+    a2.plot(rec["z"] * 1e3, qfrac, "o-", color="C0", ms=3)
     a2.set_xlabel("mean beam position  ⟨z⟩  [mm]")
-    a2.set_ylabel("surviving charge  q/q₀"); a2.set_ylim(0, 1.05)
+    a2.set_ylabel("surviving charge  q/q₀")
+    # Fit the y-range to the data (the focused run barely dips below 1) with headroom.
+    span = max(0.02, 1.0 - qfrac.min())
+    a2.set_ylim(qfrac.min() - 0.25 * span, 1.0 + 0.1 * span)
     fig.savefig(f"{RESULTS}/beam_envelope.png", dpi=140)
     print(f"wrote {RESULTS}/beam_envelope.png")
 
@@ -180,13 +192,26 @@ def main():
     ke = (gamma_of(ux, uy, uz) - 1.0) * MC2
     km, sk = wstat(ke, w)
     cap = rec["q"][-1] / rec["q0"]
-    fig, ax = plt.subplots(figsize=(7.6, 4.6), constrained_layout=True)
-    ax.hist(ke, bins=60, weights=w * Q_E * 1e12, color="C3", alpha=0.85)
+    fig, ax = plt.subplots(figsize=(7.8, 4.8), constrained_layout=True)
+    cnt, edges, _ = ax.hist(ke, bins=60, weights=w * Q_E * 1e12, color="C3", alpha=0.85)
     ax.axvline(km, color="k", ls="--", label=f"⟨KE⟩ = {km:.1f} ± {sk:.1f} MeV")
     ax.set_xlabel("KE  [MeV]"); ax.set_ylabel("charge per bin  [pC]")
     ax.set_title(f"Exit energy spectrum — captured fraction {cap*100:.0f}% "
                  f"({rec['q'][-1]*Q_E*1e12:.1f} pC of {rec['q0']*Q_E*1e12:.1f} pC)")
-    ax.legend()
+    ax.legend(loc="upper left")
+    # Inset: zoom into the low-energy tail (phase-slipped / off-crest captured particles),
+    # which the dominant ~37 MeV peak otherwise hides. Same bins; y-axis fit to the tail.
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    cut = 0.85 * km
+    tail = cnt[centers < cut]
+    if tail.size and tail.max() > 0:
+        axin = ax.inset_axes([0.30, 0.36, 0.50, 0.56])
+        axin.hist(ke, bins=edges, weights=w * Q_E * 1e12, color="C3", alpha=0.85)
+        axin.set_xlim(max(0.0, ke.min() - 1.0), cut)
+        axin.set_ylim(0, tail.max() * 1.35)
+        axin.set_title("low-energy tail (zoom)", fontsize=8)
+        axin.set_xlabel("KE  [MeV]", fontsize=7); axin.set_ylabel("pC/bin", fontsize=7)
+        axin.tick_params(labelsize=7)
     fig.savefig(f"{RESULTS}/exit_spectrum_capture.png", dpi=140)
     print(f"wrote {RESULTS}/exit_spectrum_capture.png")
 
