@@ -7,10 +7,10 @@ accelerating section** (later sections → `linac_sec2`, … as their field maps
 cathode (cathode/) -> gun (gun/) -> prebuncher (prebuncher/) -> linac_sec1 (this)
 ```
 
-The prebuncher's bunched beam (~148 keV, β ≈ 0.63, 0.066 nC) is captured by a 3 m,
-86-cell, 2π/3 **traveling-wave** SLAC accelerating structure and accelerated to **~37 MeV**
-(⟨KE⟩ ≈ 34 MeV after capture, peak 38 MeV), with a solenoid focusing channel and
-self-consistent space charge.
+The prebuncher's bunched beam (~148 keV, β ≈ 0.63, ~0.07 nC) is captured by a 3 m,
+86-cell, 2π/3 **traveling-wave** SLAC accelerating structure and accelerated with a captured
+core near **~37–38 MeV** (charge-weighted ⟨KE⟩ ≈ 29.9 MeV, pulled below the core by an off-crest
+tail), with a solenoid focusing channel and self-consistent space charge.
 
 ## Running
 
@@ -94,8 +94,11 @@ must be *captured*. Both effects make focusing essential:
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates linearly to ~37 MeV and the transverse size **damps**
   (σ_r ∝ 1/√(γβ)): the RMS σ_x falls to ~2 mm (r95 ~6 mm), well inside the 9.55 mm bore, by the
-  structure exit. At the crest the headline run captures **~95 %** of the beam at ⟨KE⟩ ≈ 34 MeV
-  (σ_KE ≈ 18 %); focus-off captures only the ~3 % on-axis core.
+  structure exit. At the crest the headline run captures **~97 %** of the beam (68.5 of 70.6 pC),
+  with a captured core near ~37–38 MeV but a charge-weighted ⟨KE⟩ ≈ 29.9 MeV (σ_KE ≈ 9.2 MeV ≈ 31 %)
+  — the off-crest tail is heavier with the clean prebuncher input (bunches 7.32× vs drift, but its
+  absolute σ_z never drops below the injected length, so more charge sits off-crest at capture);
+  focus-off captures only the ~3 % on-axis core.
 
 ## Simulation parameters
 
@@ -145,7 +148,7 @@ writing five figures to `results/`:
 - `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (148 keV → ~37 MeV) with β → 1; the structure shaded.
 - `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
 - `beam_envelope.png` — σ_r and surviving charge vs ⟨z⟩ with the bore line: focusing + adiabatic
-  damping (~95 % survives, σ_x damps to ~2 mm).
+  damping (~97 % survives, σ_x damps to ~2 mm).
 - `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured-charge fraction.
 
 ## Notes / caveats
