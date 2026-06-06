@@ -7,7 +7,8 @@ figures to linac_sec1/results/:
 
   1. linac_field.png         — on-axis traveling-wave |Ez|(z) envelope (× scale) and a
                                fixed-t snapshot of Ez(z,t): the accelerating structure.
-  2. energy_gain.png         — ⟨KE⟩ and max KE vs ⟨z⟩ (148 keV → ~37 MeV) with β → 1.
+  2. energy_gain.png         — ⟨KE⟩ and max KE vs ⟨z⟩ (~137 keV → ~15.5 MeV captured mean,
+                               ~30 MeV max at the default 11 MW / 40 A) with β → 1.
   3. long_phase_space.png    — (z − ⟨z⟩) vs KE at injection / mid / exit: RF capture.
   4. beam_envelope.png       — σ_r and surviving charge vs ⟨z⟩: focusing + adiabatic damping.
   5. exit_spectrum_capture.png — exit energy spectrum and the captured-charge fraction.
@@ -212,7 +213,7 @@ def main():
                  f"({rec['q'][-1]*Q_E*1e12:.1f} pC of {rec['q0']*Q_E*1e12:.1f} pC)")
     ax.legend(loc="upper left")
     # Inset: zoom into the low-energy tail (phase-slipped / off-crest captured particles),
-    # which the dominant ~37 MeV peak otherwise hides. Same bins; y-axis fit to the tail.
+    # which the dominant captured-energy peak otherwise hides. Same bins; y-axis fit to the tail.
     centers = 0.5 * (edges[:-1] + edges[1:])
     cut = 0.85 * km
     tail = cnt[centers < cut]
