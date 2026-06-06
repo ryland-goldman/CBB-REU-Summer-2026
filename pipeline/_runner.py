@@ -1,7 +1,8 @@
-"""Stage shim + progress/log helpers shared by the cathode/gun/prebuncher facades.
+"""Stage shim + progress/log helpers shared by each <stage>/ facade
+(cathode, gun, prebuncher, linac_sec1, …).
 
-Each top-level package (cathode/, gun/, prebuncher/) instantiates a `Stage` in
-its __init__.py and re-exports `config`, `run`, `plot`. The Stage object:
+Each top-level package (cathode/, gun/, prebuncher/, linac_sec1/, …) instantiates
+a `Stage` in its __init__.py and re-exports `config`, `run`, `plot`. The Stage object:
 
   * Sets `OMP_NUM_THREADS` once (read by OpenMP at WarpX library load) and
     chdirs to the repo root so each stage's hard-coded relative paths resolve.
@@ -203,9 +204,15 @@ def _module_top_level_names(dotted):
 
 
 def _prepare_environment():
-    """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root."""
+    """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root.
+
+    Default 1: these stages are fastest single-threaded — small grids + a
+    memory-bandwidth-bound MLMG solve mean OpenMP threads only contend for the
+    memory bus and add barrier overhead. Keep single-threaded; see the OMP note
+    in run_pipeline.py / CLAUDE.md.
+    """
     os.environ.setdefault("OMP_NUM_THREADS",
-                          os.environ.get("OMP_THREADS", "6"))
+                          os.environ.get("OMP_THREADS", "1"))
     if os.getcwd() != _REPO_ROOT:
         os.chdir(_REPO_ROOT)
     if _REPO_ROOT not in sys.path:
@@ -213,7 +220,8 @@ def _prepare_environment():
 
 
 class Stage:
-    """Facade for one accelerator stage. See cathode/gun/prebuncher __init__.py."""
+    """Facade for one accelerator stage. See each <stage>/__init__.py
+    (cathode, gun, prebuncher, linac_sec1, …)."""
 
     def __init__(self, name, sim_module, plot_module, build_module=None):
         self.name = name

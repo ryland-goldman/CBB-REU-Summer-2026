@@ -13,6 +13,7 @@ conda activate CBB
 python -c "import cathode; cathode.plot()"        # → cathode/results/
 python -c "import gun; gun.plot()"                # → gun/results/
 python -c "import prebuncher; prebuncher.plot()"  # → prebuncher/results/ (all P* cases)
+python -c "import linac_sec1; linac_sec1.plot()"  # → linac_sec1/results/
 ```
 
 (Each `plot_*.py` is also runnable directly via `python <stage>/plot_<stage>.py` — the package
@@ -21,8 +22,8 @@ facade is just the preferred entry point.)
 The chain is order-dependent — each stage accelerates/transports the previous stage's beam:
 
 ```
-cathode  ─►  gun  ─►  prebuncher
-(SCL diode)  (~148 keV)  (RF bunching)
+cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
+(SCL diode)  (~148 keV)  (RF bunching)  (~37 MeV)
 ```
 
 ---
@@ -223,3 +224,57 @@ current tree — regenerate by running multiple powers; see `prebuncher/README.m
 
 `plot_prebuncher.py` also prints a summary table to stdout for every case (σ_z0, σ_z,min,
 bunching factor, focus z, I_peak, final KE).
+
+---
+
+## 4. Linac Section 1 — `linac_sec1/results/`
+
+SLAC-design 3 m, 86-cell, **2π/3 traveling-wave** accelerating structure in **RZ** (f = 2856 MHz),
+synthesised from the two quadrature field maps and driven at P = 15 MW, with a solenoid focusing
+channel. The prebuncher's bunched ~148 keV beam is **captured** and accelerated to **~37 MeV**.
+Produced by `plot_linac_sec1.py` from the run (`diags/main`) at the on-crest, focused operating
+point (`PHASE_DEG = 0`, `I_sol = 1000 A`).
+
+### `linac_field.png` — the traveling wave
+![Linac: on-axis |Ez| amplitude and a field snapshot](linac_sec1/results/linac_field.png)
+
+The accelerating field the beam rides. **Top:** the on-axis traveling-wave amplitude
+`|Ez|(z) = scale·|EzRe + iEzIm|` (≈ 17 MV/m peak at 15 MW; its z-integral is the ≈ 40 MV on-crest
+voltage). **Bottom:** a fixed-time snapshot `Ez(z, t₀)` zoomed to the structure entrance, showing
+the ~3.5 cm 2π/3 cell structure (the field reverses cell-to-cell; the forward traveling wave is the
+sum of the two 90°-offset quadrature maps).
+
+### `energy_gain.png` — 148 keV → ~37 MeV
+![Linac: mean/max KE and β vs ⟨z⟩](linac_sec1/results/energy_gain.png)
+
+Mean and max kinetic energy vs ⟨z⟩ climb **linearly** across the shaded structure (≈ 12 MV/m
+effective gradient) from 148 keV to ~37 MeV (⟨KE⟩ ≈ 34 MeV, max ≈ 38 MeV), then go flat in the
+field-free exit drift (the beam coasts). The β = v/c trace (right axis) shows the **capture**: the
+injected β ≈ 0.63 beam becomes relativistic (β → 1) within the first ~0.2 m, after which it is
+locked to the wave.
+
+### `long_phase_space.png` — capture into the RF bucket
+![Linac: z–KE phase space at injection / mid / exit](linac_sec1/results/long_phase_space.png)
+
+Mean-subtracted longitudinal `z–KE` phase space at injection, mid-structure, and exit. The
+velocity-modulated injection bunch (left) develops into a dense, high-energy captured **head**
+riding the crest with a trailing tail of phase-slipped particles (right) — the signature of
+capturing a sub-relativistic beam into a phase-velocity-c wave.
+
+### `beam_envelope.png` — focusing and adiabatic damping
+![Linac: σ_r and surviving charge](linac_sec1/results/beam_envelope.png)
+
+**Top:** RMS transverse size σ_x vs ⟨z⟩ with the structure bore (9.55 mm) and domain wall marked;
+**bottom:** surviving charge fraction q/q₀. The strong solenoid holds the diverging injected beam
+well inside the bore, so ~95 % survives, and as the beam accelerates the size **adiabatically
+damps** (σ_r ∝ 1/√(γβ), σ_x settling to ~2 mm). Without the solenoid (`config(I_SOL=0)`) the beam
+expands and only the tight ~3 % on-axis core survives — the focusing channel is what makes the
+high capture possible.
+
+### `exit_spectrum_capture.png` — the output beam
+![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
+
+Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, titled with the
+captured-charge fraction (here 95 %, 63.3 of 66.5 pC). The captured bunch sits in a sharp peak near
+~37 MeV — the core riding the crest — with a low-energy tail of off-crest captured particles that
+pulls the mean to ⟨KE⟩ ≈ 34 ± 6 MeV.
