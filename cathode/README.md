@@ -7,7 +7,7 @@ regime. Built with the Python/PICMI interface (`pywarpx`).
 
 Unlike the canonical 1D [Pierce-diode example](../reference/WarpX%20Documentation/usage/examples/pierce_diode/README.md),
 the cathode here has a **finite transverse extent** and is simulated in 2D (x–z).
-The emitting strip (`|x| < 6 mm`) is much wider than the 0.1 mm gap, so on axis we
+The emitting strip (`|x| < 8 mm`) is much wider than the 0.2 mm gap, so on axis we
 recover the 1D Child–Langmuir physics cleanly, while the 2D run still resolves the
 finite-cathode edges.
 
@@ -65,11 +65,11 @@ we do not impose the answer.
 
 ## What the simulation does (`cathode_diode.py`)
 
-- **Geometry**: 2D x–z, cathode plane at `z = 0` held at 0 V, anode at `z = d = 0.1 mm`
-  (100 µm) held at `+50 V`. Electrons are emitted only from the finite cathode patch
-  `|x| < 6 mm` (the `lower_bound`/`upper_bound` of the flux distribution).
+- **Geometry**: 2D x–z, cathode plane at `z = 0` held at 0 V, anode at `z = d = 0.2 mm`
+  (200 µm) held at `+60 V`. Electrons are emitted only from the finite cathode patch
+  `|x| < 8 mm` (the `lower_bound`/`upper_bound` of the flux distribution).
 - **Emission**: continuous flux injection (PICMI `UniformFluxDistribution`) at `2 × J_CL`,
-  with a small thermal velocity spread set by a 1200 K cathode and a half-Maxwellian
+  with a small thermal velocity spread set by a 1425 K cathode and a half-Maxwellian
   normal-momentum distribution (`gaussian_flux_momentum_distribution`).
 - **Solver**: electrostatic lab frame, **Multigrid** Poisson solver with Dirichlet
   plate potentials (`warpx_potential_lo_z` / `warpx_potential_hi_z`) and Neumann
@@ -81,18 +81,20 @@ we do not impose the answer.
 
 | Parameter | Value |
 |-----------|-------|
-| Anode bias `V` | 50 V |
-| Gap `d` | 0.1 mm (100 µm) |
-| Cathode width `2R` | 12 mm (120× the gap → 1D limit on axis) |
-| Cathode temperature | 1200 K |
-| Injected current | 2 × J_CL ≈ 1.65 × 10⁵ A/m² |
-| Child–Langmuir J_CL | ≈ 8.25 × 10⁴ A/m² |
-| Grid | 128 × 64 cells (x, z), domain ±12 mm × 0.1 mm |
+| Anode bias `V` | 60 V |
+| Gap `d` | 0.2 mm (200 µm) |
+| Cathode width `2R` | 16 mm (80× the gap → 1D limit on axis) |
+| Cathode temperature | 1425 K |
+| Injected current | 2 × J_CL ≈ 5.42 × 10⁴ A/m² |
+| Child–Langmuir J_CL | ≈ 2.71 × 10⁴ A/m² |
+| Grid | 128 × 64 cells (x, z), domain ±16 mm × 0.2 mm |
 | Steps | 2000 (gap-fill ≈ 480 steps) |
 
-These parameters are a deliberately scaled-down 2D demo of Adam's Region-1 cathode (whose
-diameter is 16 mm): the 50 V / 100 µm operating point is chosen to sit deep in the 1D limit so
-the on-axis result recovers planar Child–Langmuir, and is not his actual operating geometry.
+These parameters now match Adam's Region-1 cathode geometry from the original LinacSim inputs
+(`reference/Linac Simulation Documentation/input_files/`): cathode diameter 16 mm, cathode–grid
+distance 0.2 mm, cathode temperature 1425 K, and the 60 V pulse voltage (`Vpulse`). The 16 mm /
+0.2 mm geometry still sits deep in the 1D limit (80× the gap) so the on-axis result recovers planar
+Child–Langmuir. It remains a **DC** 2D demo — the grid voltage pulsing is not modelled.
 
 ---
 
@@ -108,7 +110,7 @@ defining signature of space-charge-limited emission.
 Maps of charge density, potential, and `|E|`. You can see (1) the dense
 space-charge / virtual-cathode layer hugging the emitting strip, (2) the potential
 depression in the beam column, and (3) the **field transition at the cathode edges**
-`x = ±6 mm`, where the field-suppressed emitting strip meets the full vacuum field
+`x = ±8 mm`, where the field-suppressed emitting strip meets the full vacuum field
 outside — the finite-cathode signature absent from planar theory.
 
 ### `current_saturation.png` — self-limiting
@@ -125,7 +127,7 @@ with `pcolormesh` on the true (non-uniform) time coordinates.
 
 ### `field_lines.png` — the 2D cathode-edge field transition
 φ equipotential contours + E-field streamlines across the gap, with a zoom on the `+x` edge. At the
-cathode edges `x = ±6 mm` the equipotentials **crowd together** and the streamlines **splay** as
+cathode edges `x = ±8 mm` the equipotentials **crowd together** and the streamlines **splay** as
 `|E|` climbs from its space-charge-suppressed value on the emitting surface to the full vacuum field
 outside — the field **transition** at the emission edge (monotonic, no overshoot above `V/d`), the
 finite-cathode effect the 1D Child–Langmuir picture omits. (Contour companion to the `φ` panel of
@@ -133,15 +135,15 @@ finite-cathode effect the 1D Child–Langmuir picture omits. (Contour companion 
 
 ### `emission_phase_space.png` — intrinsic thermal emittance
 Transverse phase space `x` vs. `ux = γβ_x` and the histogram of `ux`, from the last particle
-snapshot. The RMS normalized emittance `εn,x ≈ 1.57 mm·mrad` (annotated) is the source's intrinsic
-thermal emittance, set by the 1200 K cathode — the beam quality handed to the gun. The run
-reproduces the expected thermal momentum spread `√(kT/mₑc²)`.
+snapshot. The RMS normalized emittance `εn,x ≈ 2.29 mm·mrad` (annotated) is the source's intrinsic
+thermal emittance, set by the 1425 K cathode and the 8 mm emitting half-width — the beam quality
+handed to the gun. The run reproduces the expected thermal momentum spread `√(kT/mₑc²)`.
 
 ---
 
 ## Notes & possible extensions
 
-- The cathode is much wider than the gap (2R = 12 mm ≫ d = 0.1 mm), so on axis it
+- The cathode is much wider than the gap (2R = 16 mm ≫ d = 0.2 mm), so on axis it
   sits in the ideal 1D planar limit and the J_CL agreement is tight. Shrink
   `R_cathode` toward `gap_d` to bring out the finite-cathode edge effects instead.
 - Adam's Region 1 actually *pulses* the grid voltage to chop out a bunch. That can

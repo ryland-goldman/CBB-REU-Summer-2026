@@ -6,7 +6,7 @@ Third stage of the Cornell Linac chain modelled in WarpX:
 cathode (cathode/)  ->  gun (gun/)  ->  prebuncher (this)
 ```
 
-The gun's exit beam (~148 keV, β ≈ 0.63, 0.1 nC, already RZ) is driven through the CESR
+The gun's exit beam (~146 keV, β ≈ 0.63, ~0.83 nC, already RZ) is driven through the CESR
 prebuncher — a standing-wave TM RF cavity — and bunches in the downstream drift.
 
 ## Running
@@ -14,11 +14,17 @@ prebuncher — a standing-wave TM RF cavity — and bunches in the downstream dr
 ```python
 # from repo root, in the CBB env:
 import prebuncher
-prebuncher.config(POWER_KW=800, PHASE="zc",
-                  OUTDIR="prebuncher/diags/P800_zc")   # optional
+prebuncher.config(POWER_KW=8, PHASE="zc")   # default operating point (P8_zc)
 prebuncher.run()        # build field + sim + plots
 # prebuncher.plot()     # re-generate figures from existing diags/
 ```
+
+The default power is **8 kW** — the original LinacSim `gpt_master.in` GUI default for
+prebuncher 1 (`prebuncher1_input_power`). As discussed under *Results*, 8 kW is far below the
+single-cavity bunching threshold, so at the faithful-to-LinacSim setting this stage barely
+bunches on its own (the real injector pairs it with a second prebuncher and solenoid lenses,
+not modelled here). Pass a higher `POWER_KW` with an explicit `OUTDIR` (e.g.
+`prebuncher.config(POWER_KW=800, OUTDIR="prebuncher/diags/P800_zc")`) to drive real bunching.
 
 `prebuncher.run()` runs **a single case**. Defaults live at the top of
 `prebuncher/prebuncher_sim.py` (`POWER_KW`, `PHASE`, `OUTDIR`); `config()` overrides them
@@ -50,7 +56,8 @@ magnetic energy lives outside the beam aperture; irrelevant to the 1-J scale for
 `build_prebuncher_field.py` writes the **raw 1-J map** as one openPMD file with two meshes
 (`E` and `B`, both `thetaMode` m = 0, components r/t/z, shape `(1, nr, nz)`), in the layout
 WarpX's `read_from_file` external-field reader expects. `grid_global_offset` shifts the
-gap-centred map to lab z = `Z_GAP_CENTER` (0.20 m).
+gap-centred map to lab z = `Z_GAP_CENTER` (0.534 m, = `Z_prebuncher1` from the original
+LinacSim `gpt_master.in`).
 
 ## RF drive — reproducing GPT's `Map25D_TM`
 
@@ -76,9 +83,9 @@ Parameters fixed by `reference/Linac Simulation Documentation/details.md`:
 Two inputs are left to the operator by design ("the user specifies dissipated power and
 relative phase"):
 
-- **Power P** — set per run (default `800 kW`; characterised over `[160, 300, 500, 800] kW`,
-  ⇒ V_gap ≈ 262–586 kV; see the intrinsic-chirp threshold below for why these are higher than a
-  textbook prebuncher).
+- **Power P** — set per run (default **`8 kW`**, the LinacSim GUI default ⇒ V_gap ≈ 59 kV;
+  previously characterised over `[160, 300, 500, 800] kW` ⇒ V_gap ≈ 262–586 kV; see the
+  intrinsic-chirp threshold below for why meaningful bunching needs ≳ 95 kW).
 - **Phase** — `zc` or `crest` (both characterised below):
   - `zc` (zero-crossing): bunch centre crosses the gap at the field zero-crossing → head
     decelerated, tail accelerated → velocity (ballistic) bunching downstream.
@@ -104,11 +111,15 @@ c_net = 1.40 − 3.05 · scale   [keV/mm]   (scale = sqrt(stored_energy / 1 J))
 
 A single-particle estimate gives a bunching threshold of `scale ≳ 0.46` (≈95 kW, V_gap ≈
 202 kV) — already higher than a textbook low-voltage prebuncher, because the cavity must
-first cancel the gun's intrinsic chirp — which is why the scanned powers are 160–800 kW.
+first cancel the gun's intrinsic chirp. **The faithful-to-LinacSim default of 8 kW
+(V_gap ≈ 59 kV, scale ≈ 0.13) is ~12× below this threshold, so on its own it barely bunches**
+(see *Results*); the prior 160–800 kW scan was chosen to clear the threshold. *(The chirp
+coefficients quoted here were measured with the earlier 0.1 nC gun beam; at the current 1 nC
+gun charge the space-charge term is stronger, so treat them as indicative.)*
 
-**Space charge dominates the real result.** The dense sub-mm bunch (~0.07 nC after gun scraping)
-expands to ~20 mm over the 1.3 m drift line, and even the strongest cavity (800 kW) cannot
-compress it *below* the injected ≈0.75 mm at these powers. So the meaningful, space-charge-
+**Space charge dominates the real result.** The dense bunch (~0.83 nC from the gun)
+expands strongly over the drift line, and even the strongest cavity (800 kW) cannot
+compress it *below* the injected length at these powers. So the meaningful, space-charge-
 honest metric is **bunching relative to a drift-only baseline (P = 0)**: `σ_z,drift(z) /
 σ_z,cavity(z)` at matched ⟨z⟩. The diagnostics track **σ_z(z)** (vs. the drift baseline), that
 **bunching ratio**, **peak current**, and the **z–KE phase space** (the chirp flipping
@@ -122,7 +133,7 @@ negative through the cavity), not the (≈1, flat) RF-fundamental bunching facto
 | grid | `NR`=80 (r) × `NZ`=1024 (z), r ∈ [0, 36 mm], z ∈ [0, 1.30 m] |
 | solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤500 |
 | applied field | 1-J `prebuncher_25D.gdf` map × `scale` × cos/sin(ω t + φ), E + B, read from file |
-| beam | gun-exit snapshot, downsampled to `MAX_PART`=50k macroparticles (reweighted), 0.1 nC, z ≈ 5 mm |
+| beam | gun-exit snapshot, downsampled to `MAX_PART`=50k macroparticles (reweighted), ~0.83 nC, z ≈ 5 mm |
 | time step | `dt = CFL · Δz / v_beam` (`CFL`=0.8; ≈ 5 ps; RF period 4.67 ns) |
 | duration | `TRANSIT_MARGIN`×bunch transit of the 1.30 m domain (=0.97; crest uses the accelerated v), or fixed via `MAX_STEPS`; `N_DIAGS`=60 openPMD dumps |
 
@@ -144,7 +155,7 @@ fewer steps, no per-step penalty) and `MAX_ITERS`/`REQUIRED_PRECISION` (500/1e-4
 ~20% cheaper per-step solve). `MAX_PART` barely affects runtime here (the run is solve-bound,
 not particle-bound) — keep it generous for accuracy. The default Balanced profile in
 `run_pipeline.py` uses `CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3` (the space-charge field
-is a small perturbation on the 148 keV beam, so the looser solve shifts the bunching only
+is a small perturbation on the 146 keV beam, so the looser solve shifts the bunching only
 slightly); since space charge *drives* the bunching, check the σ_z(z) figure if you loosen it
 further.
 
@@ -159,10 +170,19 @@ directory.
 
 ## Results
 
-Bunching ratio = max over z of σ_z,drift / σ_z,cavity (>1 ⇒ the cavity is bunching). The
-figures and numbers below are regenerated by `pipeline/run_pipeline.py` at its **Balanced**
-profile (prebuncher `CFL=0.95`, `MAX_ITERS=150`, `REQUIRED_PRECISION=1e-3`), reading the gun's
-clean exit beam (σ_z ≈ 0.75 mm, ⟨KE⟩ ≈ 148 keV, q ≈ 0.071 nC):
+Bunching ratio = max over z of σ_z,drift / σ_z,cavity (>1 ⇒ the cavity is bunching).
+
+**Current default run (`P8_zc`, faithful to LinacSim).** At the 8 kW GUI default (V_gap ≈
+59 kV, ≈12× below the bunching threshold), the cavity barely modulates the now-1 nC gun beam:
+the bunch is drift-dominated and expands to **σ_z ≈ 35.6 mm** by the 1.30 m domain end, with
+**⟨KE⟩ ≈ 136.6 keV** (σ_KE ≈ 9.4 keV) and **~20 % of the gun beam transmitted (~0.169 nC)**.
+This is the beam handed to `linac_sec1`. Meaningful bunching requires the higher powers below.
+
+**Prior power/phase scan — NOT regenerated for the current configuration.** The table below was
+produced in an earlier session with the **0.1 nC gun beam** (σ_z ≈ 0.75 mm, ⟨KE⟩ ≈ 148 keV,
+q ≈ 0.071 nC after scraping). The `diags/P160…P800` directories were **not** rerun against the
+current 1 nC gun output, so these numbers are **stale** — kept only to show the power trend.
+Rerun the scan (loop `POWER_KW` with explicit `OUTDIR`s) to refresh them.
 
 | P [kW] | V_gap [kV] | zero-crossing bunching | max-bunch ⟨z⟩ | zc exit ⟨KE⟩ | on-crest |
 |-------|-----------|------------------------|---------------|--------------|----------|
@@ -171,6 +191,8 @@ clean exit beam (σ_z ≈ 0.75 mm, ⟨KE⟩ ≈ 148 keV, q ≈ 0.071 nC):
 | 300 | 359 | 2.78× | ~1.26 m | 152.7 keV | → ~499 keV |
 | 500 | 463 | 4.26× | ~1.26 m | 157.0 keV | → ~604 keV |
 | 800 | 586 | 7.32× | ~1.26 m | 164.0 keV | → ~721 keV |
+
+*(Scan table input: 0.1 nC gun beam — superseded by the current 1 nC configuration.)*
 
 The drift beam expands 0.75 → ~20 mm over the 1.3 m line; the zero-crossing cavity suppresses
 this increasingly with power, so the drift-relative ratio σ_drift/σ_cavity grows monotonically to
@@ -223,12 +245,13 @@ wins) — use `compare_power_phase.png` for the cross-case scan.
   installed reversed, direction `−1,0,0`).
 - **P and φ are undocumented operating points** (GUI inputs); we scan/compare rather than fix
   them.
-- The **gun→prebuncher drift distance** (`Z_prebuncher1`) is undocumented; we use a short
-  entrance drift with the gap at `Z_GAP_CENTER = 0.20 m`. Adjust if a real spacing is known.
+- The **gun→prebuncher drift distance** is now set from the original LinacSim `gpt_master.in`:
+  the gap sits at `Z_GAP_CENTER = 0.534 m` (`Z_prebuncher1`). (`ZMAX` stays at 1.30 m; raise it
+  if you need more bunching drift past the cavity.)
 - The lab-frame electrostatic self-field is non-relativistic: it omits the `1/γ²` magnetic-pinch
   cancellation, overestimating the transverse space-charge force by ~γ² (the gun-exit β ≈ 0.63 →
   ~66 %; see `gun/README.md`). The error shrinks as the beam is captured and γ grows, and space
-  charge is only a small perturbation on the 148 keV beam — acceptable for this stage.
+  charge is only a small perturbation on the 146 keV beam — acceptable for this stage.
 - **Absolute compression below the injected σ_z would need lower bunch charge, a shorter
   gun→cavity drift, or higher V_gap.** Here the bunch is already short and space-charge dense,
   so we report bunching relative to the drift baseline. Set `MAX_PART` or `Z_GAP_CENTER`

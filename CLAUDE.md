@@ -10,7 +10,7 @@ Concretely, the repo rebuilds the front end of the Cornell Linac (Adam Bartnik's
 
 ```
 cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
-(SCL diode)  (~148 keV)  (RF velocity bunching)  (~37 MeV, SLAC TW section)
+(SCL diode)  (~146 keV)  (RF velocity bunching)  (~15 MeV captured, SLAC TW section)
 ```
 
 Please use the CBB conda environment by running `conda activate CBB` (Miniforge is installed at ~/miniforge3; if conda isn't on your PATH yet, first run source ~/miniforge3/bin/activate).
