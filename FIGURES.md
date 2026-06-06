@@ -75,7 +75,7 @@ building up and filling the gap (gap-fill ≈ 480 steps). Time sampling is non-u
 through the transient, sparse in steady state), so it is drawn with `pcolormesh` on the true time
 coordinates rather than `imshow`, which would distort the time axis.
 
-### `field_lines.png` — the 2D cathode-edge field enhancement
+### `field_lines.png` — the 2D cathode-edge field transition
 ![Equipotentials + E-field streamlines, with a zoom on the cathode edge](cathode/results/field_lines.png)
 
 φ equipotential contours overlaid on E-field streamlines (coloured by `|E|`) across the gap, with a

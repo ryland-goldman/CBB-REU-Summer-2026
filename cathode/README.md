@@ -90,6 +90,10 @@ we do not impose the answer.
 | Grid | 128 × 64 cells (x, z), domain ±12 mm × 0.1 mm |
 | Steps | 2000 (gap-fill ≈ 480 steps) |
 
+These parameters are a deliberately scaled-down 2D demo of Adam's Region-1 cathode (whose
+diameter is 16 mm): the 50 V / 100 µm operating point is chosen to sit deep in the 1D limit so
+the on-axis result recovers planar Child–Langmuir, and is not his actual operating geometry.
+
 ---
 
 ## The figures (`plot_cathode.py` → `results/`)

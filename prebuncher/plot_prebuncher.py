@@ -64,7 +64,8 @@ F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
 OMEGA = 2.0 * np.pi * F_RF       # RF angular frequency [rad/s]
 Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
 Z_INJECT = 0.005                 # [m] lab z where the bunch head is launched
-V1J_KEV = 430.2                  # 1-J effective gap voltage [keV] (for V_gap label)
+V1J_KEV = 438.6                  # 1-J effective gap voltage [keV] (for V_gap label;
+                                 # computed & printed by build_prebuncher_field.py)
 os.makedirs(RESULTS, exist_ok=True)
 
 
@@ -438,7 +439,7 @@ def main(cases=None):
         for s in sorted([s for s in summary if s["phase"] == "zc"],
                         key=lambda s: s["power"]):
             r = s["rec"]
-            a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-", label=f"{s['power']:g} W")
+            a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-", label=f"{s['power']:g} kW")
         a1.axvline(Z_GAP_CENTER * 1e3, color="C3", ls=":")
         a1.set_xlabel("⟨z⟩  [mm]"); a1.set_ylabel("σ_z  [mm]")
         a1.set_title("Bunch length: drift vs. zero-crossing cavity"); a1.legend(fontsize=8)
@@ -450,7 +451,7 @@ def main(cases=None):
                 a2.plot([s["power"] for s in pts], [s["ratio"] for s in pts], "o-",
                         color=col, label="zero-crossing" if phase == "zc" else "on-crest")
         a2.axhline(1.0, color="k", lw=0.6)
-        a2.set_xlabel("RF power P  [W]")
+        a2.set_xlabel("RF power P  [kW]")
         a2.set_ylabel("max bunching  σ_drift / σ_cavity")
         a2.set_title("Bunching vs. power"); a2.legend(fontsize=8)
         fig.savefig(f"{RESULTS}/compare_power_phase.png", dpi=140); plt.close(fig)
@@ -460,7 +461,7 @@ def main(cases=None):
 
     # ── Summary table ─────────────────────────────────────────────────────────
     print("\n" + "=" * 96)
-    print(f"{'case':>10} {'P[W]':>5} {'phase':>6} {'σz0[mm]':>8} {'σzmin[mm]':>10} "
+    print(f"{'case':>10} {'P[kW]':>5} {'phase':>6} {'σz0[mm]':>8} {'σzmin[mm]':>10} "
           f"{'bunch×':>7} {'zbest[mm]':>9} {'Ipk[A]':>7} {'KEend[keV]':>11}")
     print("-" * 96)
     if base is not None:

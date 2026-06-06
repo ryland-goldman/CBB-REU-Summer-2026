@@ -41,7 +41,7 @@ python pipeline/run_pipeline.py
   ```python
   cathode.config(V_anode=50.0, gap_d=100e-6)
   gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=0.1e-9)
-  prebuncher.config(POWER_W=800, PHASE="zc",
+  prebuncher.config(POWER_KW=800, PHASE="zc",
                     OUTDIR="prebuncher/diags/P800_zc")
   linac_sec1.config(POWER_MW=15.0)
   ```
@@ -66,9 +66,10 @@ python pipeline/run_pipeline.py
   (`REQUIRED_PRECISION`, `MAX_ITERS`), macroparticles (`PPC` for the cathode, `MAX_PART` downsample
   for gun/prebuncher), and diagnostic dumps (`N_DIAGS`, `DIAG_PERIOD`). Comment the Balanced block
   to restore the exact original (8.8-min) physics.
-- **OMP threads:** set the `OMP_THREADS` environment variable (default 6; the MLMG solve is
-  bandwidth-bound, so all cores is slower). The shim sets `OMP_NUM_THREADS` before any pywarpx
-  import.
+- **OMP threads:** set the `OMP_THREADS` environment variable (default 1 — keep this pipeline
+  single-threaded). The grids are small and the MLMG solve is memory-bandwidth-bound, so threads
+  add fork/join + barrier overhead with no gain; only raise `OMP_THREADS` for the much larger
+  original-config grids. The shim sets `OMP_NUM_THREADS` before any pywarpx import.
 
 ## Output
 
