@@ -50,7 +50,7 @@ from openpmd_viewer import OpenPMDTimeSeries
 
 # RF drive constants (F_RF, Q_L, V1J_KEV) come from the single source of truth in the
 # build module so this figure's re-derived scale/phase cannot drift from the actual run.
-from .build_prebuncher_field import V1J_KEV, F_RF, Q_L
+from .build_prebuncher_field import V1J_KEV, F_RF, Q_L, Z_GAP_CENTER
 
 c = 299792458.0
 MC2 = 0.51099895e3                # electron rest energy [keV]
@@ -58,7 +58,9 @@ Q_E = 1.602176634e-19            # elementary charge [C]
 DIAG_ROOT = "prebuncher/diags"
 RESULTS = "prebuncher/results"
 PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
-Z_GAP_CENTER = 0.20              # [m] cavity gap (for marking plots)
+# Z_GAP_CENTER (cavity gap lab-z, for marking plots) is imported from
+# build_prebuncher_field above — single source of truth so the marker can't drift
+# from the actual field placement (it was 0.20 m here while the build used 0.534 m).
 
 # ── RF-drive constants ────────────────────────────────────────────────────────
 # The cavity map is stored 1-J-normalised; the run multiplies it by `scale` and

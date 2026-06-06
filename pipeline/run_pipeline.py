@@ -129,7 +129,7 @@ def main():
     cathode.run()
     gun.run()
     prebuncher.run()
-    linac_sec1.run()            # SLAC Section 1: capture + accelerate to ~37 MeV
+    linac_sec1.run()            # SLAC Section 1: ~15 MeV captured at 11 MW/40 A (~37 MeV at I_SOL≈1000)
 
     _beam_summary(prebuncher.resolve_outdir(), "prebuncher exit", "keV")
     _beam_summary(linac_sec1.resolve_outdir(), "linac_sec1 exit", "MeV")
