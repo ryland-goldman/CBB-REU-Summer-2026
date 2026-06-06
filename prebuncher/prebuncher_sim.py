@@ -6,7 +6,7 @@ space charge.
 Third stage of the Cornell Linac chain in WarpX:
     cathode (cathode/) -> gun (gun/) -> prebuncher (this).
 
-The gun's exit beam (~148 keV, β≈0.63, 0.1 nC, already RZ) is read from
+The gun's exit beam (~146 keV, β≈0.63, ~0.83 nC, already RZ) is read from
 `gun/diags/particles`, translated so it enters near z = 0, and tracked
 through the prebuncher cavity. The cavity is the 1-J-normalised `prebuncher_25D`
 field map (built by `build_prebuncher_field.py`) driven as a standing-wave TM
@@ -180,8 +180,8 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
         upper_boundary_conditions_particles=["absorbing", "absorbing"],
         warpx_blocking_factor=8,
     )
-    # MLMG converges slowly in this long, thin (1.3 m × 36 mm) box. The 0.1 nC
-    # space-charge field is a small perturbation on the 148 keV beam, so a
+    # MLMG converges slowly in this long, thin (1.3 m × 36 mm) box. The ~0.83 nC
+    # space-charge field is a small perturbation on the 146 keV beam, so a
     # relative precision of 1e-4 is ample and far cheaper than 1e-5.
     solver = picmi.ElectrostaticSolver(
         grid=grid, method="Multigrid", required_precision=REQUIRED_PRECISION,
@@ -217,8 +217,12 @@ def main(power=None, phase=None, outdir=None, nz=None, zmax=None, max_steps=0):
     dt = CFL * dz / v_beam
     # Stop just before the bunch *centre* reaches the exit (margin < 1): once the
     # beam clears the absorbing boundary the domain empties and the Multigrid solve
-    # aborts. margin = 0.97 keeps the bunch in-domain while still capturing the full
-    # cavity + bunching drift (all foci sit at ≤ 1.16 m < 0.97·1.30 m). At the crest
+    # aborts. margin = 0.97 keeps the bunch in-domain. NOTE: with the gap now at
+    # Z_GAP_CENTER = 0.534 m (was 0.20 m) the post-cavity drift is shorter (~0.61 m to
+    # the 1.261 m stop plane); at the faithful 8 kW default the cavity is ~12× below
+    # the bunching threshold so there is no tight downstream focus to clip. If POWER_KW
+    # is raised into the real bunching regime, re-check that the focus lands < 0.97·ZMAX
+    # (raise ZMAX if not). At the crest
     # the cavity accelerates the beam (+V_gap ≈ scale·V1J), so the post-gap drift is
     # crossed faster — size that segment with the accelerated speed.
     if phase == "crest":

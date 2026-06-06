@@ -117,7 +117,7 @@ outside — the finite-cathode signature absent from planar theory.
 Transmitted current (integrated across the beam, referenced to the cathode width)
 vs. time. Despite injecting **2× J_CL**, the transmitted current self-limits to the
 Child–Langmuir scale — it settles near J_CL (slightly above the cold-emission value,
-≈ 110% in this run, with the finite cathode temperature and near-1D geometry). The
+≈ 108% in this run, with the finite cathode temperature and near-1D geometry). The
 cathode does **not** pass the 2× current it is fed — space charge regulates it.
 
 ### `rho_z_time.png` — space-charge cloud build-up

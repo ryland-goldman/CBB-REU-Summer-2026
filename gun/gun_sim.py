@@ -21,13 +21,13 @@ repo root (either via the facade above or `python -m gun.gun_sim`).
 
 Beam source — see README: the cathode run is a continuous (DC) emitter, so the
 weights in its last particle snapshot encode the steady-state population in
-transit through the diode (~102 nC), not a bunch charge. We import the emitted
+transit through the diode (~82 nC), not a bunch charge. We import the emitted
 **phase-space distribution** (positions + momenta), remap the 2D (x, z) slab
 into RZ by treating |x| as the radius r and smearing the particles uniformly in
 azimuth — importance-resampling by r so the revolution supplies its 2πr Jacobian
 (a uniform-in-x slab → a uniform-density disc, not a spurious 1/r on-axis cusp) —
 and renormalize the total weight to a physical gun bunch charge
-`BUNCH_CHARGE` (the CESR gun is pulse-grid gated). The full 102 nC injected as
+`BUNCH_CHARGE` (the CESR gun is pulse-grid gated). The full 82 nC injected as
 one instantaneous bunch is unphysical — its radial space-charge field (~50 MV/m)
 dwarfs the gun field and blows the beam apart before it accelerates.
 """
@@ -56,7 +56,7 @@ ZMAX = 0.051765              # field-map Z extent [m]
 CATHODE_DIAG = "cathode/diags/particles"
 BUNCH_CHARGE = 1.0e-9        # renormalized gun bunch charge [C] = 1 nC, matching the
                              # original LinacSim gpt_master.in total_charge = -1e-9;
-                             # raw cathode snapshot is ~102 nC
+                             # raw cathode snapshot is ~82 nC
 RNG_SEED = 0
 
 # ── Grid (RZ, single azimuthal mode — the gun field is m = 0) ─────────────────

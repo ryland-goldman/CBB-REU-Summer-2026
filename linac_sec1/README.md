@@ -7,13 +7,14 @@ accelerating section** (later sections → `linac_sec2`, … as their field maps
 cathode (cathode/) -> gun (gun/) -> prebuncher (prebuncher/) -> linac_sec1 (this)
 ```
 
-The prebuncher's beam (~137 keV, β ≈ 0.63, ~0.17 nC, **largely unbunched** at the
-faithful-to-LinacSim 8 kW prebuncher default) enters a 3 m, 86-cell, 2π/3 **traveling-wave**
-SLAC accelerating structure with a solenoid focusing channel and self-consistent space charge.
-At the original LinacSim operating point (Sol 0 = 40 A, 11 MW), the weak focusing captures only
-**~2 %** of the injected beam (~5.7 pC); that captured slice reaches **⟨KE⟩ ≈ 15.5 MeV**
-(max ≈ 29.9 MeV, σ_KE ≈ 7.9 MeV). See *Solenoid focusing and RF capture* for why this is far
-below the strongly-focused (`I_SOL ≈ 1000 A`) capture the stage can reach.
+The prebuncher's beam (~137 keV, β ≈ 0.63, **largely unbunched** at the faithful-to-LinacSim
+8 kW prebuncher default) enters a 3 m, 86-cell, 2π/3 **traveling-wave** SLAC accelerating
+structure with a solenoid focusing channel and self-consistent space charge. The linac injects
+the prebuncher's tightest-focus snapshot (~0.27 nC). At the original LinacSim operating point
+(Sol 0 = 40 A, 11 MW), the weak focusing captures only **~2 %** of that injected charge
+(~5.7 pC); the captured slice reaches **⟨KE⟩ ≈ 15.5 MeV** (max ≈ 29.9 MeV, σ_KE ≈ 7.9 MeV).
+See *Solenoid focusing and RF capture* for why this is far below the strongly-focused
+(`I_SOL ≈ 1000 A`) capture the stage can reach.
 
 ## Running
 
@@ -92,7 +93,7 @@ toward the bore), and a ~137 keV beam injected into a phase-velocity-c wave **sl
 must be *captured*. Both effects make focusing essential:
 
 - **Solenoid** (`I_SOL`, A): the per-Ampere `SOL_0` map × `I_SOL`. Capture rises sharply with
-  current — **~2 % at the LinacSim Sol 0 default (`I_SOL = 40 A`) → ~95 % at `I_SOL ≈ 1000 A`
+  current — **~2 % at the LinacSim Sol 0 default (`I_SOL = 40 A`) → ~97 % at `I_SOL ≈ 1000 A`
   (≈ 0.15 T peak)** — because only a strong channel holds the diverging beam inside the 9.55 mm
   bore long enough to be captured. The default is now the original LinacSim **`I_SOL = 40 A`**,
   which is far too weak for this standalone WarpX capture, so most of the beam is scraped on the
@@ -100,7 +101,8 @@ must be *captured*. Both effects make focusing essential:
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates and the transverse size **damps** (σ_r ∝ 1/√(γβ)).
   At the faithful-to-LinacSim default (40 A, 11 MW), only **~2 %** of the injected beam is captured
-  (~5.7 pC of ~169 pC), reaching **⟨KE⟩ ≈ 15.5 MeV** (max ≈ 29.9 MeV, σ_KE ≈ 7.9 MeV) — the rest
+  (~5.7 pC of the ~267 pC injected at the focus snapshot; the prebuncher's final-dump transmitted
+  charge is a larger ~169 pC), reaching **⟨KE⟩ ≈ 15.5 MeV** (max ≈ 29.9 MeV, σ_KE ≈ 7.9 MeV) — the rest
   is lost on the bore. (For comparison, the earlier strongly-focused 15 MW / 1000 A point captured
   ~97 % to a core near ~37–38 MeV; rerun with those overrides to reproduce it.) The low capture
   here is the expected consequence of the un-tuned original solenoid/power — see *Notes / caveats*.

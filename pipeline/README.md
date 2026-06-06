@@ -5,9 +5,9 @@ each stage's top-level facade module and calling `.run()`:
 
 ```
 cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
-gun.run()          # build gun field map + RZ acceleration (~148 keV) + plots
+gun.run()          # build gun field map + RZ acceleration (~146 keV) + plots
 prebuncher.run()   # build prebuncher field map + RZ RF cavity + plots
-linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~37 MeV) + plots
+linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~15 MeV captured) + plots
 ```
 
 Each `run()` reads the previous stage's openPMD output, runs the WarpX sim, and (by default)
@@ -39,11 +39,10 @@ python pipeline/run_pipeline.py
 - **Override physics inputs** at the top of `run_pipeline.py` using each stage's `config()`:
 
   ```python
-  cathode.config(V_anode=50.0, gap_d=100e-6)
-  gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=0.1e-9)
-  prebuncher.config(POWER_KW=800, PHASE="zc",
-                    OUTDIR="prebuncher/diags/P800_zc")
-  linac_sec1.config(POWER_MW=15.0)
+  cathode.config(V_anode=60.0, gap_d=200e-6)
+  gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)
+  prebuncher.config(POWER_KW=8, PHASE="zc")          # default OUTDIR -> diags/P8_zc
+  linac_sec1.config(POWER_MW=11.0, I_SOL=40.0)
   ```
 
   Keys must match the module-level constants in each `<stage>/*.py` — `config()` writes them

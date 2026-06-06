@@ -2,8 +2,8 @@
 Figures and summary for the WarpX prebuncher scan (repeated prebuncher_sim.py
 runs, one OUTDIR per power/phase).
 
-The gun-exit bunch is short (σ_z ≈ 1 mm ≈ 0.1 % of the 214 MHz RF wavelength) and
-carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at 0.1 nC it is
+The gun-exit bunch is short (σ_z ≈ a few mm vs the 214 MHz RF wavelength) and
+carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at ~0.83 nC it is
 space-charge dense. In a free drift it therefore *expands*. The prebuncher acts as
 a ballistic buncher: at the zero-crossing it flips the chirp negative and
 compresses the bunch — but space charge limits how far. The clearest way to show

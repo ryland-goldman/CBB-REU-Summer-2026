@@ -1,7 +1,8 @@
 """
-SLAC Linac Section 1 in WarpX (RZ): capture the bunched prebuncher beam in a 3 m
-2π/3 traveling-wave accelerating structure and take it from ~148 keV to ~37 MeV,
-with solenoid focusing and self-consistent space charge.
+SLAC Linac Section 1 in WarpX (RZ): capture the prebuncher beam in a 3 m
+2π/3 traveling-wave accelerating structure (from ~137 keV; on-crest gain ~35 MeV at the
+default 11 MW), with solenoid focusing and self-consistent space charge. At the
+faithful-to-LinacSim 40 A / 11 MW default the weak focusing captures only ~2 %.
 
 Fourth stage of the Cornell Linac chain in WarpX:
     cathode → gun → prebuncher → linac_sec1 (this).
@@ -66,7 +67,7 @@ POWER_MW = 11.0                  # RF input power [MW] (sec1_input_power)
 PHASE_DEG = 0.0                  # injection RF phase offset [deg] (= phi_sec1_off; crest found empirically)
 # Solenoid current [A] (0 → focusing off), from the original Sol 0 current = 40 A.
 # NOTE: at 40 A the focusing is far weaker than the I≈1000 A the rebuild previously
-# used to reach ~95% capture into the 9.5 mm bore (capture was ~4% unfocused), so
+# used to reach ~97% capture into the 9.5 mm bore (capture was ~4% unfocused), so
 # expect low capture at this faithful-to-original current. Set I_SOL via config to scan.
 I_SOL = 40.0
 
@@ -218,7 +219,7 @@ def main():
     # Enforce the ordering invariant the comment above relies on: picmi sets the *global*
     # E_ext_particle_init_style from the LAST-added field, so the last entry MUST load E
     # (an RF map) — else a B-only field (the solenoid) silently disables the accelerating
-    # E and the beam just coasts at 148 keV with no error. Guard it so a future reorder
+    # E and the beam just coasts at ~137 keV with no error. Guard it so a future reorder
     # fails loudly instead of producing a wrong, silent run.
     assert getattr(applied[-1], "load_E", False), (
         "last applied field must have load_E=True (an RF map), or the global E_ext "

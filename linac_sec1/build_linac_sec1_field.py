@@ -21,7 +21,7 @@ Three openPMD files are written (all thetaMode, single azimuthal mode m = 0):
   * ``linac_sol.h5`` — a **static** solenoid/lens focusing map (``Br, Bz``),
     per-Ampere normalised. Applied with a constant time function = the chosen
     current ``I_SOL`` (and no E field). Selectable via ``SOL_MAP`` (SOL_0 or
-    LENS_0A…0E). This is the transverse focusing that lets the diverging ~148 keV
+    LENS_0A…0E). This is the transverse focusing that lets the diverging ~137 keV
     prebuncher beam be captured into the 9.5 mm structure bore.
 
 Layout WarpX's ``read_from_file`` reader expects (per mesh):
@@ -76,7 +76,7 @@ Z_STRUCT = 0.10              # [m] structure entrance (after a short injection d
 # Solenoid map index-0 z. SOL_0 peaks 813 mm into its own grid; a negative offset
 # slides that peak to ≈ lab z 0.21 m so the strongest focusing sits in the
 # low-energy capture region just inside the structure entrance (the beam is most
-# rigid-limited at ~148 keV there). The strongly-focusing peak sits inside the
+# rigid-limited at ~137 keV there). The strongly-focusing peak sits inside the
 # domain (lab z ≈ 0.21 m); the rising edge below lab z = 0 is clipped — note the
 # clip plane is already at ~98% of peak |Bz|, so it is the map's far grid edge
 # (native z = 0), not this clip plane, where Bz → 0.
