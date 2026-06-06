@@ -102,16 +102,22 @@ def load_prebuncher_bunch():
     # One light pass (z, w only) to locate the bunch focus: the smallest σ_z among
     # well-populated snapshots (a snapshot that has lost particles can have a
     # spuriously small σ_z, so require ≥ 80% of the peak count).
+    # Floor scales with the requested statistics rather than an absolute 1000, so a
+    # low-MAX_PART upstream run isn't silently rejected. At the default MAX_PART=50000
+    # this is 1000 — identical to the original behaviour. (The "well-populated" gate is
+    # the relative n ≥ 0.8·nmax below; this floor only drops near-empty dumps.)
+    min_count = max(50, MAX_PART // 50)
     recs = []
     for it in ts.iterations:
         z, w = ts.get_particle(["z", "w"], species="electrons", iteration=it)
-        if len(z) < 1000:
+        if len(z) < min_count:
             continue
         zm = np.average(z, weights=w)
         sz = np.sqrt(np.average((z - zm) ** 2, weights=w))
         recs.append((it, len(z), zm, sz))
     if not recs:
-        raise RuntimeError(f"{PREBUNCH_DIAG}: no snapshot with >1000 macroparticles")
+        raise RuntimeError(
+            f"{PREBUNCH_DIAG}: no snapshot with ≥{min_count} macroparticles")
     nmax = max(n for _, n, _, _ in recs)
     cands = [(it, sz) for it, n, zm, sz in recs if n >= 0.8 * nmax and zm > Z_FOCUS_MIN]
     if not cands:                      # fallback: no snapshot past the gate
@@ -126,7 +132,8 @@ def load_prebuncher_bunch():
         scale_w = z.size / MAX_PART        # reweight to preserve total charge
         x, y, z, ux, uy, uz, w = (a[sel] for a in (x, y, z, ux, uy, uz, w))
         w = w * scale_w
-    # Translate so the bunch head (smallest z) sits at Z_INJECT.
+    # Translate so the bunch tail (smallest z; the beam travels +z, so the head leads
+    # at larger z) sits at Z_INJECT.
     z = z - z.min() + Z_INJECT
 
     gb = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)          # γ
@@ -207,6 +214,14 @@ def main():
             warpx_E_time_function=f"{scale:.8e}*cos({omega:.10e}*t + ({phi2:.8e}))",
             warpx_B_time_function=f"{scale:.8e}*sin({omega:.10e}*t + ({phi2:.8e}))"),
     ]
+    # Enforce the ordering invariant the comment above relies on: picmi sets the *global*
+    # E_ext_particle_init_style from the LAST-added field, so the last entry MUST load E
+    # (an RF map) — else a B-only field (the solenoid) silently disables the accelerating
+    # E and the beam just coasts at 148 keV with no error. Guard it so a future reorder
+    # fails loudly instead of producing a wrong, silent run.
+    assert getattr(applied[-1], "load_E", False), (
+        "last applied field must have load_E=True (an RF map), or the global E_ext "
+        "style is forced to 'none' and the beam coasts unaccelerated")
 
     electrons = picmi.Species(
         particle_type="electron", name="electrons",
