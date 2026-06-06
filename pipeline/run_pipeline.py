@@ -85,8 +85,17 @@ def _beam_summary(diag, label, unit="keV"):
         from openpmd_viewer import OpenPMDTimeSeries
         ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
         its = list(ts.iterations)
+        # Capture denominator: prefer the TRUE injected charge the sim records in
+        # injection_summary.json (the linac drops r>RMAX particles before the first dump, so
+        # the first-dump charge already hides the injection loss). Fall back to the first dump
+        # for stages without a sidecar (e.g. the prebuncher exit).
         q0 = None
-        if its:
+        summ_path = os.path.join(diag, "injection_summary.json")
+        if os.path.isfile(summ_path):
+            import json
+            with open(summ_path) as fh:
+                q0 = json.load(fh)["q_injected_C"] / 1.602176634e-19
+        elif its:
             _, _, _, _, w0 = ts.get_particle(
                 ["z", "ux", "uy", "uz", "w"], species="electrons", iteration=its[0])
             q0 = w0.sum()

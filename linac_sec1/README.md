@@ -7,14 +7,18 @@ accelerating section** (later sections → `linac_sec2`, … as their field maps
 cathode (cathode/) -> gun (gun/) -> prebuncher (prebuncher/) -> linac_sec1 (this)
 ```
 
-The prebuncher's beam (~137 keV, β ≈ 0.63, **largely unbunched** at the faithful-to-LinacSim
+The prebuncher's beam (~137 keV, β ≈ 0.62, **largely unbunched** at the faithful-to-LinacSim
 8 kW prebuncher default) enters a 3 m, 86-cell, 2π/3 **traveling-wave** SLAC accelerating
 structure with a solenoid focusing channel and self-consistent space charge. The linac injects
-the prebuncher's tightest-focus snapshot (~0.27 nC). At the original LinacSim operating point
-(Sol 0 = 40 A, 11 MW), the weak focusing captures only **~2 %** of that injected charge
-(~5.7 pC); the captured slice reaches **⟨KE⟩ ≈ 15.5 MeV** (max ≈ 29.9 MeV, σ_KE ≈ 7.9 MeV).
-See *Solenoid focusing and RF capture* for why this is far below the strongly-focused
-(`I_SOL ≈ 1000 A`) capture the stage can reach.
+the prebuncher's tightest-focus snapshot (**0.83 nC total**) — but that beam has **diverged to
+r_max ≈ 26 mm** in the unfocused 8 kW drift, so only **~32 % (≈ 267 pC) even enters the 12 mm
+radial domain**; the other ~68 % is scraped on the wall *at injection* (step 0). Of the full
+0.83 nC injected, the weak Sol 0 = 40 A focusing then captures only **~0.7 % (≈ 5.7 pC)** to
+**⟨KE⟩ ≈ 15.5 MeV** (max ≈ 30 MeV, σ_KE ≈ 7.9 MeV) — equivalently ~2 % of the 267 pC that makes
+it into the domain. **The dominant loss here is radial scraping at injection, not RF/focusing
+capture** — most of the beam never enters the simulation domain. See *Solenoid focusing and RF
+capture*. Capture is reported against the **true injected charge** (0.83 nC), not the post-scrape
+in-domain charge — see *Capture bookkeeping*.
 
 ## Running
 
@@ -92,20 +96,26 @@ The prebuncher beam arrives **diverging** (it had no focusing over its drift, so
 toward the bore), and a ~137 keV beam injected into a phase-velocity-c wave **slips in phase** and
 must be *captured*. Both effects make focusing essential:
 
-- **Solenoid** (`I_SOL`, A): the per-Ampere `SOL_0` map × `I_SOL`. Capture rises sharply with
-  current — **~2 % at the LinacSim Sol 0 default (`I_SOL = 40 A`) → ~97 % at `I_SOL ≈ 1000 A`
-  (≈ 0.15 T peak)** — because only a strong channel holds the diverging beam inside the 9.55 mm
-  bore long enough to be captured. The default is now the original LinacSim **`I_SOL = 40 A`**,
-  which is far too weak for this standalone WarpX capture, so most of the beam is scraped on the
-  iris. Run `config(I_SOL=1000); run()` to recover the strongly-focused, high-capture case.
+- **Solenoid** (`I_SOL`, A): the per-Ampere `SOL_0` map × `I_SOL`. The default is the original
+  LinacSim **`I_SOL = 40 A`**. Because the injected beam already over-fills the domain (only
+  ~32 % is inside the 12 mm wall at injection — see *Capture bookkeeping*), the solenoid acts
+  only on the in-domain fraction and **cannot recover the ~68 % scraped at step 0**. Capture of
+  the **true injected 0.83 nC** therefore rises only modestly with current — **~0.7 % at 40 A
+  → ~7 % at `I_SOL ≈ 1000 A`** (≈ 0.15 T peak; ≈ 22 % of the 267 pC that enters the domain).
+  Run `config(I_SOL=1000); run()` for the strong-focus case. Note `I_SOL ≈ 1000 A` is **not a
+  physical coil current**: the `SOL_0` map is normalised per single-turn-Ampere (≈ 0.15 mT/A),
+  and this one knob also stands in for the lens chain (0A–0E) + 2nd prebuncher the real injector
+  uses but this single-stage model omits.
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates and the transverse size **damps** (σ_r ∝ 1/√(γβ)).
-  At the faithful-to-LinacSim default (40 A, 11 MW), only **~2 %** of the injected beam is captured
-  (~5.7 pC of the ~267 pC injected at the focus snapshot; the prebuncher's final-dump transmitted
-  charge is a larger ~169 pC), reaching **⟨KE⟩ ≈ 15.5 MeV** (max ≈ 29.9 MeV, σ_KE ≈ 7.9 MeV) — the rest
-  is lost on the bore. (For comparison, the earlier strongly-focused 15 MW / 1000 A point captured
-  ~97 % to a core near ~37–38 MeV; rerun with those overrides to reproduce it.) The low capture
-  here is the expected consequence of the un-tuned original solenoid/power — see *Notes / caveats*.
+  At the faithful-to-LinacSim default (40 A, 11 MW), only **~0.7 %** of the **0.83 nC injected**
+  is captured (≈ 5.7 pC; ~2 % of the 267 pC that enters the domain), reaching **⟨KE⟩ ≈ 15.5 MeV**
+  (max ≈ 30 MeV, σ_KE ≈ 7.9 MeV); at 1000 A it is ≈ 60 pC ≈ ~7 % of injected at **⟨KE⟩ ≈ 18 MeV**.
+  **A historical "~97 % at 1000 A" figure is NOT reproducible with the present input** — it was
+  measured on the old, tightly-bunched and radially-contained `P800_zc` / 0.1 nC / 15 MW beam,
+  before the PR #9 reconciliation swapped in the larger, diverging 8 kW / 1 nC beam without
+  resizing the 12 mm domain. With the present beam capture is **injection-limited** (bore fit),
+  not focusing-limited — most of the beam never enters the domain. See *Notes / caveats*.
 
 ## Simulation parameters
 
@@ -115,14 +125,47 @@ must be *captured*. Both effects make focusing essential:
 | grid | `NR`=16 (r) × `NZ`=1664 (z), r ∈ [0, 12 mm], z ∈ [0, 3.5 m] |
 | solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200 |
 | applied fields | `linac_rf1/rf2.h5` × `scale` × cos/sin(ωt+φ) (E+B) **+** `linac_sol.h5` × `I_SOL` (static B) |
-| beam | prebuncher snapshot at its min-σ_z **bunching focus**, downsampled to `MAX_PART`=50k (reweighted), z head at `Z_INJECT` = 5 mm |
+| beam | prebuncher snapshot at its **bore-aware focus** (max in-bore charge, tie-broken by min σ_z), downsampled to `MAX_PART`=50k (reweighted), z head at `Z_INJECT` = 5 mm |
 | time step | `dt = CFL · Δz / v_inject` (`CFL`=0.5; ≈ 5.6 ps; RF period 0.35 ns) |
 | duration | segmented transit estimate to a stop plane short of the absorbing exit (`TRANSIT_MARGIN`=1.0), or fixed via `MAX_STEPS`; `N_DIAGS`=60 dumps |
 
-**Injection point.** The prebuncher beam is bunched only transiently in its drift; the sim
-auto-selects the **minimum-σ_z snapshot past the cavity** (`Z_FOCUS_MIN`), the only point where
-the beam is both bunched and still inside the 9.5 mm bore. (The global σ_z minimum is the
-*pre-modulation* injection snapshot near z = 0, deliberately excluded.)
+**Injection point.** The sim auto-selects a focus snapshot past the cavity (`Z_FOCUS_MIN`, which
+skips the *pre-modulation* snapshot near z = 0) by **maximising in-bore charge, tie-broken by
+minimum σ_z** (`load_prebuncher_bunch`). Because in-bore charge is a continuous quantity, the
+σ_z tie-break rarely engages — the pick is effectively "most charge inside the bore". For the
+present 8 kW beam — which never bunches and diverges monotonically over the drift with no
+transverse focusing, so *no* snapshot is bore-contained — that is the earliest qualifying
+(least-expanded) snapshot, still at r_max ≈ 26 mm. This is why most of the beam lands outside the
+12 mm domain at injection (*Capture bookkeeping*); the real fix is upstream focusing, not the
+snapshot criterion. (Note: the only radially-contained snapshot is the excluded pre-modulation
+one near z = 0 — injecting it would reproduce high capture but bypass the prebuncher's bunching.)
+
+⚠️ **The bore-aware criterion optimizes the transverse bore fit, not the longitudinal bunch.**
+For the shipped 8 kW point the two coincide (no bunch waist exists to discard). But if the
+prebuncher is driven into its **bunching regime (≳ 160 kW)** the min-σ_z waist forms late in the
+drift (~1.26 m) where the beam is *also* radially over-expanded, so "max in-bore charge" would
+prefer an early, **debunched** snapshot and silently drop the velocity-bunching the prebuncher
+exists to produce. `load_prebuncher_bunch` emits a `WARNING` when the bore-aware pick differs from
+the pure min-σ_z focus by > 20 % in σ_z, so a future power-sweep user is told the bunch focus was
+not selected rather than getting a quietly debunched beam.
+
+## Capture bookkeeping
+
+The injected beam over-fills the domain, so **two charge baselines matter** and the figures/log
+report both:
+
+- **Injected charge** (≈ 0.83 nC) — every macroparticle handed to the sim, recorded by
+  `load_prebuncher_bunch` to `diags/<case>/injection_summary.json` (with the in-domain and
+  in-bore breakdown).
+- **In-domain charge** (≈ 267 pC, ~32 %) — what is inside `RMAX` = 12 mm at injection. WarpX
+  **drops the r > RMAX particles before the first diagnostic dump**, so the first dump already
+  shows only this post-scrape charge.
+
+The **capture fraction is reported against the true injected charge** (the honest denominator):
+`plot_linac_sec1.py` and the `run_pipeline.py` final-beam summary read the sidecar and fall back
+to the first dump only if it is absent (old runs), in which case the injection loss is not shown.
+This is why the headline capture (~0.7 % at 40 A) is far below the "~2 % of what enters the
+domain" framing an earlier version used — the dominant loss is the radial scrape at step 0.
 
 ## Gotchas
 
@@ -144,6 +187,11 @@ the beam is both bunched and still inside the 9.5 mm bore. (The global σ_z mini
   manually) stays in-domain too.
 - Fresh diags per run: `linac_sec1_sim.py` clears the case `OUTDIR` before each run, because WarpX
   appends one openPMD file per dump and a rerun of the same case would otherwise mix iterations.
+- **The first diagnostic dump is already post-injection-scrape.** WarpX silently drops particles
+  initialised at r > `RMAX` before it writes the first dump, so the first dump's charge is *not*
+  the injected charge. Any capture/survival metric must use the true injected charge from
+  `injection_summary.json` (see *Capture bookkeeping*) — normalising to the first dump hides the
+  dominant loss and overstates capture by ~3× for the present over-filling beam.
 
 ## Outputs
 
@@ -155,9 +203,11 @@ writing five figures to `results/`:
 - `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~137 keV → ~15.5 MeV mean / ~30 MeV max for the
   captured slice) with β → 1; the structure shaded.
 - `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
-- `beam_envelope.png` — σ_r and surviving charge vs ⟨z⟩ with the bore line: focusing + adiabatic
-  damping (only ~2 % survives at the weak 40 A focusing).
-- `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured-charge fraction.
+- `beam_envelope.png` — σ_r and surviving charge vs ⟨z⟩ with the bore line. The survival panel is
+  normalised to the **injected** charge and shows the **injection-scraping cliff**: q/q_inj drops
+  to ~0.32 at the first dump (the r > RMAX scrape), then to ~0.007 by the exit at 40 A.
+- `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured fraction **of the
+  injected charge** (≈ 0.7 % at 40 A), annotated with how much charge entered the 12 mm domain.
 
 ## Notes / caveats
 
@@ -169,12 +219,20 @@ writing five figures to `results/`:
   undocumented. We inject at the prebuncher snapshot, place the structure after a short drift, and
   scan the RF phase for the crest. Note the original Sol 0 = 40 A is the *prebuncher-region*
   focusing solenoid and is far too weak to capture this diverging standalone beam into the bore
-  (hence ~2 % capture); the real injector relies on the full lens chain (0A–0E) plus two
-  prebunchers, which this single-stage WarpX model does not include. Set `I_SOL ≈ 1000 A` for a
-  capture-optimised demonstration.
+  (hence the ~0.7 %-of-injected capture); the real injector relies on the full lens chain (0A–0E)
+  plus two prebunchers, which this single-stage WarpX model does not include. Set `I_SOL ≈ 1000 A`
+  for a stronger-focus demonstration (still only ~7 % of injected — capture here is limited by the
+  beam over-filling the 12 mm domain at injection, not by the solenoid).
+- **The 12 mm domain (`RMAX`) predates the present beam.** It was sized for the old, contained
+  `P800_zc` / 0.1 nC beam (which damped well inside the 9.55 mm bore). The PR #9 reconciliation
+  swapped in the larger, diverging 8 kW / 1 nC beam (r_max ≈ 26 mm) without resizing the domain or
+  revisiting the focus criterion — exposing a latent mismatch. A faithful high-capture run needs a
+  radially-contained upstream beam (the lens chain / a stronger prebuncher), not just a bigger box.
 - The r-zero-padding of the RF maps at the 9.55 mm bore is a sharp truncation (the metal iris); a
-  beam focused well inside the bore rarely samples it, and particles that reach the domain wall are
-  treated as lost on the iris (counted against the capture fraction).
+  beam focused well inside the bore rarely samples it. Particles that reach the domain wall are
+  treated as lost on the iris and counted against the (true-injected) capture fraction; those that
+  start beyond `RMAX` are dropped at injection (the dominant loss here) and likewise accounted for
+  via the injected-charge denominator — see *Capture bookkeeping*.
 - The lab-frame electrostatic self-field omits the `1/γ²` magnetic-pinch cancellation (it applies
   the rest-frame Coulomb force `qE_r`, not `qE_r/γ²`), so it overestimates the transverse
   space-charge force by ~γ² — largest at injection (~137 keV → ~66 %, as in `gun/README.md`) and

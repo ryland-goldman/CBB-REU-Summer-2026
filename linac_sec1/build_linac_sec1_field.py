@@ -82,6 +82,9 @@ Z_STRUCT = 0.10              # [m] structure entrance (after a short injection d
 # (native z = 0), not this clip plane, where Bz → 0.
 SOL_Z = -0.60                # [m]
 RMAX = 0.012                 # [m] sim radial domain; RF maps are zero-padded in r to here
+BORE_R = 0.00955             # [m] structure bore radius (native r-extent of the SLAC maps);
+                             # particles beyond this feel zero RF field, beyond RMAX are lost.
+                             # Single source of truth — imported by the sim and the plotter.
 
 # Electron-volt-free SI unit dimensions for the openPMD meshes.
 E_UNIT = {io.Unit_Dimension.M: 1.0, io.Unit_Dimension.L: 1.0,

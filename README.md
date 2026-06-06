@@ -53,7 +53,7 @@ Each stage is also a top-level Python package — `import cathode; cathode.run()
 | **1. Cathode** | [`cathode/`](cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
 | **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~146 keV. |
 | **3. Prebuncher** | [`prebuncher/`](prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
-| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ) with solenoid focusing. At the original LinacSim operating point (40 A, 11 MW) the weak focusing captures only ~2% of the ~137 keV beam, to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV); `I_SOL≈1000 A` recovers ~97% capture to ~37 MeV. |
+| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ) with solenoid focusing. The injected 8 kW prebuncher beam (0.83 nC) has diverged to r_max ≈ 26 mm, so only ~32% enters the 12 mm domain; at the original LinacSim point (40 A, 11 MW) capture is ~0.7% of injected (≈5.7 pC) to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV). `I_SOL≈1000 A` raises it to ~7% of injected — capture is injection-limited (bore fit), not focusing-limited. |
 | **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the four stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. |
 
 Each directory's `README.md` documents its physics, field maps, and outputs.
