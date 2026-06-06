@@ -48,16 +48,19 @@ q_e  = picmi.constants.q_e          # = +1.602e-19 C (elementary charge)
 ep0  = picmi.constants.ep0
 kb   = 1.380649e-23                  # Boltzmann constant [J/K]
 
-# ── Diode parameters (Adam's Region-1 thermionic cathode, scaled for a 2D demo) ─
-V_anode   = 50.0         # anode (grid) bias [V] — cathode at 0 V
-gap_d     = 100.0e-6     # cathode→anode gap [m]
-R_cathode = 6.0e-3       # cathode half-width [m]
-T_cathode = 1200.0       # cathode temperature [K] → small thermal emittance
+# ── Diode parameters (Adam's Region-1 thermionic cathode) — matched to the
+#    original LinacSim inputs (reference/.../input_files/cathode_master.in +
+#    gpt_master.in): cathode-grid distance l=0.2 mm, pulse voltage Vpulse=60 V,
+#    cathode diameter egun_cath_diam=16 mm, cathode temperature egun_cath_T=1425 K.
+V_anode   = 60.0         # anode (grid) bias [V] — cathode at 0 V (Vpulse)
+gap_d     = 200.0e-6     # cathode→anode gap [m] (l = 0.2 mm)
+R_cathode = 8.0e-3       # cathode half-width [m] (16 mm diameter)
+T_cathode = 1425.0       # cathode temperature [K] → small thermal emittance
 
 over_inject = 2.0        # inject this multiple of the Child–Langmuir current
 
 # ── Grid (2D x–z) ──────────────────────────────────────────────────────────────
-W = 12.0e-3              # transverse half-width of the domain [m]
+W = 16.0e-3              # transverse half-width of the domain [m] (2× cathode half-width)
 nx, nz = 128, 64         # both divisible by the blocking factor (8)
 
 # ── Diagnostics output directory ───────────────────────────────────────────────

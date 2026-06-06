@@ -29,7 +29,7 @@ The chain is order-dependent — each stage accelerates/transports the previous 
 
 ```
 cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
-(SCL diode)  (~148 keV)  (RF bunching)  (~37 MeV)
+(SCL diode)  (~146 keV)  (RF bunching)  (~15 MeV captured)
 ```
 
 ---
@@ -37,8 +37,8 @@ cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
 ## 1. Cathode — `cathode/results/`
 
 Finite-extent, space-charge-limited (Child–Langmuir) diode in **2D x–z**: cathode plane at
-`z = 0` (0 V), anode at `z = d = 0.1 mm` (+50 V), electrons emitted only from the finite patch
-`|x| < 6 mm`. The run deliberately **over-injects at 2× J_CL** and lets the self-consistent
+`z = 0` (0 V), anode at `z = d = 0.2 mm` (+60 V), electrons emitted only from the finite patch
+`|x| < 8 mm`. The run deliberately **over-injects at 2× J_CL** and lets the self-consistent
 fields do the limiting — the answer is not imposed. Produced by `plot_cathode.py`.
 
 ### `child_langmuir.png` — the validation
@@ -56,9 +56,9 @@ reflecting excess current).
 
 Three side-by-side 2D maps across the gap: charge density `|ρ|` (√/PowerNorm scale), potential
 `φ`, and field magnitude `|E|`. The white bar marks the emitting cathode patch (z = 0,
-`|x| < 6 mm`). You can see (1) the dense space-charge / virtual-cathode layer hugging the
+`|x| < 8 mm`). You can see (1) the dense space-charge / virtual-cathode layer hugging the
 emitting strip, (2) the potential depression in the beam column, and (3) the **field transition
-at the cathode edges** `x = ±6 mm`, where the field-suppressed emitting strip meets the full
+at the cathode edges** `x = ±8 mm`, where the field-suppressed emitting strip meets the full
 vacuum field outside — the finite-cathode signature absent from planar theory.
 
 ### `current_saturation.png` — self-limiting emission
@@ -67,7 +67,7 @@ vacuum field outside — the finite-cathode signature absent from planar theory.
 Transmitted current density at the anode vs. time (integrated across the beam, referenced to the
 cathode width `2R`). Despite injecting **2× J_CL** (red dotted reference, above this zoomed view),
 the transmitted current ramps up during gap-fill and then settles near `J_CL` (dashed,
-≈ 8.25 × 10⁴ A/m²; slightly above it, ≈ 110% in this run — the wide cathode / narrow gap is deep
+≈ 2.71 × 10⁴ A/m²; slightly above it, ≈ 108% in this run — the wide cathode / narrow gap is deep
 in the 1D limit and the finite cathode temperature pushes emission just past the cold-emission
 value). The cathode does **not** pass the 2× current it is fed; space charge regulates it.
 Linear y-axis anchored at the
@@ -86,8 +86,8 @@ coordinates rather than `imshow`, which would distort the time axis.
 
 φ equipotential contours overlaid on E-field streamlines (coloured by `|E|`) across the gap, with a
 zoom on the `+x` cathode edge. Planar Child–Langmuir theory is 1D — flat equipotentials, straight
-field — but the cathode is **finite**: the space-charge-suppressed emitting strip (`|x| < 6 mm`,
-white bar) meets the full vacuum field outside. At the edges `x = ±6 mm` (dotted lines) the
+field — but the cathode is **finite**: the space-charge-suppressed emitting strip (`|x| < 8 mm`,
+white bar) meets the full vacuum field outside. At the edges `x = ±8 mm` (dotted lines) the
 equipotentials **crowd together and the streamlines splay** as `|E|` climbs from its suppressed value
 on the emitting surface up to the uniform vacuum field outside — the **field transition** at the
 emission edge (a transition, not an overshoot: `|E|` rises monotonically to `V/d` and does not exceed
@@ -99,10 +99,10 @@ panel of `cathode_2d.png`.
 
 The intrinsic (thermal) beam quality of the source, from the last particle snapshot. **Left:**
 transverse phase space `x` vs. `ux = γβ_x` (density via hexbin), annotated with the RMS normalized
-emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) ≈ 1.57 mm·mrad` — the irreducible emittance every downstream
+emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) ≈ 2.29 mm·mrad` — the irreducible emittance every downstream
 stage inherits. **Right:** the histogram of `ux`, the Maxwellian transverse-momentum spread set by
-the 1200 K cathode, with the expected `±√(kT/mₑc²)` scale overlaid (the run reproduces it: rms
-`ux` = 0.45 × 10⁻³ vs. √(kT/mc²) = 0.45 × 10⁻³).
+the 1425 K cathode, with the expected `±√(kT/mₑc²)` scale overlaid (the run reproduces it: rms
+`ux` = 0.49 × 10⁻³ vs. √(kT/mc²) = 0.49 × 10⁻³).
 
 ---
 
@@ -111,7 +111,7 @@ the 1200 K cathode, with the expected `±√(kT/mₑc²)` scale overlaid (the ru
 CESR electrostatic gun ("Chili Gun Mk II", ~150 kV) in **RZ**, using the Poisson–Superfish field
 map `CESR_gun.gdf` scaled to a −150 kV cathode. The gun field is applied as an external electrode
 field; WarpX supplies the self-consistent space charge on top. The injected beam is the cathode
-exit phase space, slab→radius remapped and renormalized to a 0.1 nC bunch. Produced by
+exit phase space, slab→radius remapped and renormalized to a 1 nC bunch. Produced by
 `plot_gun.py`.
 
 ### `gun_field.png` — the accelerating field
@@ -133,13 +133,13 @@ transport through the gun, including the near-cathode radial focusing as the bea
 
 Mean and max kinetic energy of the beam vs. mean position `⟨z⟩`, climbing toward the 150 keV
 gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the
-~150 keV cathode→exit potential drop (mean exit KE ≈ 148 keV).
+~150 keV cathode→exit potential drop (mean exit KE ≈ 146 keV; ~83 % of the 1 nC bunch reaches the exit).
 
 ### `exit_phase_space.png` — exit beam
 ![Exit longitudinal phase space and energy spectrum](gun/results/exit_phase_space.png)
 
 Left: longitudinal phase space (`z` vs. `KE`) at the last dump. Right: the final energy spectrum
-(histogram) with `⟨KE⟩` marked — a narrow distribution at ~148 keV, the beam handed off to the
+(histogram) with `⟨KE⟩` marked — a narrow distribution at ~146 keV, the beam handed off to the
 prebuncher.
 
 ### `beam_envelope.png` — radial envelope and emittance
@@ -147,8 +147,8 @@ prebuncher.
 
 The near-cathode focusing that `beam_rz.png` shows only as three snapshots, quantified along the
 gun. **Blue:** the RMS radial size `σ_r = √⟨x²⟩` (the per-plane RMS the plot axis is labelled with)
-contracts from ≈ 3.0 mm at launch to a ≈ 1.75 mm waist near the exit as the diverging cathode
-emission is focused by the radial gun field (the full-radial `√⟨r²⟩ = √2·σ_x` is ≈ 4.3 → 2.5 mm).
+contracts from ≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode
+emission is focused by the radial gun field (the full-radial `√⟨r²⟩ = √2·σ_x` is ≈ 5.7 → 4.1 mm).
 **Red (twin axis):**
 the normalized transverse emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²)` grows as space charge and
 field nonlinearities act — the beam-quality cost of the transport.
@@ -160,17 +160,17 @@ The beam **self-field** dumped to `diags/fields` (`ρ`, `φ`) — distinct from 
 in `gun_field.png`, and plotted nowhere else. At a near-launch snapshot (`⟨z⟩ ≈ 0.4 mm`, beam still
 near the cathode where the self-field is largest): **top**, the self charge density `ρ(r, z)` of the
 electron bunch (`ρ < 0`); **bottom**, the **space-charge potential well** `φ(r, z)` it digs (≈ −250 V
-for the 0.1 nC bunch). This is the field the README renormalizes the bunch to 0.1 nC to control —
-the raw ~102 nC cathode population would dig a well that dwarfs the gun field and blows the beam apart.
+near launch for the 1 nC bunch). This is the field the README renormalizes the bunch to 1 nC to control —
+the raw ~82 nC cathode population would dig a well that dwarfs the gun field and blows the beam apart.
 
 ---
 
 ## 3. Prebuncher — `prebuncher/results/`
 
 CESR standing-wave RF prebuncher (214 MHz TM cavity) in **RZ** that velocity-bunches the gun's
-exit beam (~148 keV, β ≈ 0.63, 0.1 nC) in the downstream 1.3 m drift. Because the bunch is
-already short and space-charge dense, the honest metric is bunching **relative to a drift-only
-baseline** (`P = 0`): `σ_z,drift(z) / σ_z,cavity(z)`. Produced by `plot_prebuncher.py`, which
+exit beam (~146 keV, β ≈ 0.63, ~0.83 nC) in the downstream drift. At the faithful-to-LinacSim
+default (8 kW) the cavity barely bunches; the power scan figure characterises bunching **relative
+to a drift-only baseline** (`P = 0`): `σ_z,drift(z) / σ_z,cavity(z)`. Produced by `plot_prebuncher.py`, which
 writes `prebuncher_line.png`, `prebuncher_phasespace.png`, `prebuncher_cavity.png`, and
 `prebuncher_bunch_profile.png` — **config-independent filenames** (the power/phase lives in the
 figure titles and the `diags/<case>` input dir, not the filename), so changing the operating point
@@ -183,33 +183,31 @@ Case names are `P<power>_<phase>`: `<phase>` is `zc` (zero-crossing → ballisti
 ### `prebuncher_line.png` — bunch length, current, energy
 ![Prebuncher: σ_z(z), peak current, mean KE](prebuncher/results/prebuncher_line.png)
 
-For the plotted case (here 800 kW zero-crossing — see the figure title). **Left:** bunch length
-`σ_z(z)` for the cavity run, rising to ≈ 2.3 mm at the gap then settling near ≈ 1.4 mm while the
-drift baseline (`k--`) expands unbounded to ≈ 20 mm — the max-bunching point (`σ_drift/σ_cavity`,
-**7.32×** here) is starred near the ⟨z⟩ ≈ 1.26 m domain end. (The absolute σ_z waist never drops
-below the injected 0.75 mm; the cavity *suppresses expansion* rather than net-compressing this
-space-charge-dense bunch.) **Right:** peak current `I_peak(z)` and mean `KE(z)` on twin axes —
-the mean energy dips to ~105 keV while the bunch transits the (long) cavity field, then
-re-accelerates to ~164 keV. This is **not** net-zero: the 586 kV gap voltage is comparable to the
-148 keV beam, so the particle's velocity changes mid-transit and the thin-gap ∫cos symmetry breaks,
-leaving a real +16 keV transit-time gain (the P=0 drift correctly recovers 147.9 keV).
+For the plotted case — the **8 kW zero-crossing default** (see the figure title). **Left:** bunch
+length `σ_z(z)` rises **monotonically** from ≈ 2.6 mm at injection to ≈ 43 mm by ⟨z⟩ ≈ 1.22 m: at
+8 kW (V_gap ≈ 59 kV, ~12× below the bunching threshold) the cavity imparts essentially no net
+chirp, so the bunch just drifts and expands — there is no compression and no bunching point.
+(No drift baseline is overlaid: a consistent 1 nC P=0 baseline was not regenerated for this PR;
+the cross-case scan figure carries the powered-vs-drift comparison.) **Right:** peak current
+`I_peak(z)` falls as the bunch lengthens (I_peak ≈ 31 A near injection) and mean `KE(z)` stays
+near ≈ 136.6 keV — the 59 kV gap barely perturbs the 146 keV beam.
 
 ### `prebuncher_phasespace.png` — the chirp flipping through the cavity
 ![Prebuncher: z–KE phase space at three points](prebuncher/results/prebuncher_phasespace.png)
 
 Mean-subtracted longitudinal `z–KE` phase space at three points: injection, cavity exit, and the
-best ballistic focus (the `σ_drift/σ_cavity` maximum when a drift baseline is present, otherwise the
-post-cavity `σ_z` minimum — ⟨z⟩ ≈ 1.26 m here). The gun beam arrives with an intrinsic **+1.40 keV/mm** (debunching) chirp; the
-zero-crossing cavity adds a negative chirp, flipping the net slope and rotating the distribution
-so it compresses downstream. (On-crest cases, by contrast, mostly shift up in energy without a
-chirp flip — visible by comparing a `crest` phasespace figure.)
+post-cavity `σ_z` minimum. At the 8 kW default the cavity adds only a tiny zero-crossing chirp
+(≈ −0.4 keV/mm per unit scale × 0.13 scale) on top of the gun beam's intrinsic ≈ +1.4 keV/mm
+debunching chirp, so the **net slope stays positive** — the distribution does not flip or rotate
+into compression. To see a real chirp flip / ballistic focus, drive the cavity above the
+~95 kW bunching threshold (e.g. `POWER_KW=800`).
 
 ### `prebuncher_cavity.png` — the RF drive the bunch sees
 ![Prebuncher: scaled on-axis Ez(z) and the cos/sin RF waveform at the gap](prebuncher/results/prebuncher_cavity.png)
 
 The cavity field itself (the σ_z / phase-space figures show only the beam's response). **Left:**
-on-axis `Ez(z)` of the 1-J map scaled by this case's field `scale` (≈ 8.2 MV/m peak at 800 kW),
-placed at the lab gap (`Z_GAP_CENTER` = 0.20 m) via the map's `grid_global_offset`, with the
+on-axis `Ez(z)` of the 1-J map scaled by this case's field `scale`, placed at the lab gap
+(`Z_GAP_CENTER` = 0.534 m, the LinacSim `Z_prebuncher1`) via the map's `grid_global_offset`, with the
 injection plane marked. **Right:** the temporal RF waveform `E ∝ cos(ω t+φ)`, `B ∝ sin(ω t+φ)`
 (90° out of phase) over ~2 RF periods around the bunch-centre gap-arrival `t_gap`, each normalised
 to ±1, with the bunch `±σ_t` width shaded. For `zc` the bunch centre lands on the field
@@ -221,75 +219,79 @@ acceleration. This is what makes "zero-crossing vs. crest" visual.
 
 The line-charge density `λ(z−⟨z⟩)` (histogram of `z` weighted by `w·q_e` ÷ bin width, in nC/m) at
 the **same** three snapshots as the phase-space figure. Unlike the scalar `σ_z` curve this shows
-the bunch's actual shape: a clean peak at injection (σ_z ≈ 0.75 mm, peak `λ` ≈ 38 nC/m), a broadened
-profile with **space-charge filamentation** at the cavity exit (σ_z ≈ 2.2 mm, peak `λ` ≈ 11 nC/m), and
-at the max-bunching point a sharp re-formed **core** (σ_z ≈ 2.8 mm, peak `λ` ≈ 14 nC/m) standing far
-above the spread-out drift baseline (peak `λ` ≈ 1 nC/m) — the σ_drift/σ_cavity ≈ 7.32× suppression.
-Peak `λ` and `σ_z` are annotated per panel; the `P0_drift` baseline is overlaid (`k--`).
+the bunch's actual shape: at the 8 kW default it is a peak at injection (σ_z ≈ 2.6 mm) that simply
+**broadens and flattens** downstream as the bunch drifts apart — no re-formed core, since 8 kW does
+not bunch. Peak `λ` and `σ_z` are annotated per panel. (No drift baseline overlay for this PR — see
+the line figure note above.)
 
 ### `compare_power_phase.png` — scan summary *(when present)*
 A cross-case figure written only when several cases / the drift baseline have been run (e.g. via a
 Python loop over `prebuncher.run(plots=False)` with a different `OUTDIR` per call). **Left:**
-`σ_z(z)` for the drift baseline vs. each zero-crossing power (160/300/500/800 kW). **Right:** max
-bunching `σ_drift/σ_cavity` vs. RF power (1.99× → 7.32×, rising monotonically with power). Committed
-here from a drift + 160/300/500/800 kW zero-crossing scan at the Balanced profile.
+`σ_z(z)` for the drift baseline vs. each zero-crossing power. **Right:** max bunching
+`σ_drift/σ_cavity` vs. RF power, rising monotonically with power. The current default **8 kW**
+point sits at the low end (≈1×, no meaningful bunching); the 160/300/500/800 kW points
+(1.99× → 7.32×) are from the **earlier 0.1 nC-gun scan** and were not regenerated against the
+current 1 nC gun beam — treat the high-power curve as indicative of the trend, not current.
 
 `plot_prebuncher.py` also prints a summary table to stdout for every case (σ_z0, σ_z,min,
 bunching factor, focus z, I_peak, final KE).
+
+> **Note:** the per-case `prebuncher_line/phasespace/bunch_profile/cavity` figures now show the
+> **8 kW default (P8_zc)**. The `compare_power_phase.png` scan, by contrast, still includes the
+> 160–800 kW points from the earlier 0.1 nC-gun run (labelled stale-but-indicative above).
 
 ---
 
 ## 4. Linac Section 1 — `linac_sec1/results/`
 
 SLAC-design 3 m, 86-cell, **2π/3 traveling-wave** accelerating structure in **RZ** (f = 2856 MHz),
-synthesised from the two quadrature field maps and driven at P = 15 MW, with a solenoid focusing
-channel. The prebuncher's bunched ~148 keV beam is **captured** and accelerated to **~37 MeV**.
-Produced by `plot_linac_sec1.py` from the run (`diags/main`) at the on-crest, focused operating
-point (`PHASE_DEG = 0`, `I_sol = 1000 A`).
+synthesised from the two quadrature field maps and driven at the original LinacSim **P = 11 MW**,
+with a solenoid focusing channel. At the faithful-to-LinacSim **Sol 0 = 40 A**, the weak focusing
+captures only **~2 %** of the ~137 keV beam, to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV). Produced by
+`plot_linac_sec1.py` from the run (`diags/main`) at `PHASE_DEG = 0`, `I_sol = 40 A` (set
+`I_sol = 1000 A` to recover the strongly-focused ~97 % / ~37 MeV case).
 
 ### `linac_field.png` — the traveling wave
 ![Linac: on-axis |Ez| amplitude and a field snapshot](linac_sec1/results/linac_field.png)
 
 The accelerating field the beam rides. **Top:** the on-axis traveling-wave amplitude
-`|Ez|(z) = scale·|EzRe + iEzIm|` (≈ 17 MV/m peak at 15 MW; its z-integral is the ≈ 40 MV on-crest
+`|Ez|(z) = scale·|EzRe + iEzIm|` (≈ 15 MV/m peak at 11 MW; its z-integral is the ≈ 35 MV on-crest
 voltage). **Bottom:** a fixed-time snapshot `Ez(z, t₀)` zoomed to the structure entrance, showing
 the ~3.5 cm 2π/3 cell structure (the field reverses cell-to-cell; the forward traveling wave is the
 sum of the two 90°-offset quadrature maps).
 
-### `energy_gain.png` — 148 keV → ~37 MeV
+### `energy_gain.png` — ~137 keV → ~15.5 MeV (captured slice)
 ![Linac: mean/max KE and β vs ⟨z⟩](linac_sec1/results/energy_gain.png)
 
-Mean and max kinetic energy vs ⟨z⟩ climb **linearly** across the shaded structure (≈ 12 MV/m
-effective gradient) from 148 keV toward ~38 MeV on crest (captured-core max ≈ 38 MeV; the charge-
-weighted ⟨KE⟩ ≈ 29.9 MeV, pulled below the core by the off-crest tail), then go flat in the
-field-free exit drift (the beam coasts). The β = v/c trace (right axis) shows the **capture**: the
-injected β ≈ 0.63 beam becomes relativistic (β → 1) within the first ~0.2 m, after which it is
-locked to the wave.
+Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from ~137 keV; the small
+captured slice reaches max ≈ 29.9 MeV with charge-weighted ⟨KE⟩ ≈ 15.5 MeV (σ_KE ≈ 7.9 MeV),
+then goes flat in the field-free exit drift (the beam coasts). The β = v/c trace (right axis)
+shows the **capture**: the captured β ≈ 0.63 particles become relativistic (β → 1), while the
+bulk that is not captured is scraped on the bore.
 
 ### `long_phase_space.png` — capture into the RF bucket
 ![Linac: z–KE phase space at injection / mid / exit](linac_sec1/results/long_phase_space.png)
 
 Mean-subtracted longitudinal `z–KE` phase space at injection, mid-structure, and exit. The
-velocity-modulated injection bunch (left) develops into a dense, high-energy captured **head**
-riding the crest with a trailing tail of phase-slipped particles (right) — the signature of
-capturing a sub-relativistic beam into a phase-velocity-c wave.
+largely-unbunched injection beam (left) loses most of its charge on the bore; the thin surviving
+slice (right) spreads over a broad energy range as only a fraction locks to the crest — the
+signature of capturing a sub-relativistic, weakly-focused beam into a phase-velocity-c wave.
 
 ### `beam_envelope.png` — focusing and adiabatic damping
 ![Linac: σ_r and surviving charge](linac_sec1/results/beam_envelope.png)
 
 **Top:** RMS transverse size σ_x vs ⟨z⟩ with the structure bore (9.55 mm) and domain wall marked;
-**bottom:** surviving charge fraction q/q₀. The strong solenoid holds the diverging injected beam
-well inside the bore, so ~97 % survives, and as the beam accelerates the size **adiabatically
-damps** (σ_r ∝ 1/√(γβ), σ_x settling to ~2 mm). Without the solenoid (`config(I_SOL=0)`) the beam
-expands and only the tight ~3 % on-axis core survives — the focusing channel is what makes the
-high capture possible.
+**bottom:** surviving charge fraction q/q₀. At the faithful-to-LinacSim `I_SOL = 40 A`, the weak
+solenoid cannot hold the diverging injected beam inside the bore, so only **~2 %** survives — most
+is scraped on the 9.55 mm bore early. The surviving slice adiabatically damps (σ_r ∝ 1/√(γβ)) as it
+accelerates. Raising the current (`config(I_SOL=1000)`) holds the beam in the bore and lifts capture
+to ~97 % — the focusing channel is what makes high capture possible.
 
 ### `exit_spectrum_capture.png` — the output beam
 ![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
 
 Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, titled with the
-captured-charge fraction (here 97 %, 68.5 of 70.6 pC). The captured bunch sits in a sharp peak near
-~37–38 MeV — the core riding the crest — with a broad low-energy tail (~10–25 MeV) of off-crest
-captured particles that pulls the mean to ⟨KE⟩ ≈ 29.9 ± 9.2 MeV (σ_KE ≈ 31 %). The heavier tail
-relative to earlier reports reflects the clean prebuncher input: it bunches 7.32× vs drift but its
-absolute σ_z never drops below the injected length, so more charge sits off-crest at capture.
+captured-charge fraction (here **~2 %**, ~5.7 pC of the ~267 pC injected focus snapshot). At the faithful-to-LinacSim 40 A /
+11 MW operating point the surviving particles span a broad ~5–30 MeV distribution (max ≈ 29.9 MeV)
+with charge-weighted ⟨KE⟩ ≈ 15.5 ± 7.9 MeV (σ_KE ≈ 51 %) — wide because the weak focusing captures
+only a thin, phase-spread slice. Raising `I_SOL` to ~1000 A recovers the ~97 %-capture, ~37 MeV core.

@@ -34,12 +34,14 @@ from openpmd_viewer import OpenPMDTimeSeries
 from scipy.constants import e as q_e, epsilon_0, m_e
 from scipy.constants import k as k_B, c
 
-# ── Diode parameters (must match cathode_diode.py) ──────────────────────────────
-V_anode   = 50.0
-gap_d     = 100.0e-6
-R_cathode = 6.0e-3
+# ── Diode parameters (must match cathode_diode.py — kept in sync by hand; these
+#    are display/overlay constants for the theory curves and titles, not used by
+#    the sim) ──────────────────────────────────────────────────────────────────
+V_anode   = 60.0
+gap_d     = 200.0e-6
+R_cathode = 8.0e-3
 over_inject = 2.0
-T_cathode = 1200.0
+T_cathode = 1425.0
 
 RESULTS = "cathode/results"
 
@@ -243,17 +245,18 @@ def main():
     p1.set_ylim(0, z_mm.max())
     p1.set_title("Full gap: equipotentials + E streamlines")
 
-    # Panel 2 — zoom on the +x edge (x ≈ 3–9 mm): the equipotential crowding and
-    # streamline splay at x = +6 mm are the field transition, magnified.
+    # Panel 2 — zoom on the +x edge: the equipotential crowding and streamline
+    # splay at x = +R_cathode are the field transition, magnified.
+    Redge = R_cathode * 1e3
     draw_field(p2)
-    p2.set_xlim(3.0, 9.0)
+    p2.set_xlim(max(0.0, Redge - 5.0), Redge + 1.0)
     p2.set_ylim(0, z_mm.max())
     p2.set_xlabel("x  [mm]")
-    p2.set_title("Zoom on +x cathode edge (x = +6 mm)")
+    p2.set_title(f"Zoom on +x cathode edge (x = +{Redge:.0f} mm)")
 
     fig.colorbar(strm.lines, ax=[p1, p2], shrink=0.85, label="|E|  [kV/m]")
-    fig.suptitle("2D field at the finite cathode — equipotentials crowd and field "
-                 "lines splay at the edges x = ±6 mm (the field transition at the "
+    fig.suptitle(f"2D field at the finite cathode — equipotentials crowd and field "
+                 f"lines splay at the edges x = ±{Redge:.0f} mm (the field transition at the "
                  "emission edge)", fontsize=12)
     fig.savefig(f"{RESULTS}/field_lines.png", dpi=140)
     print(f"wrote {RESULTS}/field_lines.png")
@@ -262,7 +265,7 @@ def main():
     # ════════════════════════════════════════════════════════════════════════════
     # Figure 6 — intrinsic thermal transverse phase space + emittance of the source
     # ════════════════════════════════════════════════════════════════════════════
-    # The 1200 K cathode emits electrons with a small Maxwellian transverse momentum
+    # The 1425 K cathode emits electrons with a small Maxwellian transverse momentum
     # spread.  That thermal spread is the source's INTRINSIC (thermal) emittance — the
     # irreducible beam quality that every downstream stage (gun, prebuncher) inherits.
     # We read the last particle snapshot and form the transverse trace space x vs.
@@ -306,7 +309,7 @@ def main():
             transform=b1.transAxes, va="top", ha="left", fontsize=9,
             bbox=dict(boxstyle="round", fc="white", alpha=0.85))
 
-    # Panel 2 — histogram of p_x: the thermal (1200 K) momentum spread [keV/c], with
+    # Panel 2 — histogram of p_x: the thermal (1425 K) momentum spread [keV/c], with
     # the expected ±√(kT·m_ec²) scale overlaid.
     b2.hist(px, bins=120, color="C0", alpha=0.8, density=True)
     for s, lbl in ((+1, r"$\pm\sqrt{kT\,m_ec^2}$"), (-1, None)):

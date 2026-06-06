@@ -17,7 +17,9 @@ from pipeline._runner import Stage
 # Defaults mirrored by prebuncher_sim.py — single source of truth so the parent
 # can resolve OUTDIR without importing the sim module (which would pull in pywarpx
 # and defeat the per-stage subprocess isolation).
-DEFAULT_POWER_KW = 800.0
+# Matched to the original LinacSim gpt_master.in: prebuncher 1 GUI default input
+# power = 8.0 kW; relative phase ≈ zero-crossing ("zc") for bunching.
+DEFAULT_POWER_KW = 8.0
 DEFAULT_PHASE = "zc"
 
 

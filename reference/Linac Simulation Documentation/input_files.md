@@ -66,3 +66,27 @@ Minimal Tao driver: one universe, `track_type = 'beam'`, `rf_on = T`, radiation 
 ## Relationship to the WarpX rebuild in this repo
 
 These templates are the **upstream reference** for the from-scratch WarpX pipeline (`cathode/` → `gun/` → `prebuncher/` → `linac_sec1/`). The GPT field-map calls, RF harmonics, gun voltage scaling, prebuncher Q-based scaling, and SLAC two-standing-wave decomposition documented here are exactly what each WarpX stage reproduces from first principles. When a WarpX operating point looks off, these files are the source of truth for the original LinacSim settings — but remember the committed values are GUI defaults (mostly zero/off), not Adam's tuned working point.
+
+### Fidelity vs. the WarpX rebuild
+
+**Important context:** the WarpX stages in this repo were built and their numeric values chosen *before* these original LinacSim input files were available. So where the rebuild diverges from these files, it is generally because the original value was simply **not yet known** — not a deliberate decision to differ. These files are now the source of truth; the rebuild can be reconciled toward them where it matters. The list below reflects the state as of when the files arrived (June 2026); reconcile and update it as stages are brought into line.
+
+**Core physics that already matches** (these were derivable from the field maps and physics, so the rebuild got them right independently): gun voltage (150 kV) and its 1 kV / negative-scale sign convention; the field maps themselves (`CESR_gun.gdf`, `prebuncher_25D.gdf`, `SLAC-3mLinac-field1/2.gdf`); RF harmonics (prebuncher 18× = 214.18 MHz, linac 240× ≈ 2856 MHz); the prebuncher Q-based amplitude scaling `√(1e3·Q·P/(2πf))`; the cos/sin (E/B 90°-apart) RF drive; the SLAC two-standing-wave traveling-wave decomposition with its +π/2 quadrature offset and 0.001 MW (1 kW) normalization; the linac bore (≈9.55 mm) and ~37 MeV-at-15-MW energy target.
+
+| Quantity | Original LinacSim file |
+|----------|------------------------|
+| Bunch charge | **1 nC** (`gpt_master.in` `total_charge = -1e-9`) |
+| Cathode diameter | 16 mm (`egun_cath_diam`) |
+| Cathode temperature | 1425 K (`egun_cath_T`) |
+| Cathode–grid distance | 0.2 mm (`l`) |
+| Prebuncher z-position | 0.534 m (P1), 1.318 m (P2) |
+| Prebuncher power / phase | GUI 8 kW @ −70° (P1), 10 kW @ −45° (P2) |
+| Linac input power | 11 MW (GUI default) |
+| Linac on-crest phase | 183.5° absolute |
+
+**Elements not yet modeled at all**:
+
+- Solenoid lenses **0A–0E** and **Sol 0** — absent from the WarpX prebuncher transport.
+- **Prebuncher 2** (installed reversed, `-1,0,0`, Q=4300, z=1.318 m) — the rebuild models a single prebuncher.
+- Collimator/iris apertures (9.547 mm) in the injector line.
+- **BMAD sections 2–8** (`section_1_4_layout.bmad`, `section_5_8_layout.bmad`, `bmad_master.in`, `tao.init`) — no WarpX counterpart yet. (Note: the BMAD "Section 1" block is drift/quad transport *after* the section-1 linac; the accelerating cavity itself lives only in `gpt_master.in`, which `linac_sec1/` reproduces.)

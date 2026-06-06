@@ -1,7 +1,8 @@
 """
-SLAC Linac Section 1 in WarpX (RZ): capture the bunched prebuncher beam in a 3 m
-2π/3 traveling-wave accelerating structure and take it from ~148 keV to ~37 MeV,
-with solenoid focusing and self-consistent space charge.
+SLAC Linac Section 1 in WarpX (RZ): capture the prebuncher beam in a 3 m
+2π/3 traveling-wave accelerating structure (from ~137 keV; on-crest gain ~35 MeV at the
+default 11 MW), with solenoid focusing and self-consistent space charge. At the
+faithful-to-LinacSim 40 A / 11 MW default the weak focusing captures only ~2 %.
 
 Fourth stage of the Cornell Linac chain in WarpX:
     cathode → gun → prebuncher → linac_sec1 (this).
@@ -51,7 +52,7 @@ F_RF = 2856.0e6                  # SLAC S-band [Hz] (Linac_RF in details.md)
 RF_NORM_MW = 0.001               # field-map power normalisation (1 kW)
 
 # ── Upstream input ────────────────────────────────────────────────────────────
-PREBUNCH_DIAG = "prebuncher/diags/P800_zc/particles"   # bunched gun→prebuncher beam
+PREBUNCH_DIAG = "prebuncher/diags/P8_zc/particles"   # bunched gun→prebuncher beam
 Z_INJECT = 0.005                 # lab z where the bunch head is placed [m]
 Z_FOCUS_MIN = 0.30               # only seek the bunch focus past the cavity (drift), so
                                  # the pre-modulation injection snapshots near z=0 (which
@@ -60,14 +61,15 @@ MAX_PART = 50000                 # downsample the injected snapshot (reweighted)
 RNG_SEED = 0
 
 # ── Operating point (tunable via linac_sec1.config(...)) ──────────────────────
-POWER_MW = 15.0                  # RF input power [MW]  (~37 MeV on crest)
-PHASE_DEG = 0.0                  # injection RF phase offset [deg] (scanned for crest)
-# Solenoid current [A] (0 → focusing off). The prebuncher beam arrives diverging
-# (it lacked focusing over its 1.3 m drift), so strong focusing is needed to keep it
-# in the bore: capture rises from ~4% (I=0) to ~95% (I≈1000 A → 0.15 T peak), so the
-# default is the strongly focused, on-crest operating point. Set I_SOL=0 (via config)
-# to run the unfocused case.
-I_SOL = 1000.0
+# Matched to the original LinacSim gpt_master.in section-1 GUI defaults:
+# sec1_input_power = 11.0 MW, Sol 0 current = 40 A, relative phase phi_sec1_off = 0.
+POWER_MW = 11.0                  # RF input power [MW] (sec1_input_power)
+PHASE_DEG = 0.0                  # injection RF phase offset [deg] (= phi_sec1_off; crest found empirically)
+# Solenoid current [A] (0 → focusing off), from the original Sol 0 current = 40 A.
+# NOTE: at 40 A the focusing is far weaker than the I≈1000 A the rebuild previously
+# used to reach ~97% capture into the 9.5 mm bore (capture was ~4% unfocused), so
+# expect low capture at this faithful-to-original current. Set I_SOL via config to scan.
+I_SOL = 40.0
 
 # ── Performance / domain knobs ────────────────────────────────────────────────
 CFL = 0.5                        # dt = CFL · Δz / v_inject
@@ -217,7 +219,7 @@ def main():
     # Enforce the ordering invariant the comment above relies on: picmi sets the *global*
     # E_ext_particle_init_style from the LAST-added field, so the last entry MUST load E
     # (an RF map) — else a B-only field (the solenoid) silently disables the accelerating
-    # E and the beam just coasts at 148 keV with no error. Guard it so a future reorder
+    # E and the beam just coasts at ~137 keV with no error. Guard it so a future reorder
     # fails loudly instead of producing a wrong, silent run.
     assert getattr(applied[-1], "load_E", False), (
         "last applied field must have load_E=True (an RF map), or the global E_ext "

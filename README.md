@@ -13,7 +13,7 @@ self-consistent accelerator chain.
 
 ```
 cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
-(SCL diode)  (~148 keV)  (RF bunching)  (~37 MeV)
+(SCL diode)  (~146 keV)  (RF bunching)  (~15 MeV captured)
 ```
 
 ## Setup
@@ -42,7 +42,7 @@ python pipeline/run_pipeline.py
 
 Each stage is also a top-level Python package — `import cathode; cathode.run()` (likewise
 `gun.run()`, `prebuncher.run()`, `linac_sec1.run()`) runs that stage alone. Use
-`cathode.config(V_anode=50)` etc. to override the module-level parameters before calling `.run()`
+`cathode.config(V_anode=60)` etc. to override the module-level parameters before calling `.run()`
 (e.g. `linac_sec1.config(I_SOL=0)` for the unfocused linac case). See
 [`pipeline/README.md`](pipeline/README.md) for details.
 
@@ -51,9 +51,9 @@ Each stage is also a top-level Python package — `import cathode; cathode.run()
 | Stage | Directory | What it does |
 |-------|-----------|--------------|
 | **1. Cathode** | [`cathode/`](cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
-| **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~148 keV. |
+| **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~146 keV. |
 | **3. Prebuncher** | [`prebuncher/`](prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
-| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ) with solenoid focusing — captures the bunched ~148 keV beam and accelerates it to ~37 MeV. |
+| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ) with solenoid focusing. At the original LinacSim operating point (40 A, 11 MW) the weak focusing captures only ~2% of the ~137 keV beam, to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV); `I_SOL≈1000 A` recovers ~97% capture to ~37 MeV. |
 | **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the four stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. |
 
 Each directory's `README.md` documents its physics, field maps, and outputs.

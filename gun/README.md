@@ -25,7 +25,7 @@ python gun/plot_gun.py          # figures       ->  results/*.png
 ```
 
 To override the gun voltage or bunch charge: `gun.config(GUN_VOLTAGE=150e3,
-BUNCH_CHARGE=0.1e-9)` before `gun.run()`. Keys must match the module-level constants in
+BUNCH_CHARGE=1.0e-9)` before `gun.run()`. Keys must match the module-level constants in
 `gun/build_gun_field.py` and `gun/gun_sim.py`. `build_gun_field.py` reads
 `fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
 `cathode/diags/particles/`. All paths are repo-root-relative.
@@ -79,7 +79,7 @@ electrode field.)
 ## Beam source — chaining the cathode output
 
 The cathode run is a **continuous (DC) emitter**, so the weights in its last particle
-snapshot encode the steady-state population *in transit through the diode* (~102 nC), not a
+snapshot encode the steady-state population *in transit through the diode* (~82 nC), not a
 bunch charge. We:
 
 1. Import the emitted **phase-space distribution** (positions + momenta) from the last
@@ -92,14 +92,16 @@ bunch charge. We:
    **importance-resample by `r`** (draw particles with probability ∝ `r`, with replacement),
    so `dN/dr → r·dN/dr` and `n(r)` matches the cathode's true radial profile (a flat-top
    emitting strip → a uniform-density disc). This keeps the macroparticle weights uniform.
-3. **Renormalize** the total weight to a physical gun bunch charge `BUNCH_CHARGE = 0.1 nC`
-   (the CESR gun is grid-pulse gated; 0.1 nC matches the prior IMPACT-T gun model).
+3. **Renormalize** the total weight to a physical gun bunch charge `BUNCH_CHARGE = 1 nC`
+   (the CESR gun is grid-pulse gated; 1 nC matches the original LinacSim `gpt_master.in`
+   `total_charge = -1e-9`).
 
-**Why renormalize:** injecting the full 102 nC as one instantaneous bunch is unphysical — its
-radial space-charge field (~50 MV/m) dwarfs the gun field and blows the beam apart before it
-accelerates (observed directly: the beam is absorbed within ~50 steps). At 0.1 nC the beam
-transports cleanly and accelerates. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to explore
-the space-charge regime.
+**Why renormalize:** injecting the full 82 nC as one instantaneous bunch is unphysical — its
+radial space-charge field dwarfs the gun field and blows the beam apart before it
+accelerates (observed directly: the beam is absorbed within ~50 steps). At 1 nC the beam still
+transports — **≈ 83 % reaches the exit** (the rest is lost to the stronger space charge at this
+higher charge) — and accelerates to ~146 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
+explore the space-charge regime.
 
 **Approximations.** The cathode model is a 2D Cartesian slab, not RZ, so the slab→radius
 remap is an approximation: the `r`-importance resample (step 2) makes the **areal density**
@@ -115,13 +117,13 @@ beam is treated as a single injected bunch.
 | grid | 96 (r) × 384 (z), r ∈ [0, 15 mm], z ∈ [0, 51.77 mm] |
 | solver | electrostatic, lab frame, Multigrid (self-field only) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
-| bunch | 0.1 nC, imported cathode phase space, ~222k macroparticles (optionally capped by `MAX_PART`, reweighted) |
+| bunch | 1 nC, imported cathode phase space, ~133k macroparticles (optionally capped by `MAX_PART`, reweighted) |
 | time step | `dt = CFL·Δz/v_exit` (`CFL`=0.4; v_exit ≈ 0.63 c at 150 keV) |
 | duration | `TRANSIT_MARGIN`×gun-transit time (=1.15; bunch average speed ≈ `AVG_SPEED_FRAC`·v_exit, =0.6), or fixed via `MAX_STEPS`; stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
 
 The lab-frame electrostatic solver is non-relativistic in its self-field treatment: it applies
 the rest-frame Coulomb field `qE_r` with no magnetic-pinch cancellation, whereas the true net
-transverse force is `qE_r/γ²`. At the gun exit (148 keV, γ ≈ 1.29) this **overestimates the
+transverse force is `qE_r/γ²`. At the gun exit (146 keV, γ ≈ 1.29) this **overestimates the
 transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** — ramping from a few % near the
 cathode (10 keV) to ~66 % at exit. (The genuine fix is WarpX's relativistic ES mode, out of
 scope for this single-pass demo; the same caveat applies, but shrinks, in the more relativistic
@@ -142,12 +144,12 @@ to higher voltage or interpreting the absolute σ_r / emittance.
    space-charge / aberration emittance growth along the gun.
 6. **`space_charge.png`** — `r–z` maps of the beam **self-field** (`ρ` and the space-charge
    potential well `φ`, ≈ −250 V) at a near-launch snapshot — the dumped self-field nothing else
-   plots, and the well that motivates renormalizing the bunch to 0.1 nC.
+   plots, and the well that motivates renormalizing the bunch to 1 nC.
 
 ## Notes / extensions
 
 - The beam energy gain tracks `∫ e·|Ez| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the ~150 keV
-  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~148 keV mean).
+  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~146 keV mean).
 - To approach the continuous-emission picture, inject a train of bunches or feed the cathode
   current directly rather than a single snapshot.
 - A solenoid (magnetic focusing) could be added via a second `read_from_file` B map if the
