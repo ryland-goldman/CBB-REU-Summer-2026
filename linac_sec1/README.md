@@ -25,7 +25,7 @@ linac_sec1.run()         # build field + sim + plots -> diags/main, results/
 `run()` runs **one case** at the default operating point — the on-crest, focused headline
 (`PHASE_DEG=0`, `I_SOL=1000`, `POWER_MW=15`). The operating point and grid are module-level
 constants at the top of `linac_sec1/linac_sec1_sim.py` (`POWER_MW`, `PHASE_DEG`, `I_SOL`, `NZ`, …),
-overridable via `config()` — e.g. `linac_sec1.config(I_SOL=0).run()` for the unfocused case, or a
+overridable via `config()` — e.g. `linac_sec1.config(I_SOL=0); linac_sec1.run()` for the unfocused case, or a
 `PHASE_DEG` sweep in a Python loop if you want the acceptance curve.
 
 `build_linac_sec1_field` reads the maps from `fieldmaps/`; the sim reads the prebuncher output
@@ -90,7 +90,7 @@ must be *captured*. Both effects make focusing essential:
 - **Solenoid** (`I_SOL`, A): the per-Ampere `SOL_0` map × `I_SOL`. Capture rises sharply with
   current — **~4% (I = 0) → ~95% (I = 1000 A ≈ 0.15 T peak)** — because the strong channel holds
   the diverging beam inside the bore long enough to be captured, so the default is the strongly
-  focused `I_SOL = 1000`. Run `config(I_SOL=0).run()` for the unfocused case.
+  focused `I_SOL = 1000`. Run `config(I_SOL=0); run()` for the unfocused case.
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates linearly to ~37 MeV and the transverse size **damps**
   (σ_r ∝ 1/√(γβ)): the RMS σ_x falls to ~2 mm (r95 ~6 mm), well inside the 9.55 mm bore, by the
