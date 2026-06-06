@@ -24,6 +24,7 @@ During the development of the ERL injector, a GUI was needed to quickly predict 
 |----------|-------------|
 | [Introduction](introduction.md) | How electron beams are simulated — physics and algorithms |
 | [Technical Details](details.md) | Details on each subsystem: cathode, gun, prebunchers, lenses, linac cavities, quads |
+| [Input File Templates](input_files.md) | The cathode/GPT/BMAD/Tao input-file templates (in `input_files/`) the GUI fills in at run time |
 | [User Guide](user_guide.md) | Using the GUI: buttons, parameters, plot settings |
 | [To-Do List](todo.md) | Outstanding work and future directions |
 

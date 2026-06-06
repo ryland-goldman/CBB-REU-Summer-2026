@@ -1,0 +1,431 @@
+#--------------------------------------------------------------------------
+# CESR LINAC LAYOUT
+#--------------------------------------------------------------------------
+# This file, along with its various switches, is intended to simulate the
+# low energy part of the CESR linac, along with auto-phasing the cavities,
+# etc. It ends after section 1 linac.
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# GUI Input section
+#--------------------------------------------------------------------------
+# @GUI section "Gun"
+# @GUI element          ThermionicGun           "e-Gun"                     0.0     0.0     "Cathode1D" "GPT"
+# @GUI parameter        "Cathode Diameter"      "egun_cath_diam"            16      "mm"        true
+# @GUI parameter	"Gun Voltage"           "egun_gun_volt"             150.0   "kV"        true
+# @GUI parameter        "Cathode Diameter"      "egun_cath_diam"            16      "mm"        true
+# @GUI parameter        "Cathode Temperature"   "egun_cath_T"               1425    "K"         true
+#--------------------------------------------------------------------------
+# @GUI section "Prebunchers"
+# @GUI element          Prebuncher              "Prebuncher 1"              0.534   0.0         "GPT"
+# @GUI parameter        "Input Power"           "prebuncher1_input_power"   8.0     "kW"        true
+# @GUI parameter        "Relative Phase"        "phi_prebuncher1_off"       -70     "degrees"   true
+# @GUI phasedparameter  "On Crest Phase"        "phi_prebuncher1_0"         304.7   "degrees"   "Input Power"       "Relative Phase"
+# @GUI parameter        "Cavity Q"              "prebuncher1_QL"            3000.0  "unitless"  false
+#
+# @GUI element          Prebuncher              "Prebuncher 2"              1.318   0.0         "GPT"
+# @GUI parameter        "Input Power"           "prebuncher2_input_power"   10.0    "kW"        true
+# @GUI parameter        "Relative Phase"        "phi_prebuncher2_off"       -45     "degrees"   true
+# @GUI phasedparameter  "On Crest Phase"        "phi_prebuncher2_0"         178.9   "degrees"   "Input Power"       "Relative Phase"
+# @GUI parameter        "Cavity Q"              "prebuncher2_QL"            4300.0  "unitless"  false
+#
+# @GUI element          Solenoid                "Lens 0A"                   0.225   0.0         "GPT"
+# @GUI parameter        "Current"               "current_lens0A"            6.0     "A"         true
+#
+# @GUI element          Solenoid                "Lens 0B"                   1.603   0.0         "GPT"
+# @GUI parameter        "Current"               "current_lens0B"            0.0     "A"         true
+#
+# @GUI element          Solenoid                "Lens 0C"                   1.692   0.0         "GPT"
+# @GUI parameter        "Current"               "current_lens0C"            0.0     "A"         true
+#
+# @GUI element          Solenoid                "Lens 0D"                   1.838   0.0         "GPT"
+# @GUI parameter        "Current"               "current_lens0D"            0.0     "A"         true
+#
+# @GUI element          Solenoid                "Lens 0E"                   1.914   0.0         "GPT"
+# @GUI parameter        "Current"               "current_lens0E"            10.0    "A"         true
+#
+# @GUI element          Solenoid                "Sol 0"                     1.897   1.564       "GPT"
+# @GUI parameter        "Current"               "current_sol0"              40.0    "A"         true
+#--------------------------------------------------------------------------
+# @GUI section "Section 1"
+# @GUI element          TWLinac                 "Section 1 Linac"           5.122   3.185       "GPT"
+# @GUI parameter        "Input Power"           "sec1_input_power"          11.0    "MW"        true
+# @GUI parameter        "Relative Phase"        "phi_sec1_off"              0       "degrees"   true
+# @GUI phasedparameter  "On Crest Phase"        "phi_sec1_0"                183.5   "degrees"   "Input Power"       "Relative Phase"
+#
+# @GUI element          Solenoid                "Sol 1A"                    2.067   0.059       "GPT"
+# @GUI parameter        "Current"               "current_sol1a"             0.0     "A"         true
+#
+# @GUI element          Solenoid                "Sol 1B"                    2.188   0.118       "GPT"
+# @GUI parameter        "Current"               "current_sol1b"             0.0     "A"         true
+#
+# @GUI element          Solenoid                "Sol 1C"                    4.989   1.27        "GPT"
+# @GUI parameter        "Current"               "current_sol1c"             0.0     "A"         true
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# SWITCHES:
+#--------------------------------------------------------------------------
+single_particle = 0;
+auto_phase = 0;
+space_charge = 0;
+space_charge_type = 0;
+gun_section_on = 0;
+prebunchers_section_on = 0;
+section_1_section_on = 0;
+viewscreens_on = 0;
+kill_backwards_particles = 0;
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# MACHINE AND SIMULATION SETTINGS:
+#--------------------------------------------------------------------------
+
+# Globals
+Master_RF = 11.89915e6; # Measured 1991, derived from 500 MHz = 499.7645, 42nd harmonic
+CESR_RF = Master_RF * 42;
+Synch_RF = Master_RF * 60;
+Linac_RF = Master_RF * 240;
+Prebuncher_RF = Master_RF * 18;
+
+# Bunch properties
+number_particles = 100;
+total_charge = -1e-9;
+
+# Defaults
+ZSTOP = 0.0;
+
+# Gun subsection
+egun_cath_diam = 16.0E-3;
+egun_cath_T = 1425;
+egun_gun_volt = 150.0;
+
+# Injector
+prebuncher1_QL = 3000;
+prebuncher1_input_power = 0;
+prebuncher2_QL = 4300;
+prebuncher2_input_power = 0;
+
+current_lens0A = 0;
+current_lens0B = 0;
+current_lens0C = 0;
+current_lens0D = 0;
+current_lens0E = 0;
+current_sol0 = 0;
+
+# Section 1
+sec1_input_power = 0.0;
+current_sol1a = 0.0;
+current_sol1b = 0.0;
+current_sol1c = 0.0;
+
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# INITIAL CONDITIONS
+#--------------------------------------------------------------------------
+
+if (single_particle == 1) {
+
+    setparticles("beam", 1, me, qe, 0);
+
+    mc2 = m*c*c/abs(qe);
+    KE = 1;
+
+    G  = 1+KE/mc2 ;
+
+    setGdist( "beam", "u", G, 0) ;
+
+} else {
+
+    cathode_radius = egun_cath_diam/2.0;
+    setparticles( "beam", number_particles, me, qe, total_charge );
+    if (space_charge == 1 && space_charge_type == 0) {
+       setxdist( "beam", "u", cathode_radius/2.0, cathode_radius);
+    } else {
+       setrxydist( "beam", "u", cathode_radius/2.0, cathode_radius);
+    }     
+
+    setphidist( "beam", "u", 0, 2*pi );
+    
+    xyrms = cathode_radius/2.0; # uniform circular distribution
+    kT = 8.61733238e-5 * egun_cath_T; # in eV
+
+    mc2 = m*c*c/abs(qe);
+    Eo = kT * 3 / 2 ;
+    G  = 1+Eo/mc2 ;
+    GB = sqrt((G-1)*(G+1));
+    emitx = xyrms*sqrt(kT/mc2);
+
+    setGBzdist("beam", "u", GB, 0 );
+    setGBthetadist("beam", "u", pi/4, pi/2);
+    setGBphidist("beam", "u", 0, 2*pi);
+    
+    setGBxemittance( "beam", emitx ) ;
+    setGByemittance( "beam", emitx ) ;
+
+    settdist("beam", "F", $INIT_DIST_FILE$, "t", "Pt", 1, 0);
+
+}
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# ACCURACY AND INTEGRATION PARAMETERS
+#--------------------------------------------------------------------------
+#RadiusMax = 0.04;
+GBacc =  4.0;  # ERL uses 5.5, default is 4.0
+xacc  =  6.0;  # ERL uses 6.5, default is 6.0
+accuracy(GBacc, xacc);
+dtmin = 1e-16;
+dtmax = 1e-10;
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# Spacecharge Parameters
+#--------------------------------------------------------------------------
+
+if (space_charge == 1) {
+    if (space_charge_type == 0) {
+	setcharge2Dcircle("beam", total_charge);
+        spacecharge2Dcircle();
+    }
+    if (space_charge_type == 1) {
+        Alpha  = 1.0;   # ERL=1.2    (manual default is 1.0),   (bigger is better)
+        Fn     = 0.5;  # ERL=0.25   (manual default is 0.5),   (smaller is better)
+        verror = 0.01; # ERL=0.005  (manual default is 0.01),  (smaller is better)
+        Nstd   = 5;     # ERL=12     (manual default is 5),     (bigger is better)
+        spacecharge3Dmesh("Cathode", "MeshNfac", Alpha, "MeshAdapt", Fn, "SolverAcc", verror, "MeshBoxSize", Nstd);
+    }
+}
+#--------------------------------------------------------------------------
+
+#--------------------------------------------------------------------------
+# AUTOPHASE AND CAVITY PARAMETERS
+#--------------------------------------------------------------------------
+
+# on-crest phases
+phi_prebuncher1_0=0;
+phi_prebuncher2_0=0;
+phi_sec1_0=0;
+
+# relative phases to on-crest
+phi_prebuncher1_off=-90;
+phi_prebuncher2_off=-90;
+phi_sec1_off=0;
+
+# total phase
+phi_prebuncher1_total=(phi_prebuncher1_0 + phi_prebuncher1_off)*pi/180;
+phi_prebuncher2_total=(phi_prebuncher2_0 + phi_prebuncher2_off)*pi/180;
+phi_sec1_total=(phi_sec1_0 + phi_sec1_off)*pi/180;
+
+#--------------------------------------------------------------------------
+# Gun subsection
+#--------------------------------------------------------------------------
+if (gun_section_on == 1) {
+
+    #-----------------------------------------------------------------------
+    # ELEMENTS:
+    #-----------------------------------------------------------------------
+
+    # DC GUN
+    gun_z = 0.0;
+    gun_sim_voltage  = -1.0; # simulated at 1.0 kV, with wrong sign
+    gun_scaled_voltage = egun_gun_volt / gun_sim_voltage;
+    Map2D_E("wcs", "z", gun_z, "$FIELD_DIR$CESR_gun.gdf", "R", "Z", "Er", "Ez", gun_scaled_voltage);
+    
+    #-----------------------------------------------------------------------
+    # VIEWSCREENS:
+    #-----------------------------------------------------------------------
+
+    if (viewscreens_on == 1) {
+
+        # cathode viewscreen
+        screen("wcs","I", 1e-5); # @GUI "Cathode Surface"
+
+        # Near the anode
+        screen("wcs","I",0.06); # @GUI "Near Anode"
+
+        # BPMG
+        screen("wcs","I",0.244); # @GUI "BPMG"
+
+    }
+
+    #-----------------------------------------------------------------------
+    # BOUNDARIES:
+    #-----------------------------------------------------------------------
+
+    forwardscatter("wcs", "I", "remove", 0); 
+    gun_pipe_radius = 0.008;
+    gun_out_radius = 0.036449;
+    scatterpipe("wcs", "I", 0, 0.06, gun_pipe_radius) scatter="remove"; # @GUI
+    scatteriris("wcs", "z", 0.06, gun_out_radius, gun_pipe_radius ) scatter="remove" ; # @GUI
+    ZSTOP = 0.5;
+}
+#--------------------------------------------------------------------------
+
+
+
+#--------------------------------------------------------------------------
+# Prebuncher subsection
+#--------------------------------------------------------------------------
+if (prebunchers_section_on == 1) {
+
+    #-----------------------------------------------------------------------
+    # ELEMENTS:
+    #-----------------------------------------------------------------------
+
+    # LENS 0A
+    Z_lens0A = 0.0;
+    sim_current_lens0A = 1.0;
+    scale_lens0A = current_lens0A / sim_current_lens0A;
+    Map2D_B("wcs", "z", Z_lens0A, "$FIELD_DIR$LENS_0A.gdf", "R", "Z", "Br", "Bz", scale_lens0A);
+ 
+
+    # LENS 0B
+    Z_lens0B = 0.0;
+    sim_current_lens0B = 1.0;
+    scale_lens0B = current_lens0B / sim_current_lens0B;
+    Map2D_B("wcs", "z", Z_lens0B, "$FIELD_DIR$LENS_0B.gdf", "R", "Z", "Br", "Bz", scale_lens0B);
+
+    # LENS 0C
+    Z_lens0C = 0.0;
+    sim_current_lens0C = 1.0;
+    scale_lens0C = current_lens0C / sim_current_lens0C;
+    Map2D_B("wcs", "z", Z_lens0C, "$FIELD_DIR$LENS_0C.gdf", "R", "Z", "Br", "Bz", scale_lens0C);
+ 
+    # LENS 0D
+    Z_lens0D = 0.0;
+    sim_current_lens0D = 1.0;
+    scale_lens0D = current_lens0D / sim_current_lens0D;
+    Map2D_B("wcs", "z", Z_lens0D, "$FIELD_DIR$LENS_0D.gdf", "R", "Z", "Br", "Bz", scale_lens0D);
+ 
+    # LENS 0E
+    Z_lens0E = 0.0;
+    sim_current_lens0E = 1.0;
+    scale_lens0E = current_lens0E / sim_current_lens0E;
+    Map2D_B("wcs", "z", Z_lens0E, "$FIELD_DIR$LENS_0E.gdf", "R", "Z", "Br", "Bz", scale_lens0E);
+ 
+    # SOL 0
+    Z_sol0 = 0.0;
+    sim_current_sol0 = 1.0;
+    scale_sol0 = current_sol0 / sim_current_sol0;
+    Map2D_B("wcs", "z", Z_sol0, "$FIELD_DIR$SOL_0.gdf", "R", "Z", "Br", "Bz", scale_sol0);
+ 
+
+    # Prebuncher 1
+    prebuncher_sim_energy = 1; # joules
+    prebuncher1_energy = 1e3 * prebuncher1_QL * prebuncher1_input_power / (Prebuncher_RF * 2 * pi);
+    Z_prebuncher1 = 0.534;
+    prebuncher1_scale = sqrt(prebuncher1_energy / prebuncher_sim_energy);
+    Map25D_TM("wcs", 0,0,Z_prebuncher1,  1,0,0, 0,1,0, "$FIELD_DIR$prebuncher_25D.gdf", "R", "Z", "Er", "Ez", "H", prebuncher1_scale, 0, phi_prebuncher1_total, 2*pi*Prebuncher_RF);
+
+    # Prebuncher 2
+    prebuncher2_energy = 1e3 * prebuncher2_QL * prebuncher2_input_power / (Prebuncher_RF * 2 * pi);
+    Z_prebuncher2 = 1.318;
+    prebuncher2_scale = sqrt(prebuncher2_energy / prebuncher_sim_energy);
+    Map25D_TM("wcs", 0,0,Z_prebuncher2,  -1,0,0, 0,1,0, "$FIELD_DIR$prebuncher_25D.gdf", "R", "Z", "Er", "Ez", "H", prebuncher2_scale, 0, phi_prebuncher2_total, 2*pi*Prebuncher_RF);
+
+    #-----------------------------------------------------------------------
+    # VIEWSCREENS:
+    #-----------------------------------------------------------------------
+
+    if (viewscreens_on == 1) {
+
+        # End of prebuncher subsection
+        screen("wcs","I",2.0); # @GUI "Start of Linac 1"
+
+    }
+
+    #-----------------------------------------------------------------------
+    # BOUNDARIES:
+    #-----------------------------------------------------------------------
+
+    injector_pipe_radius = 0.036449;
+    collimator_pipe_radius = 0.009547;
+    scatterpipe("wcs", "I", 0.06, 1.922, injector_pipe_radius) scatter="remove"; # @GUI
+    scatteriris("wcs", "z", 1.922, collimator_pipe_radius, injector_pipe_radius ) scatter="remove" ;  # @GUI
+    scatterpipe("wcs", "I", 1.922, 2.1, collimator_pipe_radius) scatter="remove";  # @GUI
+
+    ZSTOP = 2.1;
+
+}
+
+#--------------------------------------------------------------------------
+# Accelerator subsection #1
+#--------------------------------------------------------------------------
+if (section_1_section_on == 1) {
+
+    #-----------------------------------------------------------------------
+    # ELEMENTS:
+    #-----------------------------------------------------------------------
+
+    Z_acc_1 = 2.03;                 # approximate. centered between flange-to-flange positions
+    w_acc_1 = 2*pi*Linac_RF;        # angular frequency
+    linac1_sim_power = 0.001;       # input power in simulation = 0.001 MW
+
+    linac1_scale = sqrt(sec1_input_power / linac1_sim_power);
+    
+    Map25D_TM("wcs", 0,0,Z_acc_1,  1,0,0, 0,1,0, "$FIELD_DIR$SLAC-3mLinac-field1.gdf", "R", "Z", "ErRe", "EzRe", "HphiIm", linac1_scale, 0, phi_sec1_total, w_acc_1);
+    Map25D_TM("wcs", 0,0,Z_acc_1,  1,0,0, 0,1,0, "$FIELD_DIR$SLAC-3mLinac-field2.gdf", "R", "Z", "ErIm", "EzIm", "HphiRe", linac1_scale, 0, phi_sec1_total + 0.5*pi, w_acc_1);
+
+    
+    #-----------------------------------------------------------------------
+    # VIEWSCREENS:
+    #-----------------------------------------------------------------------
+
+    if (viewscreens_on == 1) {
+
+        screen("wcs","I", 5.4); # @GUI "End of Linac 1" @BMADSTART
+
+    }
+
+    #-----------------------------------------------------------------------
+    # BOUNDARIES:
+    #-----------------------------------------------------------------------
+
+    linac1_pipe_radius = 0.009547;
+    scatterpipe("wcs", "I", 2.1, 5.45, linac1_pipe_radius) scatter="remove"; # @GUI
+
+    ZSTOP = 5.45;
+
+
+}
+
+#--------------------------------------------------------------------------
+# OUTPUT PARAMETERS
+#--------------------------------------------------------------------------
+if (auto_phase == 1) {
+
+   zmax = 5.45;
+   screen("wcs","I",zmax);
+   tmax = 1e-7;
+
+   ZSTART = -0.005;
+   zminmax("wcs","I",ZSTART,zmax);
+
+} else {
+   
+   tmax = 5.0e-8; # Absolute maximum time
+
+   ZSTART = -0.005;
+   zminmax("wcs","I",ZSTART,ZSTOP);
+
+   dtout = 2.0e-10;
+   tout(0,tmax,dtout);
+
+   #dzout = 0.01;
+   #screen("wcs","I", ZSTART, ZSTOP, dzout);
+
+   if (kill_backwards_particles == 1) {
+      GBzmin("wcs", "I", 5.0e-10, 0.0); # kill particles going backwards (gamma*beta < 0.0) after t=5e-10 s
+   }
+
+   stdxyzmax(0,0,5) ; # remove particles if z > 5*stdz from center of bunch
+}
+#--------------------------------------------------------------------------

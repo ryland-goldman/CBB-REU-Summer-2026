@@ -1,0 +1,27 @@
+!****************************************************************
+
+&tao_start
+  n_universes = 1
+/
+
+!****************************************************************
+!Beam Initialization
+!****************************************************************
+
+&tao_design_lattice
+  design_lattice(1)%file = "bmad_master-run.in"
+/
+
+&tao_beam_init
+  beam_saved_at = "marker::*"
+/
+
+&tao_params
+  global%track_type = 'beam'
+  global%rf_on= T
+  !---Bmad---
+  bmad_com%radiation_damping_on = F
+  bmad_com%radiation_fluctuations_on = F
+  !---CSR---
+  bmad_com%coherent_synch_rad_on = .false.
+/

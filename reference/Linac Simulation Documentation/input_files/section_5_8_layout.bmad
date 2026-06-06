@@ -1,0 +1,125 @@
+! ****************************************************************
+! BMAD lattice file for sections 5-8 of the CESR linac
+! Begins at the *entrance flange* of section 5 linac
+! Modified from Dan Fromowitz's dissertation work on sections 5-8
+! No longer has solenoids around linac 5 & 6
+! ****************************************************************
+
+! Notes / comments / things to worry about
+! 1) Need to swap linacs to traveling wave
+! 2) Linacs have the flange-flange length, not true length. 
+
+! ****************************************************************
+! Section 5
+! ****************************************************************
+
+sec_5_pipe_rad = 0.02
+acc_5_in_rad = 0.0148
+acc_5_out_rad = 0.0117
+
+BEG_ACC5: marker, 
+	  aperture = acc_5_in_rad, 
+	  aperture_type = elliptical
+ACC_5:  lcavity, 
+	rf_frequency = Linac_RF,
+	aperture = acc_5_out_rad, 
+	aperture_type = elliptical,
+        l = 5.2403, 
+	n_cell = 155
+D_ACC5: drift,      
+	l = 0.1054, 
+	aperture = sec_5_pipe_rad,
+	aperture_type = elliptical
+QH5:	quadrupole, 
+	l = 0.1829, 
+	aperture = sec_5_pipe_rad,
+	aperture_type = elliptical
+D_QH5:  D_ACC5,
+	l = 0.0457
+BPM_5:  marker
+QV5:    QH5
+D_QV5:  D_ACC5,
+	l = 0.1138
+
+sec_5: line = (BEG_ACC5, ACC_5, D_ACC5, QH5, D_QH5, BPM_5, QV5, D_QV5)
+
+! ****************************************************************
+! Section 6
+! ****************************************************************
+
+sec_6_pipe_rad = 0.0254
+
+BEG_ACC6: BEG_ACC5
+ACC_6:  ACC_5,   
+	l = 5.2436
+D_ACC6: D_ACC5,  
+	l = 0.1935,
+	aperture = sec_6_pipe_rad,
+	aperture_type = elliptical
+SEC_6_FLAG:  marker
+D_FLAG_6: D_ACC5, 
+	 l = 0.1056
+QH6_A:  quad,    
+	l = 0.1219,
+	aperture = sec_6_pipe_rad,
+	aperture_type = elliptical
+D_QH6A: drift,   
+	l = 0.0438,
+	aperture = sec_6_pipe_rad,
+	aperture_type = elliptical
+QV6:    QH6_A,    
+	l = 0.2477
+D_QV6:  D_QH6A
+BPM_6:  marker
+QH6_B:  QH6_A
+D_QH6B: D_QH6A,  
+	l = 0.1150
+
+sec_6: line = (BEG_ACC6, ACC_6, D_ACC6, SEC_6_FLAG, D_FLAG_6, QH6_A, D_QH6A, QV6, &
+ D_QV6, BPM_6, QH6_B, D_QH6B)
+
+! ****************************************************************
+! Section 7
+! ****************************************************************
+
+BEG_ACC7: BEG_ACC5
+ACC_7:  ACC_5,  
+	l = 5.2479
+D_ACC7: D_ACC5, 
+	l = 0.1341
+QH7_A:  QH6_A
+D_QH7A: D_QH6A
+QV7:    QV6
+D_QV7:  D_QH7A
+BPM_7:  marker
+QH7_B:  QH7_A
+D_QH7B: D_QH6A, 
+	l = 0.1016
+
+sec_7: line = (BEG_ACC7, ACC_7, D_ACC7, QH7_A, D_QH7A, QV7, D_QV7, BPM_7, &
+ QH7_B, D_QH7B)
+
+! ****************************************************************
+! Section 8
+! ****************************************************************
+
+BEG_ACC8: BEG_ACC5
+ACC_8:  ACC_7
+D_ACC8: D_ACC6, 
+	l = 0.1695
+QH8:    QH6_A,   
+	l = 0.2223
+D_QH8:  D_ACC6, 
+	l = 0.0851
+BPM_8:  marker
+QV8:    QH8
+
+sec_8: line = (BEG_ACC8, ACC_8, D_ACC8, QH8, D_QH8, BPM_8, QV8)
+
+! ****************************************************************
+! Line of sections 5-8 together
+! ****************************************************************
+
+sec_5_8: line = (sec_5, sec_6, sec_7, sec_8)
+
+return

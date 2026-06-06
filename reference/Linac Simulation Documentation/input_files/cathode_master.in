@@ -1,0 +1,11 @@
+# @GUI beamline "CESR Linac"
+#
+# @GUI section "Gun"
+#
+# @GUI element      CathodeGrid                 "Cathode"   0.0     0.0     "Cathode1D"
+# @GUI Parameter    "Cathode-Grid Distance"     "l"         0.2     "mm"    true
+# @GUI Parameter    "Pulse Voltage"             "Vpulse"    60      "V"     true
+# @GUI Parameter    "Off Voltage"               "Voff"      -30     "V"     true
+# @GUI Parameter    "Pulse Max Slope"           "Vp"        30     "V/ns"   true
+# @GUI Parameter    "Pulse Width"               "twidth"    2       "ns"    true
+# @GUI Parameter    "Grid Transmission"         "trans"     80      "%"     true

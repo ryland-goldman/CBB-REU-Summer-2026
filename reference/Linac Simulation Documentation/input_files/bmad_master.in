@@ -1,0 +1,268 @@
+! ****************************************************************
+! Linac BMAD simulation lattice
+! Original version: Aug, 2013 by Adam Bartnik
+! ****************************************************************
+
+! Notes:
+! 1) Quad conversions are all guesses, probably right order of mag.
+! 2) See individual layout files for more...
+!
+
+!--------------------------------------------------------------------------
+! @GUI section "Section 1"
+!
+! @GUI element          Quadrupole              "H Quad 1"                  5.683   0.267       "BMAD"
+! @GUI parameter        "Current"               "QH1_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 1"                  5.683   0.267       "BMAD"
+! @GUI parameter        "Current"               "QV1_current"               0.0     "A"         true
+!
+!--------------------------------------------------------------------------
+! @GUI section "Section 2-4"
+! @GUI element          TWLinac                 "Section 2 Linac"           9.202   3.187       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_2_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_2_rel_phase"           0       "degrees"   true
+!
+! @GUI element          TWLinac                 "Section 3 Linac"           13.204  3.187       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_3_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_3_rel_phase"           0       "degrees"   true
+!
+! @GUI element          TWLinac                 "Section 4 Linac"           19.159  5.248       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_4_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_4_rel_phase"           0       "degrees"   true
+!
+! @GUI element          Quadrupole              "H Quad 2"                  9.858   0.279       "BMAD"
+! @GUI parameter        "Current"               "QH2_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 2"                  9.858   0.279       "BMAD"
+! @GUI parameter        "Current"               "QV2_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "H Quad 3"                  13.853  0.457       "BMAD"
+! @GUI parameter        "Current"               "QH3_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 3"                  13.853  0.457       "BMAD"
+! @GUI parameter        "Current"               "QV3_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "H Quad 4"                  19.931  0.635       "BMAD"
+! @GUI parameter        "Current"               "QH4_A_current"             0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 4"                  19.931  0.635       "BMAD"
+! @GUI parameter        "Current"               "QV4_current"               0.0     "A"         true
+!
+!--------------------------------------------------------------------------
+! @GUI section "Section 5-8"
+! @GUI element          TWLinac                 "Section 5 Linac"           26.283  5.240       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_5_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_5_rel_phase"           0       "degrees"   true
+!
+! @GUI element          TWLinac                 "Section 6 Linac"           32.157  5.244       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_6_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_6_rel_phase"           0       "degrees"   true
+!
+! @GUI element          TWLinac                 "Section 7 Linac"           38.398  5.248       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_7_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_7_rel_phase"           0       "degrees"   true
+!
+! @GUI element          TWLinac                 "Section 8 Linac"           44.461  5.248       "BMAD"
+! @GUI parameter        "Input Power"           "ACC_8_power"          	    15.0    "MW"        true
+! @GUI parameter        "Relative Phase"        "ACC_8_rel_phase"           0       "degrees"   true
+!
+! @GUI element          Quadrupole              "H Quad 5"                  26.785  0.381       "BMAD"
+! @GUI parameter        "Current"               "QH5_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 5"                  26.785  0.381       "BMAD"
+! @GUI parameter        "Current"               "QV5_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "H Quad 6"                  33.025  0.5588      "BMAD"
+! @GUI parameter        "Current"               "QH6_A_current"             0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 6"                  33.025  0.5588      "BMAD"
+! @GUI parameter        "Current"               "QV6_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "H Quad 7"                  39.102  0.5588      "BMAD"
+! @GUI parameter        "Current"               "QH7_A_current"             0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 7"                  39.102  0.5588      "BMAD"
+! @GUI parameter        "Current"               "QV7_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "H Quad 8"                  45.15   0.508       "BMAD"
+! @GUI parameter        "Current"               "QH8_current"               0.0     "A"         true
+!
+! @GUI element          Quadrupole              "V Quad 8"                  45.15   0.508       "BMAD"
+! @GUI parameter        "Current"               "QV8_current"               0.0     "A"         true
+!
+! ****************************************************************
+! User parameters set by GUI
+! ****************************************************************
+
+! Reference particle parameters (used in phasing cavities)
+reference_energy =  1.0e6
+
+! Average initial beam parameters
+initial_beta_a = 1
+initial_beta_b = 1
+initial_alpha_a = 1
+initial_alpha_b = 1
+initial_time = 0
+initial_z = 0
+
+! Accelerator cavity input power (in Watts)
+
+ACC_2_power = 0
+ACC_3_power = 0
+ACC_4_power = 0
+ACC_5_power = 0
+ACC_6_power = 0
+ACC_7_power = 0
+ACC_8_power = 0
+
+! Accelerator cavity phase offset (in radians), relative to reference particle
+
+ACC_2_rel_phase = 0.0
+ACC_3_rel_phase = 0.0
+ACC_4_rel_phase = 0.0
+ACC_5_rel_phase = 0.0
+ACC_6_rel_phase = 0.0
+ACC_7_rel_phase = 0.0
+ACC_8_rel_phase = 0.0
+
+! Quadrupole currents
+
+!sec 1-4
+QH1_current = 0.0
+QV1_current = 0.0
+QH2_current = 0.0
+QV2_current = 0.0
+QH3_current = 0.0
+QV3_current = 0.0
+QH4_A_current = 0.0
+QV4_current = 0.0
+
+!sec 5-8
+QH5_current = 0.0
+QV5_current = 0.0
+QH6_A_current = 0.0
+QV6_current = 0.0
+QH7_A_current = 0.0
+QV7_current = 0.0
+QH8_current = 0.0
+QV8_current = 0.0
+
+
+! ****************************************************************
+! Setup and lattice loading
+! ****************************************************************
+
+parameter[lattice_type] = linear_lattice	! only go through once
+parameter[particle] = electron			! electron, positron, etc
+
+beginning[e_tot] = reference_energy    ! Reference particle initial energy, eV
+beginning[beta_a] = initial_beta_a
+beginning[beta_b] = initial_beta_b
+beginning[alpha_a] = initial_alpha_a
+beginning[alpha_b] = initial_alpha_b
+beginning[ref_time] = initial_time
+beginning[s] = initial_z
+
+Master_RF = 11.89915e6; ! Measured 1991, from 500 MHz = 499.7645,  (x 42)
+Linac_RF = Master_RF*240
+
+call, file = section_1_4_layout.bmad
+call, file = section_5_8_layout.bmad
+
+! ****************************************************************
+! BMAD parameters, no need to touch below here...
+! ****************************************************************
+
+! Accelerator conversions
+! Energy gain in eV for input power = 15 MW
+! scales with the sqrt() of the power!
+
+dEdP_ACC2 = 33.0e6/sqrt(15.0e6)
+dEdP_ACC3 = 33.0e6/sqrt(15.0e6)
+dEdP_ACC4 = 51.0e6/sqrt(15.0e6)
+dEdP_ACC5 = 55.0e6/sqrt(15.0e6)
+dEdP_ACC6 = 55.0e6/sqrt(15.0e6)
+dEdP_ACC7 = 51.0e6/sqrt(15.0e6)
+dEdP_ACC8 = 51.0e6/sqrt(15.0e6)
+
+! Maximum accelerating gradient (in V/m)
+
+ACC_2[gradient] = sqrt(ACC_2_power)*dEdP_ACC2/ACC_2[l]
+ACC_3[gradient] = sqrt(ACC_3_power)*dEdP_ACC3/ACC_3[l]
+ACC_4[gradient] = sqrt(ACC_4_power)*dEdP_ACC4/ACC_4[l]
+ACC_5[gradient] = sqrt(ACC_5_power)*dEdP_ACC5/ACC_5[l]
+ACC_6[gradient] = sqrt(ACC_6_power)*dEdP_ACC6/ACC_6[l]
+ACC_7[gradient] = sqrt(ACC_7_power)*dEdP_ACC7/ACC_7[l]
+ACC_8[gradient] = sqrt(ACC_8_power)*dEdP_ACC8/ACC_8[l]
+
+! Phase offset (in radians/(2*pi)), relative to on crest reference particle
+
+ACC_2[phi0] = ACC_2_rel_phase/(2.0*pi)
+ACC_3[phi0] = ACC_3_rel_phase/(2.0*pi)
+ACC_4[phi0] = ACC_4_rel_phase/(2.0*pi)
+ACC_5[phi0] = ACC_5_rel_phase/(2.0*pi)
+ACC_6[phi0] = ACC_6_rel_phase/(2.0*pi)
+ACC_7[phi0] = ACC_7_rel_phase/(2.0*pi)
+ACC_8[phi0] = ACC_8_rel_phase/(2.0*pi)
+
+! Quad conversion (Tesla / amp)
+
+! sec 1-4
+QH1_conv = 0.0125
+QV1_conv = 0.0125
+QH2_conv = 0.0125
+QV2_conv = 0.0125
+QH3_conv = 0.0125
+QV3_conv = 0.0125
+QH4_A_conv = 0.0125
+QV4_conv = 0.0125
+
+! sec 5-8
+QH5_conv = 0.0125
+QV5_conv = 0.0125
+QH6_A_conv = 0.0125
+QV6_conv = 0.0125
+QH7_A_conv = 0.0125
+QV7_conv = 0.0125
+QH8_conv = 0.0125
+QV8_conv = 0.0125
+
+
+! Quadrupoles (H or V is defined for e-)
+
+! sec 1-4
+QH1[b1_gradient]   = -QH1_conv*QH1_current
+QV1[b1_gradient]   =  QV1_conv*QV1_current
+QH2[b1_gradient]   = -QH2_conv*QH2_current
+QV2[b1_gradient]   =  QV2_conv*QV2_current
+QH3[b1_gradient]   = -QH3_conv*QH3_current
+QV3[b1_gradient]   =  QV3_conv*QV3_current
+QH4_A[b1_gradient]   = -QH4_A_conv*QH4_A_current
+QV4[b1_gradient]   =  QV4_conv*QV4_current
+QH4_B[b1_gradient] =  QH4_A[b1_gradient]
+
+! sec 5-8
+QH5[b1_gradient]   = -QH5_conv*QH5_current
+QV5[b1_gradient]   =  QV5_conv*QV5_current
+QH6_A[b1_gradient] = -QH6_A_conv*QH6_A_current
+QV6[b1_gradient]   =  QV6_conv*QV6_current
+QH6_B[b1_gradient] =  QH6_A[b1_gradient]
+QH7_A[b1_gradient] = -QH7_A_conv*QH7_A_current
+QV7[b1_gradient]   =  QV7_conv*QV7_current
+QH7_B[b1_gradient] =  QH7_A[b1_gradient]
+QH8[b1_gradient]   = -QH8_conv*QH8_current
+QV8[b1_gradient]   =  QV8_conv*QV8_current
+
+! ****************************************************************
+! Lattice assembly
+! ****************************************************************
+
+sec_1_8: line = (sec_1_4, sec_5_8)
+
+use, sec_1_8
+
+! @GUI APPENDMARKERS
+
+return
+

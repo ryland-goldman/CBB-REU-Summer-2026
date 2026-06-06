@@ -1,0 +1,155 @@
+! ****************************************************************
+! BMAD lattice file for sections 1-4 of the CESR linac
+! Begins at z = 5.4 meters. (After solenoid fields from sec 1 have
+! died down to zero, but before quad Q1.)
+! ****************************************************************
+
+! Notes / comments / things to worry about
+! 1) Need to swap linacs to traveling wave
+! 2) Linacs have the flange-flange length, not true length. 
+! 3) Pipe radii are guesses
+
+! ****************************************************************
+! Section 1
+! ****************************************************************
+
+sec_1_pipe_rad = 0.02
+
+D_ACC1: drift,      
+	l = 0.0163,
+	aperture = sec_1_pipe_rad,
+	aperture_type = elliptical
+QH1:	quadrupole, 
+	l = 0.1219, 
+	aperture = sec_1_pipe_rad,
+	aperture_type = elliptical
+D_QH1:  D_ACC1,
+	l = 0.02286
+QV1:    QH1
+D_QV1:  D_ACC1,
+	l = 0.167
+SEC_1_FLAG:  marker
+D_FLAG1:  D_ACC1,
+	l = 0.1643
+
+sec_1: line = (D_ACC1, QH1, D_QH1, QV1, D_QV1, SEC_1_FLAG, D_FLAG1)
+
+! ****************************************************************
+! Section 2
+! ****************************************************************
+
+sec_2_pipe_rad = 0.02
+acc_2_in_rad = 0.012573
+acc_2_out_rad = 0.009906
+
+BEG_ACC2: marker, 
+	  aperture = acc_2_in_rad, 
+	  aperture_type = elliptical
+ACC_2:  lcavity, 
+	rf_frequency = Linac_RF,
+	aperture = acc_2_out_rad, 
+	aperture_type = elliptical,
+        l = 3.1877, 
+	n_cell = 90
+D_ACC2: drift,      
+	l = 0.187,
+	aperture = sec_2_pipe_rad,
+	aperture_type = elliptical
+SEC_2_FLAG:  marker
+D_FLAG2:  D_ACC2,
+	l = 0.1896
+QH2:	quadrupole, 
+	l = 0.1016, 
+	aperture = sec_2_pipe_rad,
+	aperture_type = elliptical
+D_QH2:  D_ACC2,
+	l = 0.0762
+QV2:    QH2
+D_QV2:  D_ACC2,
+	l = 0.1583
+
+sec_2: line = (BEG_ACC2, ACC_2, D_ACC2, SEC_2_FLAG, D_FLAG2, QH2, D_QH2, QV2, D_QV2)
+
+! ****************************************************************
+! Section 3
+! ****************************************************************
+
+sec_3_pipe_rad = 0.02
+acc_3_in_rad = 0.012573
+acc_3_out_rad = 0.009906
+
+BEG_ACC3: marker, 
+	  aperture = acc_3_in_rad, 
+	  aperture_type = elliptical
+ACC_3:  lcavity, 
+	rf_frequency = Linac_RF,
+	aperture = acc_3_out_rad, 
+	aperture_type = elliptical,
+        l = 3.1877, 
+	n_cell = 90
+D_ACC3: drift,      
+	l = 0.1918,
+	aperture = sec_3_pipe_rad,
+	aperture_type = elliptical
+QH3:	quadrupole, 
+	l = 0.1524, 
+	aperture = sec_3_pipe_rad,
+	aperture_type = elliptical
+D_QH3:  D_ACC3,
+	l = 0.1524
+QV3:    QH3
+D_QV3:  D_ACC3,
+	l = 0.051006
+
+sec_3: line = (BEG_ACC3, ACC_3, D_ACC3, QH3, D_QH3, QV3, D_QV3)
+
+
+! ****************************************************************
+! Section 4
+! ****************************************************************
+
+sec_4_pipe_rad = 0.02
+acc_4_in_rad = 0.012573
+acc_4_out_rad = 0.009906
+
+BEG_ACC4: marker, 
+	  aperture = acc_4_in_rad, 
+	  aperture_type = elliptical
+ACC_4:  lcavity, 
+	rf_frequency = Linac_RF,
+	aperture = acc_4_out_rad, 
+	aperture_type = elliptical,
+        l = 5.24789, 
+	n_cell = 149
+D_ACC4: drift,      
+	l = 0.1441,
+	aperture = sec_4_pipe_rad,
+	aperture_type = elliptical
+QH4_A:	quadrupole, 
+	l = 0.1016, 
+	aperture = sec_4_pipe_rad,
+	aperture_type = elliptical
+D_QH4A: D_ACC4,
+	l = 0.10795
+QV4:    QH4_A,
+	l = 0.2032
+D_QV4:  D_ACC4,
+	l = 0.10795
+QH4_B:  QH4_A
+D_QH4B: D_ACC4, 
+	l = 0.162
+SEC_4_FLAG:  marker
+D_FLAG4: D_ACC4,
+	 l = 0.949726
+
+sec_4: line = (BEG_ACC4, ACC_4, D_ACC4, QH4_A, D_QH4A, QV4, D_QV4, QH4_B, 
+       	      D_QH4B, SEC_4_FLAG, D_FLAG4)
+
+
+! ****************************************************************
+! Line of sections 5-8 together
+! ****************************************************************
+
+sec_1_4: line = (sec_1, sec_2, sec_3, sec_4)
+
+return
