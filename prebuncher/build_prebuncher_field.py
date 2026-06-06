@@ -46,6 +46,13 @@ OUT_FILE = os.path.join(OUT_DIR, "prebuncher_EB.h5")
 Z_GAP_CENTER = 0.20          # [m]
 MAP_HALF_Z = 0.1524          # [m] half-length of the map (±152.4 mm)
 
+# On-axis 1-J effective gap voltage ∫|Ez(r=0,z)|dz of the committed map, in keV.
+# Imported by prebuncher_sim.py / plot_prebuncher.py as the gap-voltage coefficient
+# (V_gap = scale · V1J_KEV) so the run, the transit estimate, and the plots stay in
+# sync with the map. Defined as a literal (not computed at import) to keep importing
+# the module cheap; main() asserts it matches the integral of the loaded map.
+V1J_KEV = 438.6              # [keV]
+
 
 def load_prebuncher_map(path):
     """Return regular-grid (r, z, Er, Ez, Bphi) arrays from the GPT GDF map.
@@ -80,6 +87,9 @@ def main():
     ez_axis = Ez[0]
     v1j = float(np.trapezoid(np.abs(ez_axis), z))
     ipk = int(np.argmax(np.abs(ez_axis)))
+    assert abs(v1j / 1e3 - V1J_KEV) < 0.5, (
+        f"1-J gap voltage {v1j/1e3:.2f} kV drifted from V1J_KEV={V1J_KEV}; "
+        "update the constant if the map changed")
 
     print(f"Prebuncher map: nr={nr} (0–{r[-1]*1e3:.2f} mm), "
           f"nz={nz} ({z[0]*1e3:.1f}–{z[-1]*1e3:.1f} mm)")

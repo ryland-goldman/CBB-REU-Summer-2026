@@ -30,7 +30,7 @@ from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
-from .build_prebuncher_field import Z_GAP_CENTER   # keep field/phasing in sync
+from .build_prebuncher_field import Z_GAP_CENTER, V1J_KEV   # keep field/phasing in sync
 
 c = picmi.constants.c
 m_e = picmi.constants.m_e
@@ -40,11 +40,10 @@ q_e = picmi.constants.q_e
 PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
 F_RF = 499.7645e6 / 42 * 18      # 18 × master RF = 214.18 MHz (details.md)
 Q_L = 3000                       # loaded Q of prebuncher 1 (details.md)
-V1J_KEV = 438.6                  # 1-J effective gap voltage [keV] (∫|Ez|dz of the map,
-                                 # computed & printed by build_prebuncher_field.py; mirrored here)
+# V1J_KEV (1-J effective gap voltage) is imported from build_prebuncher_field.
 
 GUN_DIAG = "gun/diags/particles"
-Z_INJECT = 0.005                 # lab z where the bunch head is placed [m]
+Z_INJECT = 0.005                 # lab z where the bunch tail (smallest z) is placed [m]
 MAX_PART = 50000                 # downsample the gun snapshot (reweighted) for speed
 RNG_SEED = 0
 CFL = 0.8                        # dt = CFL · Δz / v_beam
@@ -95,7 +94,7 @@ def load_gun_bunch():
         scale_w = z.size / MAX_PART
         x, y, z, ux, uy, uz, w = (a[sel] for a in (x, y, z, ux, uy, uz, w))
         w = w * scale_w
-    # Translate so the bunch *head* (smallest z) sits at Z_INJECT.
+    # Translate so the bunch *tail* (smallest z) sits at Z_INJECT (head is at larger z).
     z = z - z.min() + Z_INJECT
 
     # openPMD ux/uy/uz are the dimensionless normalized momenta γβ; PICMI's

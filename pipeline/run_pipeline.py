@@ -28,7 +28,12 @@ import sys
 # solve (measured: full chain ~1.1 min at OMP=1; OMP=14 showed only ~450% CPU and
 # no gain). Keep this single-threaded; only raise OMP_THREADS for the much larger
 # original-config grids, where per-thread work outgrows the overhead.
-os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
+# An explicitly-set OMP_THREADS always wins, even if OMP_NUM_THREADS was already
+# exported (otherwise setdefault would silently ignore OMP_THREADS); else default 1.
+if "OMP_THREADS" in os.environ:
+    os.environ["OMP_NUM_THREADS"] = os.environ["OMP_THREADS"]
+else:
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 # Run from the repo root so each stage's hard-coded relative paths resolve.
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
