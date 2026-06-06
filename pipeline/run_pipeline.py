@@ -62,9 +62,7 @@ prebuncher.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
 # cathode.config(nz=48, PPC=4, REQUIRED_PRECISION=5e-5, MAX_STEPS=1200)
 # gun.config(nz=192, MAX_PART=40000, REQUIRED_PRECISION=3e-4, N_DIAGS=20)
 # prebuncher.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
-# linac_sec1: the demo() driver (called below) sets its own grid per case — a coarse
-# RF-phase acceptance scan (scan_nz) + a full-resolution headline/focus-off (full_nz).
-# Tune cost via linac_sec1.demo(scan_nz=..., full_nz=..., phases=...).
+# linac_sec1.config(NZ=1024, CFL=0.6)   # coarser/faster linac run (default NZ=1664, ~40 s)
 
 
 def _beam_summary(diag, label, unit="keV"):
@@ -123,7 +121,7 @@ def main():
     cathode.run()
     gun.run()
     prebuncher.run()
-    linac_sec1.demo()           # RF-phase acceptance scan + headline + focus-off + plots
+    linac_sec1.run()            # SLAC Section 1: capture + accelerate to ~37 MeV
 
     _beam_summary(prebuncher.resolve_outdir(), "prebuncher exit", "keV")
     _beam_summary(linac_sec1.resolve_outdir(), "linac_sec1 exit", "MeV")

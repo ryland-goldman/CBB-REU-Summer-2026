@@ -42,9 +42,9 @@ python pipeline/run_pipeline.py
 
 Each stage is also a top-level Python package — `import cathode; cathode.run()` (likewise
 `gun.run()`, `prebuncher.run()`, `linac_sec1.run()`) runs that stage alone. Use
-`cathode.config(V_anode=50)` etc. to override the module-level parameters before calling
-`.run()`. The linac section also exposes `linac_sec1.demo()` (RF-phase acceptance scan + headline
-+ focus-off comparison + figures). See [`pipeline/README.md`](pipeline/README.md) for details.
+`cathode.config(V_anode=50)` etc. to override the module-level parameters before calling `.run()`
+(e.g. `linac_sec1.config(I_SOL=0)` for the unfocused linac case). See
+[`pipeline/README.md`](pipeline/README.md) for details.
 
 ## Components
 

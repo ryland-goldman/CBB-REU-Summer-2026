@@ -13,7 +13,7 @@ conda activate CBB
 python -c "import cathode; cathode.plot()"        # → cathode/results/
 python -c "import gun; gun.plot()"                # → gun/results/
 python -c "import prebuncher; prebuncher.plot()"  # → prebuncher/results/ (all P* cases)
-python -c "import linac_sec1; linac_sec1.plot()"  # → linac_sec1/results/ (main + scan + focusoff)
+python -c "import linac_sec1; linac_sec1.plot()"  # → linac_sec1/results/
 ```
 
 (Each `plot_*.py` is also runnable directly via `python <stage>/plot_<stage>.py` — the package
@@ -232,9 +232,8 @@ bunching factor, focus z, I_peak, final KE).
 SLAC-design 3 m, 86-cell, **2π/3 traveling-wave** accelerating structure in **RZ** (f = 2856 MHz),
 synthesised from the two quadrature field maps and driven at P = 15 MW, with a solenoid focusing
 channel. The prebuncher's bunched ~148 keV beam is **captured** and accelerated to **~37 MeV**.
-Produced by `plot_linac_sec1.py` from the headline run (`diags/main`), the focus-off comparison
-(`diags/focusoff`), and the RF-phase scan (`diags/scan_phi*`). The headline operating point (crest
-phase, I_sol ≈ 1000 A) is chosen by `linac_sec1.demo()`.
+Produced by `plot_linac_sec1.py` from the run (`diags/main`) at the on-crest, focused operating
+point (`PHASE_DEG = 0`, `I_sol = 1000 A`).
 
 ### `linac_field.png` — the traveling wave
 ![Linac: on-axis |Ez| amplitude and a field snapshot](linac_sec1/results/linac_field.png)
@@ -262,15 +261,15 @@ velocity-modulated injection bunch (left) develops into a dense, high-energy cap
 riding the crest with a trailing tail of phase-slipped particles (right) — the signature of
 capturing a sub-relativistic beam into a phase-velocity-c wave.
 
-### `beam_envelope.png` — why the solenoid is needed
-![Linac: σ_r and surviving charge, focus on/off](linac_sec1/results/beam_envelope.png)
+### `beam_envelope.png` — focusing and adiabatic damping
+![Linac: σ_r and surviving charge](linac_sec1/results/beam_envelope.png)
 
-**Top:** RMS transverse size σ_r vs ⟨z⟩ with the structure bore (9.55 mm) and domain wall marked;
-**bottom:** surviving charge fraction q/q₀. With the solenoid **ON** the diverging injected beam is
-held inside the bore and ~95 % is captured (the q/q₀ panel stays near 1), then **adiabatically
-damps** (σ_r ∝ 1/√(γβ), σ_x settling to ~2 mm as it accelerates). With focusing **OFF** the beam
-expands and its surviving charge crashes to only the tight on-axis core (~3 %) within the first
-~0.4 m — the focusing channel is what makes capture possible (a 28× difference in captured charge).
+**Top:** RMS transverse size σ_x vs ⟨z⟩ with the structure bore (9.55 mm) and domain wall marked;
+**bottom:** surviving charge fraction q/q₀. The strong solenoid holds the diverging injected beam
+well inside the bore, so ~95 % survives, and as the beam accelerates the size **adiabatically
+damps** (σ_r ∝ 1/√(γβ), σ_x settling to ~2 mm). Without the solenoid (`config(I_SOL=0)`) the beam
+expands and only the tight ~3 % on-axis core survives — the focusing channel is what makes the
+high capture possible.
 
 ### `exit_spectrum_capture.png` — the output beam
 ![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
@@ -279,11 +278,3 @@ Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, t
 captured-charge fraction (here 95 %, 63.3 of 66.5 pC). The captured bunch sits in a sharp peak near
 ~37 MeV — the core riding the crest — with a low-energy tail of off-crest captured particles that
 pulls the mean to ⟨KE⟩ ≈ 34 ± 6 MeV.
-
-### `phase_acceptance.png` — the acceptance curve
-![Linac: energy and capture vs injection RF phase](linac_sec1/results/phase_acceptance.png)
-
-The RF-phase scan: final mean KE (left axis) and capture fraction (right axis) vs injection RF
-phase offset. Both peak sharply at the **crest** (the operating point `demo()` selects for the
-headline run) and collapse ~180° away — the structure accepts and accelerates the beam only over a
-limited phase window. This is the classic linac injection-phase acceptance.

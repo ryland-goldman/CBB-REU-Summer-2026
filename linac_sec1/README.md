@@ -17,18 +17,16 @@ self-consistent space charge.
 ```python
 # from repo root, in the CBB env:
 import linac_sec1
-linac_sec1.demo()        # RF-phase acceptance scan + headline + focus-off + all 6 figures
-# linac_sec1.run()       # a single case (the default operating point) -> diags/main
+linac_sec1.run()         # build field + sim + plots -> diags/main, results/
+# linac_sec1.run(plots=False)
 # linac_sec1.plot()      # re-generate figures from existing diags/
 ```
 
-- **`linac_sec1.demo()`** is the full demonstration: a coarse RF-phase acceptance scan
-  (`diags/scan_phi<deg>`), then a full-resolution headline run at the crest (`diags/main`) and a
-  focus-off comparison (`diags/focusoff`), then the aggregate plots. Tune via
-  `demo(phases=..., scan_nz=..., full_nz=..., i_sol=...)`.
-- **`linac_sec1.run()`** runs one case; operating point + grid live at the top of
-  `linac_sec1/linac_sec1_sim.py` (`POWER_MW`, `PHASE_DEG`, `I_SOL`, `NZ`, …), overridable via
-  `config()`.
+`run()` runs **one case** at the default operating point — the on-crest, focused headline
+(`PHASE_DEG=0`, `I_SOL=1000`, `POWER_MW=15`). The operating point and grid are module-level
+constants at the top of `linac_sec1/linac_sec1_sim.py` (`POWER_MW`, `PHASE_DEG`, `I_SOL`, `NZ`, …),
+overridable via `config()` — e.g. `linac_sec1.config(I_SOL=0).run()` for the unfocused case, or a
+`PHASE_DEG` sweep in a Python loop if you want the acceptance curve.
 
 `build_linac_sec1_field` reads the maps from `fieldmaps/`; the sim reads the prebuncher output
 from `prebuncher/diags/P800_zc/particles/` (repo-root-relative). To run the whole chain
@@ -79,8 +77,9 @@ particles. Parameters fixed by details.md:
   traveling-wave voltage `∫|Ez|dz = 331 kV` at 1 kW, so on-crest gain ≈ `scale × 331 keV`
   (≈ **40 MeV at the default P = 15 MW**; matches details.md's "37 MeV @ 15 MW").
 - **Phase** `PHASE_DEG` — the absolute synchronous phase is undocumented (capture from β ≈ 0.63
-  into a β_phase = 1 wave), so it is an offset **scanned** to find the crest; `demo()` picks the
-  maximum-energy phase for the headline.
+  into a β_phase = 1 wave), so it is an offset relative to the bunch arrival; the default
+  `PHASE_DEG = 0` is on the crest (max energy / capture). Sweep it in a `config()` loop to map the
+  acceptance: capture/energy peak in a broad plateau near 0° and collapse ~180° away.
 
 ## Solenoid focusing and RF capture
 
@@ -90,8 +89,8 @@ must be *captured*. Both effects make focusing essential:
 
 - **Solenoid** (`I_SOL`, A): the per-Ampere `SOL_0` map × `I_SOL`. Capture rises sharply with
   current — **~4% (I = 0) → ~95% (I = 1000 A ≈ 0.15 T peak)** — because the strong channel holds
-  the diverging beam inside the bore long enough to be captured. `I_SOL = 0` is the focus-off
-  comparison.
+  the diverging beam inside the bore long enough to be captured, so the default is the strongly
+  focused `I_SOL = 1000`. Run `config(I_SOL=0).run()` for the unfocused case.
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates linearly to ~37 MeV and the transverse size **damps**
   (σ_r ∝ 1/√(γβ)): the RMS σ_x falls to ~2 mm (r95 ~6 mm), well inside the 9.55 mm bore, by the
@@ -131,23 +130,23 @@ the beam is both bunched and still inside the 9.5 mm bore. (The global σ_z mini
   clears the absorbing z-boundary the domain empties and MLMG aborts. `ZMAX = 3.5 m` leaves a
   field-free drift past the 3.12 m structure exit; the transit estimate targets a plane short of
   `ZMAX` so the beam coasts (not absorbed) at the last dump. The estimate uses the on-crest (max)
-  gain so the fastest case is the binding one — off-crest scan cases run the same length and may
-  be measured slightly before full traversal (the acceptance curve's peak/shape is unaffected).
+  gain — the fastest case — as the binding constraint, so a slower off-crest `PHASE_DEG` (run
+  manually) stays in-domain too.
 - Fresh diags per run: `linac_sec1_sim.py` clears the case `OUTDIR` before each run, because WarpX
   appends one openPMD file per dump and a rerun of the same case would otherwise mix iterations.
 
 ## Outputs
 
-`linac_sec1.demo()` writes `diags/{scan_phi<deg>, main, focusoff}/{fields,particles}/` and
-`linac_sec1.plot()` reads them, writing to `results/`:
+`linac_sec1.run()` writes `diags/main/{fields,particles}/` and `linac_sec1.plot()` reads it,
+writing five figures to `results/`:
 
 - `linac_field.png` — the on-axis traveling-wave `|Ez|` amplitude (× scale) and a fixed-t field
   snapshot showing the 2π/3 cell structure.
 - `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (148 keV → ~37 MeV) with β → 1; the structure shaded.
 - `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
-- `beam_envelope.png` — σ_r and surviving charge vs ⟨z⟩ with **focus ON vs OFF** and the bore line.
+- `beam_envelope.png` — σ_r and surviving charge vs ⟨z⟩ with the bore line: focusing + adiabatic
+  damping (~95 % survives, σ_x damps to ~2 mm).
 - `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured-charge fraction.
-- `phase_acceptance.png` — final ⟨KE⟩ and capture fraction vs injection RF phase (the scan).
 
 ## Notes / caveats
 
