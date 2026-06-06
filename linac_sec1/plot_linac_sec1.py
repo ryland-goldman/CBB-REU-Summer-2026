@@ -32,7 +32,7 @@ from . import DEFAULT_OUTDIR                                  # default diags di
 MC2 = 0.51099895                 # electron rest energy [MeV]
 Q_E = 1.602176634e-19
 RF_NORM_MW = 0.001
-POWER_MW = 15.0                  # config(POWER_MW=...) updates this too (mirrors the sim)
+POWER_MW = 11.0                  # config(POWER_MW=...) updates this too (mirrors the sim default)
 L_STRUCT = 3.016                 # structure length [m]
 
 RF1 = "linac_sec1/linac_sec1_field/linac_rf1.h5"
@@ -206,6 +206,8 @@ def main():
     # Normalised to the TRUE injected charge (q0). The first tracked dump already sits below 1
     # because WarpX scrapes the r>RMAX particles at injection; prepend the injection point
     # (q/q0 = 1 at ⟨z⟩_inject) so that step-0 radial loss is visible rather than hidden.
+    # z_inject_mean_m is the FULL injected beam's ⟨z⟩, so the marker leads the first dump by the
+    # scraped (large-r) population's z-offset (a few mm — negligible on the ~3.5 m axis).
     qfrac = rec["q"] / rec["q0"]
     zmm_q = rec["z"] * 1e3
     if rec.get("inj"):
@@ -238,12 +240,17 @@ def main():
     ax.legend(loc="upper left")
     # Make the injection loss explicit: how much charge ever entered the domain, and the
     # capture fraction relative to that in-domain charge (so both denominators are visible).
+    # Use the sidecar's exact step-0 in-domain charge (q_in_domain_C) rather than the first-dump
+    # charge: the two are equal only if nothing scrapes between step 0 and the first dump, so the
+    # sidecar value is the correct baseline and keeps "scraped at injection" from absorbing any
+    # early-transit loss.
     if rec.get("inj"):
-        q_ent_pC = rec["q_entered"] * Q_E * 1e12
+        q_dom = rec["inj"]["q_in_domain_C"] / Q_E       # weight units; exact step-0 baseline
+        q_dom_pC = q_dom * Q_E * 1e12
         ax.text(0.985, 0.97,
-                f"{q_ent_pC:.0f} pC entered the {RMAX*1e3:.0f} mm domain\n"
-                f"({rec['q'][-1]/rec['q_entered']*100:.0f}% of those captured;\n"
-                f"{(1-rec['q_entered']/rec['q0'])*100:.0f}% scraped at injection)",
+                f"{q_dom_pC:.0f} pC entered the {RMAX*1e3:.0f} mm domain\n"
+                f"({rec['q'][-1]/q_dom*100:.0f}% of those captured;\n"
+                f"{(1-q_dom/rec['q0'])*100:.0f}% scraped at injection)",
                 transform=ax.transAxes, ha="right", va="top", fontsize=7.5, color="0.3")
     # Inset: zoom into the low-energy tail (phase-slipped / off-crest captured particles),
     # which the dominant captured-energy peak otherwise hides. Same bins; y-axis fit to the tail.

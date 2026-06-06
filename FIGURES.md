@@ -302,4 +302,4 @@ and annotated with how much entered the 12 mm domain (≈ 267 pC, of which ~2 % 
 faithful-to-LinacSim 40 A / 11 MW operating point the surviving particles span a broad ~5–30 MeV
 distribution (max ≈ 30 MeV) with charge-weighted ⟨KE⟩ ≈ 15.5 ± 7.9 MeV (σ_KE ≈ 51 %) — wide because
 the weak focusing captures only a thin, phase-spread slice. Raising `I_SOL` to ~1000 A lifts capture
-to ~7 % of injected (≈ 59.9 pC, ⟨KE⟩ ≈ 18.2 MeV) — still injection-limited by the over-filled domain.
+to ~7 % of injected (≈ 60 pC, ⟨KE⟩ ≈ 18 MeV) — still injection-limited by the over-filled domain.

@@ -110,7 +110,7 @@ must be *captured*. Both effects make focusing essential:
   ~0.4 m (β → 1), after which it accelerates and the transverse size **damps** (σ_r ∝ 1/√(γβ)).
   At the faithful-to-LinacSim default (40 A, 11 MW), only **~0.7 %** of the **0.83 nC injected**
   is captured (≈ 5.7 pC; ~2 % of the 267 pC that enters the domain), reaching **⟨KE⟩ ≈ 15.5 MeV**
-  (max ≈ 30 MeV, σ_KE ≈ 7.9 MeV); at 1000 A it is ≈ 59.9 pC = ~7 % of injected at **⟨KE⟩ ≈ 18.2 MeV**.
+  (max ≈ 30 MeV, σ_KE ≈ 7.9 MeV); at 1000 A it is ≈ 60 pC ≈ ~7 % of injected at **⟨KE⟩ ≈ 18 MeV**.
   **A historical "~97 % at 1000 A" figure is NOT reproducible with the present input** — it was
   measured on the old, tightly-bunched and radially-contained `P800_zc` / 0.1 nC / 15 MW beam,
   before the PR #9 reconciliation swapped in the larger, diverging 8 kW / 1 nC beam without
@@ -131,13 +131,23 @@ must be *captured*. Both effects make focusing essential:
 
 **Injection point.** The sim auto-selects a focus snapshot past the cavity (`Z_FOCUS_MIN`, which
 skips the *pre-modulation* snapshot near z = 0) by **maximising in-bore charge, tie-broken by
-minimum σ_z** (`load_prebuncher_bunch`). For a well-contained beam this reduces to the old
-bunching focus; for the present 8 kW beam — which diverges monotonically over the drift with no
-transverse focusing, so *no* snapshot is bore-contained — the pick is the earliest qualifying
+minimum σ_z** (`load_prebuncher_bunch`). Because in-bore charge is a continuous quantity, the
+σ_z tie-break rarely engages — the pick is effectively "most charge inside the bore". For the
+present 8 kW beam — which never bunches and diverges monotonically over the drift with no
+transverse focusing, so *no* snapshot is bore-contained — that is the earliest qualifying
 (least-expanded) snapshot, still at r_max ≈ 26 mm. This is why most of the beam lands outside the
 12 mm domain at injection (*Capture bookkeeping*); the real fix is upstream focusing, not the
 snapshot criterion. (Note: the only radially-contained snapshot is the excluded pre-modulation
 one near z = 0 — injecting it would reproduce high capture but bypass the prebuncher's bunching.)
+
+⚠️ **The bore-aware criterion optimizes the transverse bore fit, not the longitudinal bunch.**
+For the shipped 8 kW point the two coincide (no bunch waist exists to discard). But if the
+prebuncher is driven into its **bunching regime (≳ 160 kW)** the min-σ_z waist forms late in the
+drift (~1.26 m) where the beam is *also* radially over-expanded, so "max in-bore charge" would
+prefer an early, **debunched** snapshot and silently drop the velocity-bunching the prebuncher
+exists to produce. `load_prebuncher_bunch` emits a `WARNING` when the bore-aware pick differs from
+the pure min-σ_z focus by > 20 % in σ_z, so a future power-sweep user is told the bunch focus was
+not selected rather than getting a quietly debunched beam.
 
 ## Capture bookkeeping
 

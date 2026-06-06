@@ -119,6 +119,8 @@ def load_prebuncher_bunch():
         sz = np.sqrt(np.average((z - zm) ** 2, weights=w))
         # Charge that fits the structure bore — the only charge the linac can capture; the
         # rest scrapes the iris/domain wall at injection no matter how strong the solenoid.
+        # This is the raw-snapshot weight sum, used only to RANK snapshots for selection; the
+        # sidecar's q_in_bore_C below is the post-downsample value in Coulombs for the chosen one.
         q_bore = float(w[np.hypot(x, y) <= BORE_R].sum())
         recs.append((it, len(z), zm, sz, q_bore))
     if not recs:
@@ -129,11 +131,29 @@ def load_prebuncher_bunch():
     if not cands:                      # fallback: no snapshot past the gate
         cands = [(it, sz, qb) for it, n, zm, sz, qb in recs if n >= 0.8 * nmax]
     # Bore-aware focus: maximize the in-bore (capturable) charge, breaking ties toward the
-    # tightest longitudinal focus (−σ_z). For a well-contained beam every post-cavity snapshot
-    # is fully in-bore, so q_bore ties and this reduces to the original min-σ_z bunching focus;
-    # for a radially over-expanded beam (e.g. the low-power prebuncher drift, where σ_z AND σ_r
-    # both grow with z) it picks the least-scraped snapshot instead of chasing σ_z into the iris.
+    # tightest longitudinal focus (−σ_z). q_bore is a continuous float, so the −σ_z tie-break
+    # only engages on a bit-identical in-bore charge; in practice the pick is just "max in-bore
+    # charge". For the present low-power (8 kW) prebuncher beam — which never bunches and whose
+    # σ_r grows monotonically over the drift — this lands on the earliest/least-expanded post-gate
+    # snapshot, i.e. the most charge the linac can actually capture.
+    #
+    # CAVEAT: this optimizes the TRANSVERSE bore fit, not the LONGITUDINAL bunch. If the
+    # prebuncher is driven into its bunching regime (≳160 kW), the min-σ_z waist forms LATE in
+    # the drift (~1.26 m) where the beam is also radially over-expanded, so max-q_bore would
+    # prefer an EARLY, debunched snapshot and silently discard the velocity-bunching. The shipped
+    # 8 kW default has no such waist (the two criteria agree); the guard below warns if a future
+    # operating point makes them disagree so the dropped bunch focus is not silent.
     it_focus = max(cands, key=lambda t: (t[2], -t[1]))[0]
+    it_szmin = min(cands, key=lambda t: t[1])[0]        # the old pure min-σ_z bunching focus
+    if it_szmin != it_focus:
+        sz_focus = next(sz for it, sz, _ in cands if it == it_focus)
+        sz_min = next(sz for it, sz, _ in cands if it == it_szmin)
+        if sz_focus > 1.2 * sz_min:
+            print(f"  WARNING: bore-aware focus (iter {it_focus}, σ_z {sz_focus*1e3:.2f} mm) is "
+                  f"NOT the longitudinal bunch focus (iter {it_szmin}, σ_z {sz_min*1e3:.2f} mm) — "
+                  f"max-in-bore-charge selection is discarding a {sz_focus/sz_min:.1f}× tighter "
+                  f"bunch. Expected only if the prebuncher is in its bunching regime; the injected "
+                  f"beam will be radially contained but longitudinally debunched.", flush=True)
 
     x, y, z, ux, uy, uz, w = ts.get_particle(
         ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it_focus)
