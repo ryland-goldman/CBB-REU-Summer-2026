@@ -38,8 +38,8 @@ dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (re
 charge-preserving); and the grid `nr, nz`. Runtime ≈ `nz²` (per-step cost ∝ cells, and
 `dz = ZMAX/nz` ⇒ fewer steps as `nz` drops), so halving `nz` ≈ 4× faster. This holds because the
 gun's cells are near-isotropic (`dz/dr ≈ 1.3`) so the MLMG solve stays well-conditioned as `nz`
-drops — **unlike the prebuncher's long-thin box**, where coarsening `NZ` slows the solve instead
-(see `prebuncher/README.md`). Keep `N_DIAGS ≥ 20` so `space_charge.png` still finds its
+drops — **unlike the injector's long-thin box**, where coarsening `NZ` slows the solve instead
+(see `injector/README.md`). Keep `N_DIAGS ≥ 20` so `space_charge.png` still finds its
 near-launch field snapshot (it self-skips otherwise).
 
 ## The gun field map
@@ -127,7 +127,7 @@ transverse force is `qE_r/γ²`. At the gun exit (146 keV, γ ≈ 1.29) this **o
 transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** — ramping from a few % near the
 cathode (10 keV) to ~66 % at exit. (The genuine fix is WarpX's relativistic ES mode, out of
 scope for this single-pass demo; the same caveat applies, but shrinks, in the more relativistic
-prebuncher/linac stages — see those READMEs.) Acceptable for the demo, but note it if pushing
+injector/linac stages — see those READMEs.) Acceptable for the demo, but note it if pushing
 to higher voltage or interpreting the absolute σ_r / emittance.
 
 ## Figures (`results/`)
@@ -158,4 +158,4 @@ to higher voltage or interpreting the absolute σ_r / emittance.
   `shutil.rmtree`s `gun/diags/` at the start of each run. Without this, re-running with a
   different grid/step count (hence different diag step numbers) leaves stale files that
   interleave with the new ones; the plots then read both runs as a single series and show a
-  fan of overlapping curves. (Mirrors `prebuncher_sim.py` / `linac_sec1_sim.py`.)
+  fan of overlapping curves. (Mirrors `injector_sim.py` / `linac_sec1_sim.py`.)

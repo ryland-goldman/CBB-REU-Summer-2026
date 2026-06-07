@@ -1,41 +1,35 @@
 """
-Figures and summary for the WarpX prebuncher scan (repeated prebuncher_sim.py
-runs, one OUTDIR per power/phase).
+Figures and summary for the WarpX injector stage.
+
+Default run writes one case to `injector/diags/main`; an optional power/phase scan
+writes `injector/diags/P<power>_<phase>` dirs (and a `P0_drift` baseline). This
+plotter reads `diags/main` plus any `diags/P*` cases present.
 
 The gun-exit bunch is short (σ_z ≈ a few mm vs the 214 MHz RF wavelength) and
-carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at ~0.83 nC it is
-space-charge dense. In a free drift it therefore *expands*. The prebuncher acts as
-a ballistic buncher: at the zero-crossing it flips the chirp negative and
-compresses the bunch — but space charge limits how far. The clearest way to show
-this is to compare each powered run against a **drift-only baseline** (P = 0):
+carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at ~1 nC it is
+space-charge dense. In a free drift it therefore *expands*. The prebunchers act as
+ballistic bunchers: at the zero-crossing they flip the chirp negative and compress
+the bunch — but space charge limits how far. The clearest way to show this is to
+compare each powered run against a **drift-only baseline** (P = 0):
 
   * σ_z(z)        — bunch length along the line, cavity runs vs. the drift baseline
   * ratio(z)      — σ_z,drift(z) / σ_z,cavity(z)  (>1 ⇒ cavity is bunching)
   * I_peak(z)     — peak current (peak line density × beam velocity)
-  * z–KE space    — the chirp flipping/rotating through the cavity
+  * z–KE space    — the chirp flipping/rotating through the cavities
 
-(The bunching factor at the RF fundamental is ≈1 and flat here, so it is not used.)
+Per-case figures use CONFIG-INDEPENDENT filenames (the operating point lives in the
+diags/<case> input dir and the figure titles, not the filename) so a new run
+overwrites the same files instead of leaving orphans:
 
-Per-case figures use CONFIG-INDEPENDENT filenames (the power/phase lives in the
-diags/<case> input dir and the figure titles, not the filename) so changing the
-operating point overwrites the same files instead of leaving orphans:
-
-  * prebuncher_line.png        — σ_z(z) (vs. drift) and peak current / mean energy
-  * prebuncher_phasespace.png  — z–KE at injection / cavity exit / best focus
-  * prebuncher_cavity.png      — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map in
-                             the lab frame, plus the cos/sin RF waveform vs. time
-                             bracketing the gap arrival, showing whether the bunch
-                             centre lands on the field zero-crossing (zc) or crest.
-  * prebuncher_bunch_profile.png — the real longitudinal line-charge density λ(z) at
-                             the same three snapshots as the phase-space figure,
-                             exposing the compression and any space-charge
-                             spike/filamentation the scalar σ_z curve cannot show.
-
-With several diags/P* cases present these per-case figures are overwritten (last
-case wins) — use compare_power_phase.png for the cross-case scan summary.
+  * injector_line.png          — σ_z(z) (vs. drift) and peak current / mean energy
+  * injector_phasespace.png    — z–KE at injection / cavity exit / best focus
+  * injector_cavity.png        — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map(s)
+                                 in the lab frame, plus the cos/sin RF waveform vs time
+  * injector_bunch_profile.png — the real longitudinal line-charge density λ(z)
+  * compare_power_phase.png    — σ_z(z) for the baseline vs all powers (scan only)
 
 Run with:
-    conda run -n CBB python prebuncher/plot_prebuncher.py
+    conda run -n CBB python injector/plot_injector.py
 """
 
 import os
@@ -48,46 +42,45 @@ import matplotlib.pyplot as plt
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-# RF drive constants (F_RF, Q_L, V1J_KEV) come from the single source of truth in the
-# build module so this figure's re-derived scale/phase cannot drift from the actual run.
-from .build_prebuncher_field import V1J_KEV, F_RF, Q_L, Z_GAP_CENTER
+# RF drive constants (F_RF, Q_L, V1J_KEV, gap centres) come from the single source of
+# truth in the build module so this figure's re-derived scale/phase cannot drift from
+# the actual run.
+from .build_injector_field import V1J_KEV, F_RF, Q_L_1, Z_GAP_CENTER_1, Z_GAP_CENTER_2
 
 c = 299792458.0
 MC2 = 0.51099895e3                # electron rest energy [keV]
 Q_E = 1.602176634e-19            # elementary charge [C]
-DIAG_ROOT = "prebuncher/diags"
-RESULTS = "prebuncher/results"
-PREBUNCH_FIELD = "prebuncher/prebuncher_field/prebuncher_EB.h5"
-# Z_GAP_CENTER (cavity gap lab-z, for marking plots) is imported from
-# build_prebuncher_field above — single source of truth so the marker can't drift
-# from the actual field placement (it was 0.20 m here while the build used 0.534 m).
+DIAG_ROOT = "injector/diags"
+RESULTS = "injector/results"
+PREB1_FIELD = "injector/injector_field/preb1_EB.h5"
+# Cavity-1 gap lab-z (for marking plots) is imported from build_injector_field above.
+Z_GAP_CENTER = Z_GAP_CENTER_1
 
 # ── RF-drive constants ────────────────────────────────────────────────────────
 # The cavity map is stored 1-J-normalised; the run multiplies it by `scale` and
-# modulates E ∝ cos(ω t + φ), B ∝ sin(ω t + φ). To draw the field the beam
-# actually sees we re-derive scale and φ here from the same formulae the sim uses,
-# using the F_RF/Q_L imported above from build_prebuncher_field (shared with the sim).
+# modulates E ∝ cos(ω t + φ), B ∝ sin(ω t + φ). To draw the field the beam actually
+# sees we re-derive scale and φ here from the same formulae the sim uses.
 OMEGA = 2.0 * np.pi * F_RF       # RF angular frequency [rad/s]
 Z_INJECT = 0.005                 # [m] lab z where the bunch tail (smallest z) is launched
 os.makedirs(RESULTS, exist_ok=True)
 
 
-def rf_scale(power):
+def rf_scale(power, q_l=Q_L_1):
     """Field scale = sqrt(stored_energy / 1 J), stored_energy = 1e3·Q·P/(2π f_RF).
 
-    Same expression as prebuncher_sim.py: at P=0 (drift baseline) there is no
-    cavity field, so the scale is 0.
+    Same expression as injector_sim.py: at P=0 (drift baseline) there is no cavity
+    field, so the scale is 0.
     """
     if power <= 0:
         return 0.0
-    return float(np.sqrt(1e3 * Q_L * power / (2.0 * np.pi * F_RF)))
+    return float(np.sqrt(1e3 * q_l * power / (2.0 * np.pi * F_RF)))
 
 
 def rf_phase(phase, t_gap):
     """RF phase φ that puts the bunch-tail gap arrival at zero-crossing/crest.
 
-    Mirrors prebuncher_sim.py: zc → φ = -ω t_gap + π/2 (max +slope, zero net
-    kick → velocity bunching); crest → φ = -ω t_gap + π (-cos = +1 → max gain).
+    Mirrors injector_sim.py make_cavity() base term (phi_off omitted here — the
+    waveform figure shows the zc/crest landing, not the GUI on-crest reference).
     """
     if phase == "crest":
         return -OMEGA * t_gap + np.pi
@@ -95,20 +88,13 @@ def rf_phase(phase, t_gap):
 
 
 def load_cavity_axis():
-    """On-axis Ez(z) of the raw 1-J cavity map, in LAB z.
-
-    Read the way gun/plot_gun.py reads gun_E.h5: io.Series, mesh 'E',
-    component 'z', grid_spacing, and grid_global_offset (set by
-    build_prebuncher_field.py so the gap-centred map lands at Z_GAP_CENTER).
-    Returns (z_lab [m], ez_axis [V/m]) for the r = 0 row of the (1, nr, nz) mesh.
-    """
-    s = io.Series(PREBUNCH_FIELD, io.Access.read_only)
+    """On-axis Ez(z) of the raw 1-J Prebuncher-1 map, in LAB z."""
+    s = io.Series(PREB1_FIELD, io.Access.read_only)
     E = s.iterations[0].meshes["E"]
     ez = E["z"].load_chunk()
     s.flush()
     ez = ez[0]                                   # (nr, nz), mode 0
     dz = E.grid_spacing[1]
-    # axis_labels = ["r", "z"] -> grid_global_offset[1] is the z origin in the lab.
     z0 = E.grid_global_offset[1] if E.grid_global_offset else (Z_GAP_CENTER - 0.1524)
     z_lab = z0 + np.arange(ez.shape[1]) * dz
     return z_lab, ez[0]                          # r = 0 row
@@ -162,24 +148,19 @@ def analyse_case(path):
 
 
 def case_label(name):
+    """(power, phase) for a case dir name. The default chain run is 'main'."""
+    if name == "main":
+        return ("main", "main")
     if name == "P0_drift":
         return (0, "drift")
-    m = re.match(r"P(\d+(?:\.\d+)?)_(zc|crest)$", name)   # accept fractional watts (P160.5_zc)
+    m = re.match(r"P(\d+(?:\.\d+)?)_(zc|crest)$", name)   # accept fractional watts
     return (float(m.group(1)), m.group(2)) if m else None
 
 
 def snapshot_picks(rec, base):
     """The three snapshots used by the phase-space and bunch-profile figures:
     injection / cavity exit / best bunching. Factored out so both figures sample
-    the SAME iterations.
-
-    With a drift baseline the third pick is the σ_drift/σ_cavity maximum ("max
-    bunching"). Without one (the only data on disk here), use the *post-cavity*
-    σ_z minimum — the true ballistic focus — not the last dump, which is the
-    re-expanded exit beam and no focus at all. (A global σ_z minimum would land
-    back at injection, since the bunch is shortest *before* the cavity kick
-    expands it; the meaningful focus is the σ_z dip downstream of the gap.)
-    """
+    the SAME iterations."""
     its, zmean = rec["it"], rec["zmean"]
     def nearest_it(ztarget):
         return its[int(np.argmin(np.abs(zmean - ztarget)))]
@@ -198,89 +179,105 @@ def snapshot_picks(rec, base):
     return picks, ["injection", "cavity exit", third]
 
 
+def load_cavity_axis_file(field_path):
+    """On-axis Ez(z) of a raw 1-J cavity map at ``field_path``, in LAB z."""
+    s = io.Series(field_path, io.Access.read_only)
+    E = s.iterations[0].meshes["E"]
+    ez = E["z"].load_chunk()
+    s.flush()
+    ez = ez[0]
+    dz = E.grid_spacing[1]
+    z0 = E.grid_global_offset[1] if E.grid_global_offset else 0.0
+    z_lab = z0 + np.arange(ez.shape[1]) * dz
+    return z_lab, ez[0]
+
+
+def cavity_phi(z_gap, v_at_gap, phi_off_deg, phase, rev_phase, t_offset=0.0):
+    """Re-derive a cavity's drive phase φ exactly as injector_sim.make_cavity does
+    (crest base for the GUI phi_off + the reversal phase), so the drawn waveform
+    matches the run (single source of truth)."""
+    t_gap = t_offset + (z_gap - Z_INJECT) / v_at_gap
+    base = np.pi / 2.0 if phase == "zc" else np.pi
+    return -OMEGA * t_gap + base + np.radians(phi_off_deg) + rev_phase, t_gap
+
+
 # ══════════════════════════════════════════════════════════════════════════════
-# FIGURE A — prebuncher_cavity.png : the RF DRIVE the bunch actually sees.
+# FIGURE A — injector_cavity.png : the RF DRIVE both prebunchers apply.
 #
-# The σ_z / phase-space figures show the beam's *response* but never the cavity
-# field itself — there is no prebuncher analogue of the gun's gun_field.png. This
-# makes the drive visible for the case's (power, phase):
-#   left  — the on-axis Ez(z) spatial profile of the 1-J map × scale, placed at
-#           the lab gap (Z_GAP_CENTER) via the map's grid_global_offset, in MV/m.
-#   right — the temporal RF waveform E ∝ cos(ω t+φ), B ∝ sin(ω t+φ) over ~2 RF
-#           periods around the bunch-tail gap-arrival time t_gap, each normalised
-#           to ±1, with the bunch σ_t width shaded. Whether the bunch centre lands
-#           on the field ZERO-CROSSING (zc) or the CREST (crest) — i.e. velocity
-#           bunching vs. pure acceleration — is exactly what this panel makes visual.
+# Left  — on-axis Ez(z) of each scaled 1-J map placed at its lab gap (Preb 1 @ Z1,
+#         Preb 2 @ Z2), so the two bunching lobes are visible along the line.
+# Right — the temporal RF waveform E ∝ cos(ωt+φ) at each cavity's arrival, with the
+#         bunch-centre marker, showing where the bunch lands on each cavity's phase.
+# Preb-2's scale/phase are re-derived the SAME way the sim does (crest base + GUI
+# phi_off + PREB2_REV_PHASE) so the figure can't drift from the run.
 # ══════════════════════════════════════════════════════════════════════════════
 def cavity_figure(name, rec, power, phase):
+    from .injector_sim import (
+        PREB1_KW, PREB1_Q, PREB1_PHI_OFF, PREB2_KW, PREB2_Q, PREB2_PHI_OFF,
+        PREB2_REVERSED, PREB2_REV_PHASE, PREB1_FIELD, PREB2_FIELD)
     v_beam = rec["v_beam"]
-    scale = rf_scale(power)
-    t_gap = (Z_GAP_CENTER - Z_INJECT) / v_beam     # bunch-tail gap arrival [s] (matches the sim)
-    phi = rf_phase(phase, t_gap)
 
-    z_lab, ez_axis = load_cavity_axis()            # raw 1-J on-axis Ez [V/m]
-    ez_scaled = ez_axis * scale                    # field amplitude this case sees
+    # Preb 1
+    scale1 = rf_scale(PREB1_KW, PREB1_Q)
+    phi1, t_gap1 = cavity_phi(Z_GAP_CENTER_1, v_beam, PREB1_PHI_OFF, phase, 0.0)
+    z1_lab, ez1 = load_cavity_axis_file(PREB1_FIELD)
+    # Preb 2 (reversed via PREB2_REV_PHASE; constant-v arrival uses v_beam)
+    have2 = PREB2_KW > 0
+    if have2:
+        scale2 = rf_scale(PREB2_KW, PREB2_Q)
+        rev = PREB2_REV_PHASE if PREB2_REVERSED else 0.0
+        phi2, t_gap2 = cavity_phi(Z_GAP_CENTER_2, v_beam, PREB2_PHI_OFF, phase, rev)
+        z2_lab, ez2 = load_cavity_axis_file(PREB2_FIELD)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.4), constrained_layout=True)
 
-    # ── Left: spatial Ez(z) of the scaled cavity map, in the lab frame ──────────
-    a1.plot(z_lab * 1e3, ez_scaled / 1e6, color="C3")
+    # ── Left: spatial Ez(z) lobes of both cavities in the lab frame ─────────────
+    a1.plot(z1_lab * 1e3, ez1 * scale1 / 1e6, color="C3",
+            label=f"Preb 1 ({PREB1_KW:g} kW, $V_g$≈{scale1*V1J_KEV:.0f} kV)")
+    if have2:
+        a1.plot(z2_lab * 1e3, ez2 * scale2 / 1e6, color="C4",
+                label=f"Preb 2 rev ({PREB2_KW:g} kW, $V_g$≈{scale2*V1J_KEV:.0f} kV)")
     a1.axhline(0, color="k", lw=0.6)
-    a1.axvline(Z_GAP_CENTER * 1e3, color="C0", ls=":", label="gap centre")
+    a1.axvline(Z_GAP_CENTER_1 * 1e3, color="C3", ls=":", lw=0.8)
+    if have2:
+        a1.axvline(Z_GAP_CENTER_2 * 1e3, color="C4", ls=":", lw=0.8)
     a1.axvline(Z_INJECT * 1e3, color="C2", ls="--", label="injection")
-    v_gap = scale * V1J_KEV                         # physical gap voltage [kV]
     a1.set_xlabel("lab z  [mm]")
     a1.set_ylabel(r"on-axis $E_z \times$ scale  [MV/m]")
-    a1.set_title(f"{name}: cavity field (scale={scale:.3f}, "
-                 f"$V_{{gap}}$≈{v_gap:.0f} kV)")
+    a1.set_title(f"{name}: cavity fields (Preb 1 @ {Z_GAP_CENTER_1*1e3:.0f}, "
+                 f"Preb 2 @ {Z_GAP_CENTER_2*1e3:.0f} mm)")
     a1.legend(fontsize=8)
 
-    # ── Right: temporal RF waveform around t_gap, normalised to ±1 ──────────────
-    # E ∝ cos(ω t+φ), B ∝ sin(ω t+φ); the on-axis Ez is single-signed, so the
-    # *energy kick* of an electron ∝ -cos(ω t+φ). zc phases the bunch onto the
-    # zero of that kick (max slope → head decelerated / tail accelerated); crest
-    # phases it onto the kick maximum (pure acceleration).
+    # ── Right: temporal RF waveform at each cavity's bunch arrival ──────────────
     T = 1.0 / F_RF
-    tt = np.linspace(t_gap - 1.0 * T, t_gap + 1.0 * T, 800)
-    a2.plot((tt - t_gap) * 1e9, np.cos(OMEGA * tt + phi), color="C3",
-            label=r"$E \propto \cos(\omega t+\varphi)$")
-    a2.plot((tt - t_gap) * 1e9, np.sin(OMEGA * tt + phi), color="C0",
-            label=r"$B \propto \sin(\omega t+\varphi)$")
+    tt = np.linspace(-1.0 * T, 1.0 * T, 800)
+    a2.plot(tt * 1e9, np.cos(OMEGA * (t_gap1 + tt) + phi1), color="C3",
+            label=r"Preb 1 $E\propto\cos$")
+    if have2:
+        a2.plot(tt * 1e9, np.cos(OMEGA * (t_gap2 + tt) + phi2), color="C4",
+                label=r"Preb 2 $E\propto\cos$")
     a2.axhline(0, color="k", lw=0.6)
     a2.axvline(0.0, color="C1", lw=1.2, label="bunch centre @ gap")
-    # Shade the bunch temporal width σ_t = σ_z / v_beam at the snapshot nearest
-    # the gap, so the reader sees how much RF phase the whole bunch samples.
-    igap = int(np.argmin(np.abs(rec["zmean"] - Z_GAP_CENTER)))
-    sigma_t = rec["sigz"][igap] / v_beam
-    a2.axvspan(-sigma_t * 1e9, sigma_t * 1e9, color="C1", alpha=0.15,
-               label=r"$\pm\sigma_t$ bunch")
-    # The E field the bunch centre sits on tells zc (≈0) from crest (≈±1 extremum).
-    e_at_gap = np.cos(OMEGA * t_gap + phi)
-    landing = "ZERO-CROSSING" if phase == "zc" else "CREST"
-    a2.annotate(f"bunch centre on field {landing}\n"
-                f"(E≈{e_at_gap:+.2f} of peak)",
-                xy=(0.0, e_at_gap), xytext=(0.05, 0.06),
-                textcoords="axes fraction", fontsize=8,
-                arrowprops=dict(arrowstyle="->", color="C1", lw=1.0))
+    e1 = np.cos(OMEGA * t_gap1 + phi1)
+    txt = f"Preb 1: E≈{e1:+.2f} of peak"
+    if have2:
+        e2 = np.cos(OMEGA * t_gap2 + phi2)
+        txt += f"\nPreb 2: E≈{e2:+.2f} of peak"
+    a2.annotate(txt, xy=(0.04, 0.06), xycoords="axes fraction", fontsize=8,
+                bbox=dict(boxstyle="round", fc="white", alpha=0.8))
     a2.set_xlabel(r"$t - t_{gap}$  [ns]")
-    a2.set_ylabel("normalised field")
-    a2.set_title(f"{name}: RF waveform at the gap (φ={phi:.2f} rad)")
+    a2.set_ylabel("normalised E field at gap arrival")
+    a2.set_title(f"{name}: RF waveforms (φ1={phi1:.2f}"
+                 + (f", φ2={phi2:.2f}" if have2 else "") + " rad)")
     a2.legend(fontsize=8, loc="upper right")
 
-    path = f"{RESULTS}/prebuncher_cavity.png"
+    path = f"{RESULTS}/injector_cavity.png"
     fig.savefig(path, dpi=140); plt.close(fig)
     print(f"wrote {path}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FIGURE B — prebuncher_bunch_profile.png : the REAL longitudinal bunch shape λ(z).
-#
-# The σ_z(z) curve is a single scalar per snapshot; it cannot show *how* the bunch
-# is shaped — the compression, and the space-charge spike/filamentation that grows
-# near the focus. This histograms the actual line-charge density λ(z−⟨z⟩) =
-# (Σ w q_e in bin)/Δz at the SAME three snapshots the phase-space figure uses
-# (injection / cavity exit / max bunching), so the bunch's true profile and its
-# peak λ / σ_z are visible. A drift baseline, if present, is overlaid (guarded).
+# FIGURE B — injector_bunch_profile.png : the REAL longitudinal bunch shape λ(z).
 # ══════════════════════════════════════════════════════════════════════════════
 def bunch_profile_figure(name, rec, base):
     snaps = rec["snaps"]
@@ -291,10 +288,8 @@ def bunch_profile_figure(name, rec, base):
     fig, axs = plt.subplots(1, 3, figsize=(13, 4.0), constrained_layout=True)
     for ax, it, ti in zip(axs, picks, titles):
         z, ke, w = snaps[it]
-        zc = z - np.average(z, weights=w)          # centre on ⟨z⟩
+        zc = z - np.average(z, weights=w)
         sz = np.sqrt(np.average(zc**2, weights=w))
-        # λ(z) [nC/m] = (charge per bin)/Δz; bins span a few σ each side so the
-        # tails/spike are resolved without over-binning the sparse wings.
         span = max(4.0 * sz, 5e-4)
         edges = np.linspace(-span, span, 121)
         dzbin = edges[1] - edges[0]
@@ -304,7 +299,6 @@ def bunch_profile_figure(name, rec, base):
         ax.plot(ctr * 1e3, lam, color="C0", lw=1.4, label="cavity")
         ax.fill_between(ctr * 1e3, lam, color="C0", alpha=0.20)
 
-        # Overlay the drift baseline profile at the matched ⟨z⟩ snapshot (if any).
         if base_snaps is not None:
             jb = int(np.argmin(np.abs(np.asarray(base["zmean"])
                                       - rec["zmean"][rec["it"].index(it)])))
@@ -325,7 +319,7 @@ def bunch_profile_figure(name, rec, base):
         if base_snaps is not None:
             ax.legend(fontsize=8, loc="upper left")
     fig.suptitle(f"{name}: longitudinal line-charge density λ(z)", fontsize=12)
-    path = f"{RESULTS}/prebuncher_bunch_profile.png"
+    path = f"{RESULTS}/injector_bunch_profile.png"
     fig.savefig(path, dpi=140); plt.close(fig)
     print(f"wrote {path}")
 
@@ -341,21 +335,22 @@ def per_case_figure(name, rec, base):
         ib = int(np.argmax(ratio))
         a1.plot(zmm[ib], rec["sigz"][ib] * 1e3, "*", ms=14, color="C1",
                 label=f"max bunching {ratio[ib]:.2f}× @ {zmm[ib]:.0f} mm")
-    a1.axvline(Z_GAP_CENTER * 1e3, color="C3", ls=":", label="gap")
+    a1.axvline(Z_GAP_CENTER_1 * 1e3, color="C3", ls=":", label="Preb 1 gap")
+    a1.axvline(Z_GAP_CENTER_2 * 1e3, color="C5", ls=":", label="Preb 2 gap")
     a1.set_xlabel("⟨z⟩  [mm]"); a1.set_ylabel("σ_z  [mm]")
     a1.set_title(f"{name}: bunch length vs. drift"); a1.legend(fontsize=8)
 
     a2b = a2.twinx()
     a2.plot(zmm, rec["ipk"], "o-", ms=3, color="C2")
     a2b.plot(zmm, rec["ke"], "s--", ms=3, color="C4")
-    a2.axvline(Z_GAP_CENTER * 1e3, color="C3", ls=":")
+    a2.axvline(Z_GAP_CENTER_1 * 1e3, color="C3", ls=":")
+    a2.axvline(Z_GAP_CENTER_2 * 1e3, color="C5", ls=":")
     a2.set_xlabel("⟨z⟩  [mm]")
     a2.set_ylabel("peak current  [A]", color="C2")
     a2b.set_ylabel("mean KE  [keV]", color="C4")
     a2.set_title(f"{name}: peak current & mean energy")
-    fig.savefig(f"{RESULTS}/prebuncher_line.png", dpi=140); plt.close(fig)
+    fig.savefig(f"{RESULTS}/injector_line.png", dpi=140); plt.close(fig)
 
-    # z–KE phase space at injection / gap exit / best-bunching point.
     snaps, its = rec["snaps"], rec["it"]
     picks, titles = snapshot_picks(rec, base)
     fig, axs = plt.subplots(1, 3, figsize=(13, 4.0), constrained_layout=True)
@@ -366,7 +361,7 @@ def per_case_figure(name, rec, base):
         ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("KE − ⟨KE⟩  [keV]")
         ax.set_title(f"{ti}  (⟨z⟩={rec['zmean'][zi]*1e3:.0f} mm)")
     fig.suptitle(f"{name}: longitudinal phase space", fontsize=12)
-    fig.savefig(f"{RESULTS}/prebuncher_phasespace.png", dpi=140); plt.close(fig)
+    fig.savefig(f"{RESULTS}/injector_phasespace.png", dpi=140); plt.close(fig)
 
     out = dict(szmin=float(rec["sigz"].min()),
                sz0=float(rec["sigz"][0]),
@@ -380,24 +375,27 @@ def per_case_figure(name, rec, base):
 
 
 def main(cases=None):
-    """Plot prebuncher case(s).
+    """Plot injector case(s).
 
-    With `cases=None`, plots every `{DIAG_ROOT}/P*` directory; pass a list of
-    case dir names (e.g. ["P800_zc"]) to restrict.
+    With `cases=None`, plots `{DIAG_ROOT}/main` and every `{DIAG_ROOT}/P*` directory;
+    pass a list of case dir names (e.g. ["main"]) to restrict.
     """
     if cases:
         dirs = [os.path.join(DIAG_ROOT, c) for c in cases]
     else:
-        dirs = sorted(glob.glob(f"{DIAG_ROOT}/P*"))
+        dirs = []
+        if os.path.isdir(os.path.join(DIAG_ROOT, "main")):
+            dirs.append(os.path.join(DIAG_ROOT, "main"))
+        dirs += sorted(glob.glob(f"{DIAG_ROOT}/P*"))
     cases = [(d, case_label(os.path.basename(d))) for d in dirs if os.path.isdir(d)]
     for d, lab in cases:
         if lab is None:
             print(f"warning: skipping {os.path.basename(d)!r} — not a recognized case "
-                  f"dir (expected P<power>_<zc|crest> or P0_drift)", flush=True)
+                  f"dir (expected 'main', P<power>_<zc|crest> or P0_drift)", flush=True)
     cases = [(d, lab) for d, lab in cases if lab]
     if not cases:
         print(f"No case directories found under {DIAG_ROOT}/ "
-              f"(run prebuncher_sim.py first).")
+              f"(run injector_sim.py first).")
         return
 
     base = None
@@ -409,17 +407,14 @@ def main(cases=None):
                 print(f"  skipping {os.path.basename(d)}: no usable snapshots "
                       f"(empty/aborted run)", flush=True)
 
-    n_powered = sum(1 for _, lab in cases if lab[1] != "drift")
-    if n_powered > 1:
-        print(f"note: {n_powered} powered cases present — the prebuncher_*.png "
-              f"per-case figures use fixed filenames and are OVERWRITTEN (last "
-              f"case wins); see compare_power_phase.png for the cross-case scan.",
-              flush=True)
+    powered = [(d, lab) for d, lab in cases if lab[1] != "drift"]
+    if len(powered) > 1:
+        print(f"note: {len(powered)} non-baseline cases present — the injector_*.png "
+              f"per-case figures use fixed filenames and are OVERWRITTEN (last case "
+              f"wins); see compare_power_phase.png for the cross-case scan.", flush=True)
 
     summary = []
-    for d, (power, phase) in sorted(cases, key=lambda x: (x[1][1], x[1][0])):
-        if phase == "drift":
-            continue
+    for d, (power, phase) in sorted(powered, key=lambda x: (str(x[1][1]), str(x[1][0]))):
         name = os.path.basename(d)
         print(f"analysing {name} …", flush=True)
         rec = analyse_case(d)
@@ -428,18 +423,25 @@ def main(cases=None):
                   flush=True)
             continue
         s = per_case_figure(name, rec, base)
-        cavity_figure(name, rec, power, phase)        # FIGURE A: the RF drive
-        bunch_profile_figure(name, rec, base)         # FIGURE B: real λ(z) shape
+        # For the default 'main' case the power/phase are read from the sim defaults.
+        if phase == "main":
+            from .injector_sim import PREB1_KW, PHASE
+            cav_power, cav_phase = PREB1_KW, PHASE
+        else:
+            cav_power, cav_phase = power, phase
+        cavity_figure(name, rec, cav_power, cav_phase)    # FIGURE A: the RF drive
+        bunch_profile_figure(name, rec, base)             # FIGURE B: real λ(z) shape
         s.update(name=name, power=power, phase=phase, rec=rec)
         summary.append(s)
 
     # ── Headline comparison (only meaningful with several cases / a baseline) ──
-    if len(summary) > 1 or base is not None:
+    scan = [s for s in summary if s["phase"] in ("zc", "crest")]
+    if (len(scan) > 1 or base is not None) and scan:
         fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.6), constrained_layout=True)
         if base is not None:
             a1.plot(base["zmean"] * 1e3, base["sigz"] * 1e3, "k--", lw=2,
                     label="drift (P=0)")
-        for s in sorted([s for s in summary if s["phase"] == "zc"],
+        for s in sorted([s for s in scan if s["phase"] == "zc"],
                         key=lambda s: s["power"]):
             r = s["rec"]
             a1.plot(r["zmean"] * 1e3, r["sigz"] * 1e3, "-", label=f"{s['power']:g} kW")
@@ -448,7 +450,7 @@ def main(cases=None):
         a1.set_title("Bunch length: drift vs. zero-crossing cavity"); a1.legend(fontsize=8)
 
         for phase, col in (("zc", "C0"), ("crest", "C3")):
-            pts = sorted([s for s in summary if s["phase"] == phase and "ratio" in s],
+            pts = sorted([s for s in scan if s["phase"] == phase and "ratio" in s],
                          key=lambda s: s["power"])
             if pts:
                 a2.plot([s["power"] for s in pts], [s["ratio"] for s in pts], "o-",
@@ -459,22 +461,21 @@ def main(cases=None):
         a2.set_title("Bunching vs. power"); a2.legend(fontsize=8)
         fig.savefig(f"{RESULTS}/compare_power_phase.png", dpi=140); plt.close(fig)
         print(f"wrote {RESULTS}/compare_power_phase.png")
-    else:
-        print("single case, no drift baseline -> skipping cross-case comparison figure")
 
     # ── Summary table ─────────────────────────────────────────────────────────
     print("\n" + "=" * 96)
-    print(f"{'case':>10} {'P[kW]':>5} {'phase':>6} {'σz0[mm]':>8} {'σzmin[mm]':>10} "
+    print(f"{'case':>10} {'P[kW]':>6} {'phase':>6} {'σz0[mm]':>8} {'σzmin[mm]':>10} "
           f"{'bunch×':>7} {'zbest[mm]':>9} {'Ipk[A]':>7} {'KEend[keV]':>11}")
     print("-" * 96)
     if base is not None:
-        print(f"{'P0_drift':>10} {0:5d} {'drift':>6} {base['sigz'][0]*1e3:8.3f} "
+        print(f"{'P0_drift':>10} {0:6d} {'drift':>6} {base['sigz'][0]*1e3:8.3f} "
               f"{base['sigz'].min()*1e3:10.3f} {'—':>7} {'—':>9} "
               f"{base['ipk'].max():7.2f} {base['ke'][-1]:11.1f}")
-    for s in sorted(summary, key=lambda s: (s["phase"], s["power"])):
+    for s in sorted(summary, key=lambda s: (str(s["phase"]), str(s["power"]))):
         ratio = f"{s['ratio']:7.2f}" if "ratio" in s else f"{'—':>7}"
         zbest = f"{s['zbest']*1e3:9.0f}" if "zbest" in s else f"{'—':>9}"
-        print(f"{s['name']:>10} {s['power']:>5g} {s['phase']:>6} {s['sz0']*1e3:8.3f} "
+        pstr = f"{s['power']:>6g}" if not isinstance(s["power"], str) else f"{s['power']:>6}"
+        print(f"{s['name']:>10} {pstr} {str(s['phase']):>6} {s['sz0']*1e3:8.3f} "
               f"{s['szmin']*1e3:10.3f} {ratio} {zbest} {s['ipk_max']:7.2f} "
               f"{s['ke_end']:11.1f}")
     print("=" * 96)

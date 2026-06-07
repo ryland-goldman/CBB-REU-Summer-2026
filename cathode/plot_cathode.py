@@ -267,7 +267,7 @@ def main():
     # ════════════════════════════════════════════════════════════════════════════
     # The 1425 K cathode emits electrons with a small Maxwellian transverse momentum
     # spread.  That thermal spread is the source's INTRINSIC (thermal) emittance — the
-    # irreducible beam quality that every downstream stage (gun, prebuncher) inherits.
+    # irreducible beam quality that every downstream stage (gun, injector) inherits.
     # We read the last particle snapshot and form the transverse trace space x vs.
     # ux, where openPMD/WarpX store ux = γβ_x already (normalized transverse momentum),
     # so the RMS normalized emittance is εn,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) directly.

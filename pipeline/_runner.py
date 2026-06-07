@@ -1,7 +1,7 @@
 """Stage shim + progress/log helpers shared by each <stage>/ facade
-(cathode, gun, prebuncher, linac_sec1, …).
+(cathode, gun, injector, linac_sec1, …).
 
-Each top-level package (cathode/, gun/, prebuncher/, linac_sec1/, …) instantiates
+Each top-level package (cathode/, gun/, injector/, linac_sec1/, …) instantiates
 a `Stage` in its __init__.py and re-exports `config`, `run`, `plot`. The Stage object:
 
   * Sets `OMP_NUM_THREADS` once (read by OpenMP at WarpX library load) and
@@ -15,7 +15,7 @@ a `Stage` in its __init__.py and re-exports `config`, `run`, `plot`. The Stage o
   * Runs the **simulation in a fresh subprocess** via `pipeline._launch_sim`.
     pywarpx binds globally to one geometry (2D/RZ/3D) at first .so load and
     caches diagnostic state by name; chaining cathode (2D) → gun (RZ) →
-    prebuncher (RZ) in a single interpreter trips
+    injector (RZ) in a single interpreter trips
     `AssertionError: Diagnostic attributes not consistent for "fields"`.
     A child interpreter per stage sidesteps both.
   * Writes a structured pipeline log (banner, timing, exceptions) to
@@ -226,7 +226,7 @@ def _prepare_environment():
 
 class Stage:
     """Facade for one accelerator stage. See each <stage>/__init__.py
-    (cathode, gun, prebuncher, linac_sec1, …)."""
+    (cathode, gun, injector, linac_sec1, …)."""
 
     def __init__(self, name, sim_module, plot_module, build_module=None):
         self.name = name
@@ -243,7 +243,7 @@ class Stage:
         never auto-cleared, so a key set once persists into every later
         run() until overwritten. A scan loop that varies, say, POWER_KW but
         also writes per-point OUTDIRs must set OUTDIR every iteration (as the
-        documented prebuncher scan does) — set it once and the stale value
+        documented injector scan does) — set it once and the stale value
         leaks into subsequent runs, silently overwriting the same directory.
         """
         self._params.update(kwargs)
