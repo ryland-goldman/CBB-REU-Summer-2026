@@ -13,12 +13,13 @@ accelerating structure with self-consistent space charge. **Transverse focusing 
 (the injector's three real lenses at their true lab z); this stage carries **no solenoid**. The
 linac selects the injector dump whose ⟨z⟩ is nearest 2.03 m and applies the **9.547 mm radial cut
 at injection** — that cut IS the physical injector→linac iris collimation. At the faithful 11 MW
-point the captured charge is **order ~1 % of the true injected charge** to **⟨KE⟩ ≈ 16 MeV** (max
-~30 MeV, σ_KE ≈ 7 MeV). That low capture is faithful machine behavior — both the radial and the
-longitudinal waist form upstream (~1.45 m) and the beam re-expands by the 2.03 m handoff — and is
-a **conservative lower bound** (the lab-frame ES self-field overestimates transverse space charge
-by ~γ²≈1.66×) that is **~7× sensitive to the upstream LENS_0A placement** (see `injector/README.md`).
-Capture is reported against the **true injected charge** — see *Capture bookkeeping*.
+point the captured charge is **~18 % of the true injected charge** to **⟨KE⟩ ≈ 26 MeV** (max
+~32 MeV, σ_KE ≈ 8 MeV). That capture is faithful machine behavior — the Sol 0 / Lens 0E matching
+telescope focuses ~91 % of the handoff charge through the 9.547 mm iris, and the linac then
+captures the in-bucket fraction — and is a **conservative lower bound** (the lab-frame ES
+self-field overestimates transverse space charge by ~γ²≈1.66×, so the real machine captures more),
+tune-sensitive to the upstream lens currents (see `injector/README.md`). Capture is reported
+against the **true injected charge** — see *Capture bookkeeping*.
 
 ## Running
 
@@ -98,19 +99,19 @@ Lens 0E) at their true lab z focus the beam upstream and hand it across the 9.54
 
 - **Injection / collimation:** the linac reads the injector dump nearest the **z ≈ 2.03 m
   handoff** and applies `r ≤ RMAX = 9.547 mm` at injection — the physical iris cut. At the
-  faithful currents the injector beam has re-expanded to σ_r ≈ 16 mm by 2.03 m (its waist is
-  upstream at ~1.45 m), so only ~8–20 % of the handoff charge passes the iris.
+  faithful currents the Sol 0 / Lens 0E matching telescope focuses the beam through the iris, so
+  **~91 % of the handoff charge passes** the 9.547 mm aperture.
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates and the transverse size **damps** (σ_r ∝ 1/√(γβ)).
-  At the faithful 11 MW point capture is **order ~1 % of the true injected charge** to **⟨KE⟩ ≈
-  16 MeV** (max ~30 MeV, σ_KE ≈ 7 MeV). This is **loss-limited at the handoff** by two compounding
-  faithful effects — both the radial AND the longitudinal waist land ~1.45 m and re-expand by the
-  2.03 m handoff, so only a small fraction is simultaneously in the iris and in the RF bucket.
-  It is a **conservative lower bound** (the lab-frame ES self-field overestimates transverse SC by
-  ~γ²≈1.66×) and **~7× sensitive to the upstream LENS_0A placement** (0.21 % at the GUI 0.225 m vs
-  1.6 % at the native 0.2333 m — both within the lens map's own ~31 mm cell). The optional
-  injector current/phase scans (`injector/README.md`) characterize the achievable capture; the
-  faithful currents are not retuned to inflate the number.
+  At the faithful 11 MW point capture is **~18 % of the true injected charge** to **⟨KE⟩ ≈
+  26 MeV** (max ~32 MeV, σ_KE ≈ 8 MeV). The Sol 0 / Lens 0E matching telescope at z ≈ 1.9 m
+  focuses ~91 % of the handoff charge through the 9.547 mm iris; the linac then captures the
+  fraction that lands in the RF bucket. It is a **conservative lower bound** (the lab-frame ES
+  self-field overestimates transverse SC by ~γ²≈1.66×, so the real machine captures more) and is
+  **tune-sensitive to the upstream lens currents**. The optional injector current/phase scans
+  (`injector/README.md`) characterize the achievable capture; the faithful currents are not
+  retuned to inflate the number. *(A pre-fix ~1 %/0.21 %-vs-1.6 % LENS_0A-sensitivity figure was
+  an artifact of the now-fixed LENS_0E 800 mm mislocation — superseded.)*
 
 ## Simulation parameters
 
@@ -184,7 +185,7 @@ writing five figures to `results/`:
 
 - `linac_field.png` — the on-axis traveling-wave `|Ez|` amplitude (× scale) and a fixed-t field
   snapshot showing the 2π/3 cell structure.
-- `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~146 keV → ~16 MeV mean / ~30 MeV max for the
+- `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~220 keV → ~26 MeV mean / ~32 MeV max for the
   captured slice) with β → 1; the structure shaded.
 - `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
 - `beam_envelope.png` — σ_r and surviving charge vs ⟨z⟩ with the bore line. The survival panel is
@@ -205,19 +206,20 @@ writing five figures to `results/`:
   and hands a focused, 9.547 mm-collimated beam across the 2.03 m plane; the linac carries only the
   two RF maps. RF power (11 MW) is the original LinacSim `sec1_input_power`; the absolute RF phase
   is undocumented (`PHASE_DEG` scanned for the crest).
-- **Capture is order ~1 % of true injected, a conservative lower bound, tune-sensitive.** Both the
-  radial and longitudinal waists form ~1.45 m upstream and re-expand by the 2.03 m handoff, so only
-  ~8–20 % passes the 9.547 mm iris and a small fraction of that lands in the RF bucket. The
-  lab-frame ES self-field overestimates transverse SC by ~γ²≈1.66× ⇒ the real machine captures
-  more; and capture is ~7× sensitive to the upstream LENS_0A placement. Not a precise number — the
-  injector current/phase scans characterize the achievable value. (Comparable to the old hack's
-  ~2%, but now physically grounded.)
+- **Capture is ~18 % of true injected, a conservative lower bound, tune-sensitive.** The Sol 0 /
+  Lens 0E matching telescope focuses ~91 % of the handoff charge through the 9.547 mm iris, and the
+  fraction landing in the RF bucket is captured. The lab-frame ES self-field overestimates
+  transverse SC by ~γ²≈1.66× ⇒ the real machine captures more; capture also responds strongly to
+  the upstream lens currents. Not a precision-tuned number — the injector current/phase scans
+  characterize the achievable value. *(A pre-fix ~1 %/~7×-LENS_0A figure was an artifact of the
+  now-corrected LENS_0E 800 mm mislocation — superseded.)*
 - The r-domain `RMAX = 9.547 mm` IS the SLAC bore / collimator iris; the RF maps reach it exactly.
   A particle that reaches the wall is scraped on the iris (counted against the true-injected
   capture); one starting beyond `RMAX` is dropped at injection (the collimation loss) and likewise
   accounted for via the injected-charge denominator — see *Capture bookkeeping*.
 - The lab-frame electrostatic self-field omits the `1/γ²` magnetic-pinch cancellation (it applies
   the rest-frame Coulomb force `qE_r`, not `qE_r/γ²`), so it overestimates the transverse
-  space-charge force by ~γ² — largest at injection (~137 keV → ~66 %, as in `gun/README.md`) and
+  space-charge force by ~γ² — largest at the low-energy injection (~220 keV handoff; cf. the gun's
+  β≈0.63 → ~66 % overestimate in `gun/README.md`) and
   shrinking toward negligible once captured (γ ≫ 1). Space charge is a small perturbation here, so
   this is acceptable for the demonstration.

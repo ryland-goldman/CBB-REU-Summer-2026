@@ -31,7 +31,7 @@ The chain is order-dependent — each stage accelerates/transports the previous 
 
 ```
 cathode  ─►  gun  ─►  injector  ─►  linac_sec1
-(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~16 MeV captured)
+(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~26 MeV captured)
 ```
 
 ---
@@ -55,7 +55,7 @@ A waterfall of transverse normalized emittance at each stage's entry vs exit —
 beam quality. The cathode→gun bar carries the 2D→RZ definitional footnote.
 
 ### `transmission_waterfall.png` — the two-loss charge chain
-gun exit → injector exit (in-domain) → **enters bore** (9.547 mm iris) → **captured** (~16 MeV).
+gun exit → injector exit (@2.03 m handoff) → **enters bore** (9.547 mm iris, ~91%) → **captured** (~26 MeV, ~18%).
 The bore-scrape and the RF-capture losses are **separate bars** — the separation that motivates the
 upstream solenoids. Starts at gun exit (physical ~1 nC renorm); the cathode's raw macroparticle
 weight is excluded (not a physical charge). Capture is vs the **true injected charge**.
@@ -253,11 +253,11 @@ SLAC-design 3 m, 86-cell, **2π/3 traveling-wave** accelerating structure in **R
 synthesised from the two quadrature field maps and driven at the original LinacSim **P = 11 MW**.
 **No in-stage solenoid** — focusing is upstream in the injector. The linac reads the injector's
 focused beam at the **z ≈ 2.03 m handoff** and applies the **9.547 mm iris cut** at injection.
-At the faithful currents the injector beam has re-expanded to σ_r ≈ 16 mm by the handoff (its waist
-is upstream at ~1.45 m), so only ~8–20 % passes the iris and the linac captures **order ~1 % of the
-true injected charge** to ⟨KE⟩ ≈ 16 MeV (max ~30 MeV). Produced by `plot_linac_sec1.py` from the
-run (`diags/main`) at `PHASE_DEG = 0`. Capture is a **conservative γ²≈1.7× lower bound**, ~7×
-sensitive to the upstream LENS_0A placement, and reported against the **true injected charge**
+At the faithful currents the Sol 0 / Lens 0E matching telescope focuses ~91 % of the handoff charge
+through the 9.547 mm iris, and the linac captures **~18 % of the true injected charge** to
+⟨KE⟩ ≈ 26 MeV (max ~32 MeV). Produced by `plot_linac_sec1.py` from the run (`diags/main`) at
+`PHASE_DEG = 0`. Capture is a **conservative γ²≈1.7× lower bound** (real machine captures more),
+tune-sensitive to the upstream lens currents, and reported against the **true injected charge**
 (sidecar `injection_summary.json`), not the post-collimation first dump.
 
 ### `linac_field.png` — the traveling wave
@@ -269,11 +269,11 @@ voltage). **Bottom:** a fixed-time snapshot `Ez(z, t₀)` zoomed to the structur
 the ~3.5 cm 2π/3 cell structure (the field reverses cell-to-cell; the forward traveling wave is the
 sum of the two 90°-offset quadrature maps).
 
-### `energy_gain.png` — ~146 keV → ~16 MeV (captured slice)
+### `energy_gain.png` — ~220 keV → ~26 MeV (captured slice)
 ![Linac: mean/max KE and β vs ⟨z⟩](linac_sec1/results/energy_gain.png)
 
-Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from ~146 keV; the small
-captured slice reaches max ~30 MeV with charge-weighted ⟨KE⟩ ≈ 16 MeV (σ_KE ≈ 7 MeV), then goes
+Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from the ~220 keV handoff; the
+captured slice reaches max ~32 MeV with charge-weighted ⟨KE⟩ ≈ 26 MeV (σ_KE ≈ 8 MeV), then goes
 flat in the field-free exit drift (the beam coasts). The β = v/c trace (right axis) shows the
 **capture**: the captured particles become relativistic (β → 1), while the bulk that is not
 captured (out of the RF bucket) falls behind.
@@ -298,9 +298,9 @@ surviving slice adiabatically damps (σ_r ∝ 1/√(γβ)) as it accelerates.
 ![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
 
 Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, titled with the
-captured fraction **of the true injected charge** (order ~1 % at the faithful 11 MW point) and
-annotated with how much passed the 9.547 mm iris. The surviving particles span a broad ~5–30 MeV
-distribution with charge-weighted ⟨KE⟩ ≈ 16 MeV (σ_KE ≈ 7 MeV) — wide because only a thin,
+captured fraction **of the true injected charge** (~18 % at the faithful 11 MW point) and
+annotated with how much passed the 9.547 mm iris (~91 %). The surviving particles span a broad
+~5–32 MeV distribution with charge-weighted ⟨KE⟩ ≈ 26 MeV (σ_KE ≈ 8 MeV) — wide because only a
 phase-spread slice locks to the crest. The capture is a conservative γ² lower bound and
-tune-sensitive to the upstream lens placement; the injector current/phase scans characterize the
+tune-sensitive to the upstream lens currents; the injector current/phase scans characterize the
 achievable value.

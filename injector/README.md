@@ -130,12 +130,14 @@ others nr=16/nz~601 — so they cannot be combined), placed in the lab frame via
   each peak dead-on at its GUI lab-z. This self-corrects against stale plan literals (the plan
   table's SOL_0 +1.0761 / native 0.8209 is stale — the actual file gives +1.0841 / 0.8129).
   Do NOT hard-code the offsets.
-- **LENS_0A 8 mm sensitivity (important):** native peak 0.2333 m vs GUI 0.225 m differ by
-  8 mm — below the map's own ~31 mm axial cell, so neither is "more accurate." We ship the
-  GUI-position (programmatic) placement for consistency across all three. **Capture is ~7×
-  sensitive to this 8 mm**: 0.21% at 0.225 m vs 1.6% at the native 0.2333 m. So the capture
-  number is **order-1%, a conservative lower bound, and tune-sensitive** — not a precise value
-  (see below).
+- **LENS_0A 8 mm placement (note):** native peak 0.2333 m vs GUI 0.225 m differ by 8 mm —
+  below the map's own ~31 mm axial cell, so neither is "more accurate." We ship the
+  GUI-position (programmatic) placement for consistency across all three. Capture is
+  **tune-sensitive** to the upstream lens placement/currents — treat the default as a
+  conservative (γ²) lower bound, not a precise value, and use the optional current scan to
+  characterize it. *(An earlier ~7× LENS_0A sensitivity figure — 0.21% vs 1.6% — was measured
+  before the LENS_0E grid_global_offset bug was fixed and is superseded; with all three lenses
+  correctly placed the default captures ~18%.)*
 - **Ordering gotcha:** picmi forces the global `E_ext_particle_init_style` to "none" if the
   last-added `LoadAppliedField` has `load_E=False`, so the B-only solenoids are added **before**
   the RF cavities; an unconditional `assert applied[-1].load_E` guards it (a pure-drift baseline
@@ -183,23 +185,43 @@ assumption and need a true multi-plane scrape.**
 
 ## Capture / handoff result (the headline, with caveats)
 
-At the faithful currents (6/40/10 A) the lenses focus to a tight waist (σ_r ≈ 1.1 mm,
-100% in bore) at z ≈ 1.45 m, but **both the radial AND the longitudinal waist land ~1.45 m**
-and the beam re-expands by the 2.03 m handoff (σ_r ≈ 16 mm, σ_z ≈ 44 mm). So only ~8–20% of
-the handoff charge passes the 9.547 mm iris, and the downstream linac captures **order ~1%**
-of the true injected charge into the RF bucket (⟨KE⟩ ≈ 16 MeV). This is **faithful machine
-behavior** — real lenses at real z, real iris, real handoff — not a bug, and a clear
-improvement over the old mislocated-solenoid hack (which gave a comparable ~2% as an artifact).
+At the faithful currents (6/40/10 A) the three lenses focus the beam through the injector:
+Lens 0A (z ≈ 0.225 m) sets the early envelope, and the Sol 0 / Lens 0E matching telescope at
+z ≈ 1.9 m — just upstream of the 1.922 m iris — squeezes it through the 9.547 mm aperture.
+**~91% of the handoff charge passes the iris** (≈0.69 / 0.76 nC), and the downstream linac
+captures **~18% of the true injected charge** into the RF bucket (⟨KE⟩ ≈ 26 MeV, σ_KE ≈ 8 MeV,
+max ~32 MeV). The two prebunchers net-accelerate the beam **146 → ~220 keV** at the handoff
+while velocity-bunching it. This is **faithful machine behavior** — real lenses at real z, real
+iris, real handoff — and a large improvement over the old mislocated-solenoid hack.
+
+> **Fixed (physics-review):** an earlier version placed LENS_0E ~800 mm out of position (a
+> `grid_global_offset` bug that omitted the native grid origin `z[0]`, putting its peak at
+> 1.114 m instead of 1.914 m — so no lens focused at the iris). That gave only ~8% iris
+> transmission / ~1% capture. The fix (corrected offset + a read-back assertion that validates
+> the *stored* peak, not an input recompute) restores the matching lens to the iris and yields
+> the 91% / 18% above. The capture is **~18×** what the buggy build reported.
 
 Three caveats frame this number:
 1. **Conservative lower bound:** the lab-frame electrostatic self-field omits the 1/γ² magnetic
    pinch cancellation, overestimating transverse space charge by ~γ² (≈1.66× at β≈0.7) over the
    ~2 m drift, so the real machine focuses tighter and captures more.
-2. **Tune-sensitive:** ~7× sensitivity to the 8 mm-scale LENS_0A placement (above); the faithful
-   currents sit far from a capture optimum.
+2. **Tune-sensitive:** capture responds strongly to the upstream lens currents/placement; the
+   faithful 6/40/10 A currents are not tuned to a capture optimum, so the optional current scan
+   is the right tool to map the achievable capture (an earlier ~7×-from-8 mm-LENS_0A figure was
+   a pre-fix artifact of the LENS_0E mislocation — superseded).
 3. **Charge recovery is the real win:** the solenoids recover in-domain charge from ~0.04 nC
    (no focusing) to ~0.77 nC — the radial-scrape fix works; the iris then sets the true
    transmission. The optional current/phase scans characterize the achievable capture.
+4. **Handoff-seam residual field (bounded approximation):** Sol 0 and Lens 0E peak just upstream
+   of the 2.03 m handoff but their field *tails* are still substantial AT the plane (Sol 0 ≈ 97 %
+   of peak, Lens 0E ≈ 15 % — together ~9 mT on-axis at 40/10 A). The linac stage models no
+   solenoid, so this continuing transverse focus is dropped at the seam — an unphysical
+   discontinuity. The build only asserts each lens *peak* is upstream of the handoff (not that the
+   field has decayed there), so the beam is handed off while still being focused. The dropped focus
+   makes capture **more** conservative (the real continuous field would hold the envelope tighter
+   into the structure). A fully faithful treatment would carry the Sol 0 / Lens 0E tails into the
+   linac stage as applied fields, or move the handoff downstream of the tails — a documented
+   follow-up, not done here.
 
 ## Outputs
 

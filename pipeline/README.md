@@ -7,7 +7,7 @@ each stage's top-level facade module and calling `.run()`:
 cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
 gun.run()          # build gun field map + RZ acceleration (~146 keV) + plots
 injector.run()     # build injector fields (2 cavities + 3 solenoids) + RZ run + plots
-linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~16 MeV captured) + plots
+linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~26 MeV captured) + plots
 pipeline.plot_chain.main()   # cross-stage figures into the repo-root results/
 ```
 

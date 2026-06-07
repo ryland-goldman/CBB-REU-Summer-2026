@@ -65,6 +65,22 @@ STAGES = [
     {"name": "linac",    "path": "linac_sec1/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C3"},
 ]
 LINAC_INJ_SUMMARY = "linac_sec1/diags/main/injection_summary.json"
+Z_HANDOFF = 2.03                # [m] linac entrance (Z_acc_1); the injector→linac handoff plane
+
+
+def _exit_row(name, rows):
+    """The row representing a stage's EXIT.
+
+    For the injector, the domain extends past the 2.03 m handoff to ZMAX=2.10 m and the run
+    stops while the bunch is partially draining through the absorbing exit, so the
+    largest-⟨z⟩ dump (rows[-1], ~2.076 m) is depleted and NOT what the linac ingests. The
+    linac reader selects the dump nearest the 2.03 m handoff, so the cross-stage figures
+    must use the SAME plane — otherwise the 'injector exit' charge disagrees with the linac
+    input. Other stages end at their physical exit, so rows[-1] is correct there.
+    """
+    if name == "injector":
+        return min(rows, key=lambda r: abs(r["z_mean"] - Z_HANDOFF))
+    return rows[-1]
 
 
 def _peak_current(z, w, v_beam, nbins=400):
@@ -153,10 +169,14 @@ def render_chain_evolution(tables):
         a_ex.plot(z, _arr(rows, "emit_nx"), "-", color=col, label=nm)
         a_sx.plot(z, _arr(rows, "sig_x") * 1e3, "-", color=col, label=nm)
         a_sz.plot(z, np.maximum(_arr(rows, "sig_z") * 1e3, 1e-3), "-", color=col, label=nm)
-        # within-stage charge fraction q(z)/q_stage-entry
-        q = _arr(rows, "q")
-        a_q.plot(z, q / q[0] if q[0] > 0 else q, "-", color=col, label=nm)
-        a_ip.plot(z, _arr(rows, "i_peak"), "-", color=col, label=nm)
+        # within-stage charge fraction + I_peak: EXCLUDE the cathode. The cathode is an
+        # emitter (q grows over time → a within-stage "transmission" rises >1, misleading)
+        # and its 2D-slab pre-renorm I_peak is ~10 kA (non-physical), which on a linear axis
+        # flatlines every real stage. Both panels start at the gun.
+        if nm != "cathode":
+            q = _arr(rows, "q")
+            a_q.plot(z, q / q[0] if q[0] > 0 else q, "-", color=col, label=nm)
+            a_ip.plot(z, _arr(rows, "i_peak"), "-", color=col, label=nm)
 
     a_ke.set_yscale("log"); a_ke.set_ylabel("⟨KE⟩  [keV]  (±σ band)")
     a_ke.set_title("Mean kinetic energy"); a_ke.legend(fontsize=8)
@@ -173,8 +193,9 @@ def render_chain_evolution(tables):
                   xy=(0.50, 0.92), xycoords="axes fraction", fontsize=7, color="0.3")
     a_sz.set_yscale("log"); a_sz.set_ylabel("σ_z  [mm]"); a_sz.set_title("Bunch length")
     a_q.set_ylabel("q(z) / q(stage entry)")
-    a_q.set_title("Within-stage charge fraction (absolute q resets at each handoff)")
-    a_ip.set_ylabel("I_peak  [A]"); a_ip.set_title("Peak current")
+    a_q.set_title("Within-stage charge fraction (gun→linac; cathode emitter excluded; q resets each handoff)")
+    a_ip.set_ylabel("I_peak  [A]")
+    a_ip.set_title("Peak current (gun→linac; cathode 2D-slab I_peak non-physical, excluded)")
     for ax in (a_ke, a_ex, a_sx, a_sz, a_q, a_ip):
         ax.set_xlabel("lab ⟨z⟩  [mm]"); ax.grid(alpha=0.25)
 
@@ -195,7 +216,8 @@ def render_emittance_budget(tables):
         rows = tables.get(st["name"]) or []
         if not rows:
             continue
-        names.append(st["name"]); e_in.append(rows[0]["emit_nx"]); e_out.append(rows[-1]["emit_nx"])
+        names.append(st["name"]); e_in.append(rows[0]["emit_nx"])
+        e_out.append(_exit_row(st["name"], rows)["emit_nx"])
     if not names:
         return
     fig, ax = plt.subplots(figsize=(9, 5), constrained_layout=True)
@@ -232,16 +254,20 @@ def render_transmission_waterfall(tables, linac_inj):
     solenoids. Capture denominator = TRUE injected charge (linac injection_summary.json).
 
     The waterfall starts at GUN EXIT, where the beam carries its physical charge (the gun
-    renormalizes to the 1 nC bunch). The CATHODE dump's weight sum (~47 nC of raw
+    renormalizes to the 1 nC bunch). The CATHODE dump's weight sum (~82 nC of raw
     macroparticle weight, pre-renorm) is NOT a physical charge and is excluded — plotting it
-    would dwarf the physical ≤1 nC bars on one axis; it's noted in the caption instead."""
+    would dwarf the physical ≤1 nC bars on one axis; it's noted in the caption instead.
+
+    The 'injector exit' bar uses the dump at the 2.03 m HANDOFF plane (via _exit_row), NOT
+    the largest-⟨z⟩ dump (which is partially drained through the 2.10 m absorbing exit and
+    under-counts what the linac actually ingests)."""
     bars, vals = [], []
     gun = tables.get("gun") or []
     inj = tables.get("injector") or []
     if gun:
-        bars.append("gun exit\n(renorm ~1 nC)"); vals.append(gun[-1]["q"] * 1e9)
+        bars.append("gun exit\n(renorm ~1 nC)"); vals.append(_exit_row("gun", gun)["q"] * 1e9)
     if inj:
-        bars.append("injector exit\n(in-domain)"); vals.append(inj[-1]["q"] * 1e9)
+        bars.append("injector exit\n(@2.03m handoff)"); vals.append(_exit_row("injector", inj)["q"] * 1e9)
     # The two distinct downstream losses, anchored on the linac's recorded true-injected
     # breakdown (q_injected_C at the handoff, q_in_bore_C through the 9.547 mm iris) and the
     # captured charge from the last linac dump.
@@ -249,7 +275,7 @@ def render_transmission_waterfall(tables, linac_inj):
         bars.append("enters bore\n(9.547mm iris)"); vals.append(linac_inj["q_in_bore_C"] * 1e9)
         lin = tables.get("linac") or []
         if lin:
-            bars.append("captured\n(~15 MeV)"); vals.append(lin[-1]["q"] * 1e9)
+            bars.append("captured\n(~26 MeV)"); vals.append(lin[-1]["q"] * 1e9)
     if not bars:
         return
     fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
@@ -267,9 +293,9 @@ def render_transmission_waterfall(tables, linac_inj):
     ax.set_ylabel("charge  [nC]")
     ax.set_title("End-to-end charge / transmission waterfall\n"
                  "(from gun exit; bore-scrape and capture are SEPARATE losses)")
-    ax.annotate("Starts at gun exit (physical ~1 nC renorm); cathode dump weight (~47 nC, "
-                "pre-renorm, not physical) excluded. Capture vs TRUE injected; γ²≈1.7× ES "
-                "self-field overestimate ⇒ a conservative LOWER bound.",
+    ax.annotate("Starts at gun exit (physical ~1 nC renorm); cathode dump weight (~82 nC, "
+                "pre-renorm, not physical) excluded. 'injector exit' is the 2.03 m handoff dump. "
+                "Capture vs TRUE injected; γ²≈1.7× ES self-field overestimate ⇒ a conservative LOWER bound.",
                 xy=(0.0, -0.18), xycoords="axes fraction", fontsize=7, color="0.3")
     os.makedirs(RESULTS, exist_ok=True)
     path = f"{RESULTS}/transmission_waterfall.png"
@@ -281,17 +307,17 @@ def render_transmission_waterfall(tables, linac_inj):
 # FIGURE 4 / #10 — chain_scorecard.png + stdout : per-stage entry/exit table.
 # ══════════════════════════════════════════════════════════════════════════════
 def render_scorecard(tables, linac_inj):
-    cols = ["stage", "⟨KE⟩in", "⟨KE⟩out", "σ_KEout", "ε_nx,in", "ε_nx,out",
+    cols = ["stage", "⟨KE⟩in", "⟨KE⟩out", "σ_KEout", "ε_nx,in", "ε_nx,out", "ε_nz,out[mm]",
             "σ_x,out[mm]", "σ_z,out[mm]", "q_out[nC]"]
     table_rows = []
     for st in STAGES:
         rows = tables.get(st["name"]) or []
         if not rows:
             continue
-        a, b = rows[0], rows[-1]
+        a, b = rows[0], _exit_row(st["name"], rows)   # injector exit = 2.03 m handoff dump, not drained tail
         table_rows.append([
             st["name"], f"{a['ke_mean']:.1f}", f"{b['ke_mean']:.1f}", f"{b['ke_std']:.2f}",
-            f"{a['emit_nx']:.2f}", f"{b['emit_nx']:.2f}",
+            f"{a['emit_nx']:.2f}", f"{b['emit_nx']:.2f}", f"{b['emit_nz']:.2f}",
             f"{b['sig_x']*1e3:.2f}", f"{b['sig_z']*1e3:.2f}", f"{b['q']*1e9:.4f}",
         ])
     # Capture line vs true injected (the legible end-to-end number).
@@ -303,8 +329,9 @@ def render_scorecard(tables, linac_inj):
                     f"iris transmission = {linac_inj['q_in_bore_C']/qinj*100:.1f}%. "
                     f"γ²≈1.7× → capture is a conservative LOWER bound. σ_KE charge-conditional.")
     # Two reader notes (physics-flagged) so adjacent-dump and emittance effects aren't misread:
-    note_handoff = ("injector-exit and linac-entry rows are ADJACENT dumps near 2.03 m; the "
-                    "~7 keV ⟨KE⟩ difference is dump spacing, not a physics discontinuity.")
+    note_handoff = ("the injector-exit row is the dump at the 2.03 m handoff plane (same dump the "
+                    "linac reader ingests), not the drained tail at the 2.10 m absorbing exit; any "
+                    "small ⟨KE⟩ difference vs the linac-entry row is dump spacing, not a discontinuity.")
     note_emit = ("injector ε_n,x growth is space-charge + solenoid-aberration dominated over the "
                  "2 m low-energy drift; the γ²≈1.7× ES transverse-SC overestimate makes this an "
                  "UPPER bound on emittance growth (opposite direction to the capture lower bound).")

@@ -93,9 +93,11 @@ PREB2_REVERSED = True            # apply the reversed-install phase PREB2_REV_PH
 #     count → the debunching slope.
 #   So in the (forward-map + crest-base + GUI φ_off) parametrization, rev_phase=0 IS the
 #   geometric reversal (the +π and the crest-reference's built-in reversal cancel) — NOT its
-#   absence. (B) rev_phase=+π would double-count and is physically wrong here, not merely
-#   gate-failing.
-# Verified empirically by the Preb-2-only kick-sign run: REV_PHASE=0 bunches (compressive
+#   absence. This rests on ONE assumption about the GUI's frame: that φ_off=−45° is referenced
+#   to the AS-INSTALLED (reversed) cavity's crest. That assumption is not a standalone
+#   geometric proof — it is ARBITRATED by the empirical kick-sign run below, which is the
+#   decisive test. (rev_phase=+π would then double-count, debunching.)
+# ARBITER — the Preb-2-only kick-sign run: REV_PHASE=0 bunches (compressive
 # dchirp -0.33 keV/mm, tail gains); REV_PHASE=+π decelerates (-67 keV, no bunching).
 # DO NOT "fix" this back to +π — that re-introduces the double-count. (Knob retained for a
 # future map whose loaded drive phase is NOT the as-installed crest.)
@@ -342,25 +344,19 @@ def main():
           f"V_gap≈{scale1*V1J_KEV:.1f} kV, φ={phi1:.3f} rad, "
           f"t_gap={t_gap1*1e9:.3f} ns", flush=True)
 
-    # Prebuncher 2 (reversed install = +π on the same forward map). Arrival is
-    # t_gap2 = t_gap1 + (Z2−Z1)/v_after_preb1. v_after_preb1 is the post-cavity mean β
-    # at Preb-1 exit, NOT re-derived from an analytic on-crest energy. At the faithful
-    # sub-threshold operating point the mean kick is small, so v_after ≈ v_beam — which
-    # is what we use; with constant v, (Z2−Z_INJECT)/v_beam = t_gap1 + (Z2−Z1)/v_beam
-    # exactly, so passing v_at_gap=v_beam (t_offset=0) gives the intended t_gap2. The
-    # Preb-2 time function is baked here, before WarpX integrates Preb 1, so the true
-    # post-Preb-1 β is not yet known. This is valid ONLY while both cavities are
-    # sub-threshold (the design case); a hard Preb-1 power scan desyncs the Preb-2 phase
-    # reference and needs a two-pass run (read post-Preb-1 β, rebuild Preb-2). See README.
-    # CONSTANT-v PHASE ERROR: the faithful crest-base Preb-1 imparts a mean +~15 keV that
-    # SPEEDS the beam over the 0.534→1.318 m inter-cavity drift. Timing Preb-2 with the bare
-    # injection β would mis-time arrival by ≈ -10° at 214 MHz. We instead estimate the
-    # post-Preb-1 speed ANALYTICALLY from the same kick fraction the transit uses
-    # (-cos(base + phi_off) · scale1·V1J) and time Preb-2 in two segments (v_beam to Z1,
-    # then v_after_preb1 over Z1→Z2), cutting the error to ~few°. This is an analytic
-    # estimate of the MEAN kick, not the true post-cavity β distribution (a hardened Preb-1
-    # power scan would still need a two-pass run that reads the diagnostic β); valid at the
-    # sub-threshold design point where the kick is a small, well-characterised mean shift.
+    # Prebuncher 2 (reversed install, rev_phase=0 — see the PREB2_REV_PHASE note above for
+    # why 0, not +π, is the faithful reversal in this crest-referenced parametrization).
+    # ARRIVAL TIMING (two-segment): t_gap2 = t_gap1 + (Z2−Z1)/v_after_preb1. The Preb-2 time
+    # function is baked here, BEFORE WarpX integrates Preb 1, so the true post-Preb-1 β is not
+    # yet known. The faithful crest-base Preb-1 imparts a mean +~15 keV that SPEEDS the beam
+    # over the 0.534→1.318 m inter-cavity drift; timing Preb-2 with the bare injection β would
+    # mis-time arrival by ≈ −13° at 214 MHz. So we estimate the post-Preb-1 speed ANALYTICALLY
+    # from the same mean-kick fraction the transit uses (−cos(base+φ_off)·scale1·V1J) and time
+    # Preb-2 in two segments (v_beam to Z1, then v_after_preb1 over Z1→Z2), cutting the residual
+    # to ~few°. This is an analytic estimate of the MEAN kick, not the true post-cavity β
+    # distribution: valid ONLY at the sub-threshold design point; a hardened Preb-1 power scan
+    # desyncs the Preb-2 reference and needs a two-pass run (read the diagnostic β, rebuild
+    # Preb-2). See injector/README.md.
     if PREB2_KW > 0:
         base1 = np.pi / 2.0 if PHASE == "zc" else np.pi
         kick1 = -np.cos(base1 + np.radians(PREB1_PHI_OFF)) * scale1 * V1J_KEV

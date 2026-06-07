@@ -140,7 +140,7 @@ def main():
     cathode.run()
     gun.run()
     injector.run()
-    linac_sec1.run()            # SLAC Section 1: ~16 MeV captured at 11 MW (order ~1% of true injected; γ² lower bound)
+    linac_sec1.run()            # SLAC Section 1: ~26 MeV captured at 11 MW (~18% of true injected; γ² lower bound)
 
     _beam_summary(injector.resolve_outdir(), "injector exit", "keV")
     _beam_summary(linac_sec1.resolve_outdir(), "linac_sec1 exit", "MeV")

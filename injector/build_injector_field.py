@@ -268,13 +268,25 @@ def _write_b_series(out_file, z_offset, dr, dz, Br, Bz):
 def build_solenoids():
     """Build the three per-Ampere B-only solenoid maps, each placed in the lab frame.
 
-    The lab-z offset is derived programmatically (not hard-coded) so it can't drift:
-      * "local"-frame maps (SOL_0): offset = GUI_z − Z[argmax|Bz|] (slides the local
-        peak to the GUI lab position).
-      * "absolute"-frame maps (LENS_0A, LENS_0E): native z already IS lab z ⇒ offset 0.
-    Per solenoid: asserts the in-domain physical lab-z peak is in [0, ZMAX], upstream of
-    Z_HANDOFF (so the linac never inherits a beam still inside a lens it does not model),
-    and within SOL_TOL of the GUI z; prints the physical lab-z peak (not the native peak).
+    The lab-z offset is derived programmatically (not hard-coded) so it can't drift.
+    ``grid_global_offset`` is the lab-z of grid INDEX 0 — NOT the lab-z of the peak — so
+    to slide the native field peak to its GUI lab-z we must add back the native grid's
+    own origin ``z[0]``:
+
+        offset = GUI_z − z_peak_native + z[0]
+
+    ``z[0]`` is 0 for LENS_0A and SOL_0 (local frames starting at 0), but ``z[0] = 0.8 m``
+    for LENS_0E (its native grid is pre-shifted into the absolute lab region). Omitting
+    the ``+ z[0]`` term mis-placed LENS_0E by −800 mm (peak at 1.114 m instead of 1.914 m,
+    so it never reached the 1.922 m iris) — the bug this formula + the READ-BACK assertion
+    below now guard against.
+
+    Per solenoid: write the map, then RE-READ the stored file and assert the actual stored
+    lab-z peak (grid_global_offset + argmax·dz) is in [0, ZMAX], upstream of Z_HANDOFF (so
+    the linac never inherits a beam still deep inside a lens it does not model — see the
+    handoff-seam caveat in injector/README.md), and within SOL_TOL of the GUI z. The check
+    reads the WRITTEN placement, not an input recompute, so it cannot self-confirm a wrong
+    grid_global_offset.
     """
     for name in ("LENS_0A", "SOL_0", "LENS_0E"):
         d = easygdf.load(SOL_GDF[name])
@@ -286,27 +298,37 @@ def build_solenoids():
         ipk = int(np.argmax(np.abs(Bz[0])))             # peak on the axis (r=0 row)
         z_peak_native = float(z[ipk])
         gui_z = SOL_GUI_Z[name]
-        # Programmatic offset for EVERY map (derived from the loaded peak, not hard-coded):
-        # slide the native peak to the GUI lab-z. Self-corrects against stale plan literals
-        # and lands all three peaks dead-on at their GUI positions.
-        offset = gui_z - z_peak_native
-        lab_peak = z_peak_native + offset                # = gui_z by construction (in-domain lab-z)
+        # grid_global_offset = lab-z of index 0; add back the native origin z[0] so the
+        # native peak lands at gui_z (the +z[0] term is what LENS_0E needs; 0 for the rest).
+        offset = gui_z - z_peak_native + float(z[0])
 
-        # Assertions (silent-wrong-physics guards).
+        _write_b_series(SOL_FILES[name], offset, dr, dz, Br, Bz)
+
+        # READ-BACK guard: reopen the written file and compute the STORED lab-z peak from
+        # grid_global_offset + argmax·dz — NOT z_peak_native + offset (which is gui_z by
+        # construction and can never fail). This is what actually catches a bad offset.
+        chk = io.Series(SOL_FILES[name], io.Access.read_only)
+        mB = chk.iterations[0].meshes["B"]
+        off_z, ddz = float(mB.grid_global_offset[1]), float(mB.grid_spacing[1])
+        bz_stored = np.asarray(mB["z"].load_chunk())
+        chk.flush()
+        bz_axis = bz_stored[0][0]                        # (1,nr,nz) -> r=0 row
+        lab_peak = off_z + int(np.argmax(np.abs(bz_axis))) * ddz
+        del chk
+
         assert 0.0 <= lab_peak <= ZMAX, (
-            f"{name} lab-z peak {lab_peak*1e3:.1f} mm outside the [0, {ZMAX*1e3:.0f}] mm domain")
+            f"{name} STORED lab-z peak {lab_peak*1e3:.1f} mm outside the [0, {ZMAX*1e3:.0f}] mm domain")
         assert lab_peak < Z_HANDOFF, (
-            f"{name} lab-z peak {lab_peak*1e3:.1f} mm is NOT upstream of the "
+            f"{name} STORED lab-z peak {lab_peak*1e3:.1f} mm is NOT upstream of the "
             f"{Z_HANDOFF*1e3:.0f} mm handoff plane — the linac would inherit a beam still "
             f"inside this lens")
         assert abs(lab_peak - gui_z) < SOL_TOL, (
-            f"{name} lab-z peak {lab_peak*1e3:.2f} mm differs from GUI z {gui_z*1e3:.1f} mm "
-            f"by more than {SOL_TOL*1e3:.1f} mm")
+            f"{name} STORED lab-z peak {lab_peak*1e3:.2f} mm differs from GUI z {gui_z*1e3:.1f} mm "
+            f"by more than {SOL_TOL*1e3:.1f} mm (grid_global_offset bug?)")
 
-        _write_b_series(SOL_FILES[name], offset, dr, dz, Br, Bz)
-        # Report: per-Ampere peak |Bz| (mT/A), and the PHYSICAL lab-z peak (not native).
+        # Report: per-Ampere peak |Bz| (mT/A), and the STORED physical lab-z peak.
         print(f"Solenoid {name}: nr={r.size} nz={z.size}, native peak z={z_peak_native*1e3:.1f} mm, "
-              f"offset={offset*1e3:+.1f} mm -> lab-z peak {lab_peak*1e3:.1f} mm "
+              f"offset={offset*1e3:+.1f} mm -> STORED lab-z peak {lab_peak*1e3:.1f} mm "
               f"(GUI {gui_z*1e3:.1f}), peak |Bz| {abs(Bz[0][ipk])*1e3:.4f} mT/A -> {SOL_FILES[name]}")
 
 
