@@ -28,13 +28,34 @@ constants below are config()-overridable.
 
 import os
 import shutil
+import time
 
 import numpy as np
 import pywarpx
+import openpmd_api as io
 from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
+
+
+def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
+    """Call an openPMD read, retrying the transient HDF5 "Inaccessible" open error.
+
+    The in-sim handoff report opens a diag Series while WarpX's own diagnostic
+    Series is still alive in this process (teardown is at process exit), and a
+    just-flushed file can be momentarily un-openable — openpmd_api then raises
+    `IO Task OPEN_FILE failed ... Inaccessible` on an intact file. The file frees
+    within a fraction of a second, so retry with exponential backoff clears it
+    deterministically; re-raise after the last try.
+    """
+    for i in range(tries):
+        try:
+            return fn(*args, **kwargs)
+        except io.Error:
+            if i == tries - 1:
+                raise
+            time.sleep(base * 2 ** i)
 # F_RF / Q_L / V1J_KEV / gap centres / phi-offsets live in the (pywarpx-free) build
 # module as the single source of truth, so the sim and plot_injector.py cannot drift
 # apart on the RF drive.
@@ -178,7 +199,8 @@ def load_gun_bunch():
             f"{GUN_DIAG} has no iterations — did the gun stage run and produce "
             f"particles?")
     it = ts.iterations[-1]
-    x, y, z, ux, uy, uz, w = ts.get_particle(
+    x, y, z, ux, uy, uz, w = _retry_io(
+        ts.get_particle,
         ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it,
     )
     # Downsample (reweighted to preserve total charge) to keep the run cheap.
@@ -266,8 +288,8 @@ def _report_collimated_handoff(outdir):
         ts = OpenPMDTimeSeries(os.path.join(outdir, "particles"))
         best, bd = None, 9e9
         for it in ts.iterations:
-            x, y, z, w = ts.get_particle(["x", "y", "z", "w"],
-                                         species="electrons", iteration=it)
+            x, y, z, w = _retry_io(ts.get_particle, ["x", "y", "z", "w"],
+                                   species="electrons", iteration=it)
             if len(z) < 50:
                 continue
             zm = float(np.average(z, weights=w))

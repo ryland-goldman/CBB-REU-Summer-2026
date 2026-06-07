@@ -35,12 +35,34 @@ Run with:
 import os
 import glob
 import re
+import time
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
+
+
+def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
+    """Call an openPMD read, retrying the transient HDF5 "Inaccessible" open error.
+
+    A just-flushed WarpX diag file is intermittently un-openable for a moment
+    (the writer Series may still be releasing it, or HDF5 file-locking refuses a
+    concurrent/recent writer) — openpmd_api then raises
+    `IO Task OPEN_FILE failed ... Inaccessible` on a file that is intact and
+    readable a fraction of a second later. The disabled-locking env var has not
+    proven reliable across machines, so retry with exponential backoff clears it
+    deterministically. Re-raises after the last try so a genuinely missing file
+    still surfaces.
+    """
+    for i in range(tries):
+        try:
+            return fn(*args, **kwargs)
+        except io.Error:
+            if i == tries - 1:
+                raise
+            time.sleep(base * 2 ** i)
 
 # RF drive constants (F_RF, Q_L, V1J_KEV, gap centres) come from the single source of
 # truth in the build module so this figure's re-derived scale/phase cannot drift from
@@ -122,7 +144,8 @@ def analyse_case(path):
     snaps = {}
     v_beam = None
     for i, it in enumerate(ts.iterations):
-        z, ux, uy, uz, w = ts.get_particle(
+        z, ux, uy, uz, w = _retry_io(
+            ts.get_particle,
             ["z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
         if len(z) < 50:                       # skip near-empty (boundary) dumps
             continue
