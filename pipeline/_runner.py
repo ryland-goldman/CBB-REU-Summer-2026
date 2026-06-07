@@ -33,6 +33,7 @@ import json
 import logging
 import os
 import re
+import resource
 import subprocess
 import sys
 import time
@@ -203,6 +204,29 @@ def _module_top_level_names(dotted):
         return set()
 
 
+def _raise_fd_limit(target=16384):
+    """Raise the open-file-descriptor soft limit (root fix for "Inaccessible").
+
+    openpmd-viewer leaks one fd per `get_particle()` — the per-iteration HDF5
+    file it opens is never closed — so looping over a stage's ~280 diagnostic
+    dumps exhausts macOS's default soft limit of 256. The open then fails with
+    "IO Task OPEN_FILE failed ... Inaccessible" (how HDF5 surfaces EMFILE) at a
+    fixed dump COUNT, not a specific file, so retries can't help (the fds stay
+    spent) — the failing iteration just tracks how many dumps were read before
+    the limit (e.g. ~83 in the parent plot process, ~250 in the fresher sim
+    subprocess). Raise the soft limit toward the hard cap so a full diag series
+    fits with margin. Called first thing in _prepare_environment so the parent's
+    in-process plot step is covered and the spawned sim subprocess inherits it
+    (rlimits survive fork/exec)."""
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = min(hard, max(soft, target))
+        if want > soft:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    except (ValueError, OSError):
+        pass
+
+
 def _prepare_environment():
     """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root.
 
@@ -211,12 +235,11 @@ def _prepare_environment():
     memory bus and add barrier overhead. Keep single-threaded; see the OMP note
     in run_pipeline.py / CLAUDE.md.
     """
-    # Disable HDF5 file locking. The post-run collimated-handoff report (in the
-    # sim subprocess) and the plot step open openPMD .h5 files that WarpX may
-    # have only just flushed/closed; macOS HDF5's default locking then returns
-    # "IO Task OPEN_FILE failed ... Inaccessible" on a perfectly intact file.
-    # Reading openPMD diagnostics never needs the lock, so turn it off. Set on
-    # os.environ so the spawned sim subprocess (which copies it) inherits it too.
+    _raise_fd_limit()
+    # Disable HDF5 file locking (minor mitigation; the fd-limit raise above is the
+    # real fix for the "OPEN_FILE failed ... Inaccessible" error). Reading openPMD
+    # diagnostics never needs the lock. Set on os.environ so the spawned sim
+    # subprocess (which copies it) inherits it too.
     os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
     # An explicitly-set OMP_THREADS always wins, even if OMP_NUM_THREADS was
     # already exported (e.g. inherited from a conda profile or prior run);

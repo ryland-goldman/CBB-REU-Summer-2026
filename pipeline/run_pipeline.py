@@ -35,15 +35,12 @@ if "OMP_THREADS" in os.environ:
 else:
     os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-# Disable HDF5 file locking BEFORE any openPMD/h5py import. HDF5 reads this env
-# var once at library init (first HDF5 call) — the stage imports below trigger
-# that, so setting it later (e.g. inside _runner._prepare_environment) is too
-# late for this parent process and the in-process plot step still fails. Without
-# it, the post-run handoff report and the plot step hit
-# "IO Task OPEN_FILE failed ... Inaccessible" opening openPMD .h5 files WarpX has
-# only just flushed/closed — the files are intact; macOS HDF5's default locking
-# just refuses them in that window. Reads never need the lock. _launch_sim.py
-# sets the same flag so the spawned sim subprocess honors it from its own start.
+# Disable HDF5 file locking before any openPMD/h5py import (HDF5 latches it at
+# library init). This is a minor mitigation only — the real cause of the
+# "IO Task OPEN_FILE failed ... Inaccessible" error is fd exhaustion (openpmd-
+# viewer leaks an fd per get_particle, overflowing macOS's default 256-fd soft
+# limit on a ~280-dump series), fixed by the fd-limit raise in
+# _runner._raise_fd_limit (called from _prepare_environment, before any read).
 os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 
 # Run from the repo root so each stage's hard-coded relative paths resolve.

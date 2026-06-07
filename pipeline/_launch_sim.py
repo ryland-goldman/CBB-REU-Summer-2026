@@ -17,15 +17,23 @@ sidesteps both.
 import importlib
 import json
 import os
+import resource
 import sys
 
-# Disable HDF5 file locking before the sim module (and its openPMD/pywarpx
-# imports) load below — HDF5 latches this env var at library init. The parent
-# already exports it, but set it here too so a stage launched on its own honors
-# it from this child's start. Without it the post-run collimated-handoff report
-# hits "IO Task OPEN_FILE failed ... Inaccessible" reopening a diag file WarpX
-# just flushed; the file is intact, macOS HDF5's default locking just refuses it
-# in that window. See pipeline/run_pipeline.py for the full note.
+# Raise the open-file-descriptor soft limit so the post-run handoff report can
+# loop over the full diag series without exhausting macOS's default 256 — see
+# _runner._raise_fd_limit for the full rationale (openpmd-viewer leaks an fd per
+# get_particle, so the open fails with "OPEN_FILE failed ... Inaccessible" at a
+# fixed dump count). A stage launched via the parent inherits the parent's
+# raised limit; set it here too for a directly-invoked `python -m
+# pipeline._launch_sim`. The disabled HDF5 lock is a minor extra mitigation.
+try:
+    _soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    _want = min(_hard, max(_soft, 16384))
+    if _want > _soft:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (_want, _hard))
+except (ValueError, OSError):
+    pass
 os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 
 
