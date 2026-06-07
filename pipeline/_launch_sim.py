@@ -19,6 +19,15 @@ import json
 import os
 import sys
 
+# Disable HDF5 file locking before the sim module (and its openPMD/pywarpx
+# imports) load below — HDF5 latches this env var at library init. The parent
+# already exports it, but set it here too so a stage launched on its own honors
+# it from this child's start. Without it the post-run collimated-handoff report
+# hits "IO Task OPEN_FILE failed ... Inaccessible" reopening a diag file WarpX
+# just flushed; the file is intact, macOS HDF5's default locking just refuses it
+# in that window. See pipeline/run_pipeline.py for the full note.
+os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
+
 
 def _silence_finalize():
     """Redirect fd 1/2 to the pipeline log file (or /dev/null).
