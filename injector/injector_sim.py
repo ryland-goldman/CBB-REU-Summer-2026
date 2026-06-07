@@ -40,14 +40,17 @@ from pipeline._runner import run_step
 
 
 def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
-    """Call an openPMD read, retrying the transient HDF5 "Inaccessible" open error.
+    """Call an openPMD read, retrying a transient HDF5 "Inaccessible" open error.
 
-    The in-sim handoff report opens a diag Series while WarpX's own diagnostic
-    Series is still alive in this process (teardown is at process exit), and a
-    just-flushed file can be momentarily un-openable — openpmd_api then raises
-    `IO Task OPEN_FILE failed ... Inaccessible` on an intact file. The file frees
-    within a fraction of a second, so retry with exponential backoff clears it
-    deterministically; re-raise after the last try.
+    NOTE: the production "OPEN_FILE failed ... Inaccessible" failure was fd
+    exhaustion (openpmd-viewer leaks an fd per get_particle vs macOS's 256-fd
+    default), now fixed by raising RLIMIT_NOFILE — see _runner._raise_fd_limit.
+    This retry does NOT help that case (the fds stay spent). It is a backstop for
+    a genuinely transient open: the in-sim handoff report opens a diag Series
+    while WarpX's own diagnostic Series is still alive in this process (teardown
+    is at process exit) and may be briefly releasing a just-flushed file. Re-raise
+    after the last try so a genuinely missing file (or unfixed fd exhaustion)
+    still surfaces.
     """
     for i in range(tries):
         try:

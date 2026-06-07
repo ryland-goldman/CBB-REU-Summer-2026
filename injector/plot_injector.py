@@ -45,16 +45,16 @@ from openpmd_viewer import OpenPMDTimeSeries
 
 
 def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
-    """Call an openPMD read, retrying the transient HDF5 "Inaccessible" open error.
+    """Call an openPMD read, retrying a transient HDF5 "Inaccessible" open error.
 
-    A just-flushed WarpX diag file is intermittently un-openable for a moment
-    (the writer Series may still be releasing it, or HDF5 file-locking refuses a
-    concurrent/recent writer) — openpmd_api then raises
-    `IO Task OPEN_FILE failed ... Inaccessible` on a file that is intact and
-    readable a fraction of a second later. The disabled-locking env var has not
-    proven reliable across machines, so retry with exponential backoff clears it
-    deterministically. Re-raises after the last try so a genuinely missing file
-    still surfaces.
+    NOTE: the production "OPEN_FILE failed ... Inaccessible" failure on this
+    stage was fd exhaustion (openpmd-viewer leaks an fd per get_particle vs
+    macOS's 256-fd default), now fixed by raising RLIMIT_NOFILE — see
+    _runner._raise_fd_limit. This retry does NOT help that case (the fds stay
+    spent); it is a backstop only for a genuinely transient open, e.g. the
+    in-sim handoff report opening a Series while WarpX's own diagnostic Series is
+    still releasing a just-flushed file. Re-raises after the last try so a
+    genuinely missing file (or unfixed fd exhaustion) still surfaces.
     """
     for i in range(tries):
         try:

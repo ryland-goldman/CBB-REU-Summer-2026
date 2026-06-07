@@ -370,6 +370,14 @@ def render_scorecard(tables, linac_inj):
 
 def main():
     """Build the moment table once per stage, then render all cross-stage figures."""
+    # Raise the fd limit before the per-stage get_particle loops below. When run
+    # via run_pipeline the stages already raised it in-process, but this module
+    # is also a standalone entry point (`python -m pipeline.plot_chain`), and
+    # build_moment_table loops the full ~280-dump injector series — enough to
+    # exhaust macOS's default 256-fd limit (openpmd-viewer leaks an fd per
+    # get_particle). See _runner._raise_fd_limit.
+    from pipeline._runner import _raise_fd_limit
+    _raise_fd_limit()
     tables = {st["name"]: build_moment_table(st) for st in STAGES}
     present = [n for n, r in tables.items() if r]
     if not present:
