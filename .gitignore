@@ -29,7 +29,6 @@ diags/
 diags_*/
 output/
 outputs/
-results/
 checkpoint*/
 
 # WarpX / PICMI

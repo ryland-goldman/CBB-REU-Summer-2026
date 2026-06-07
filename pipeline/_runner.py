@@ -211,6 +211,13 @@ def _prepare_environment():
     memory bus and add barrier overhead. Keep single-threaded; see the OMP note
     in run_pipeline.py / CLAUDE.md.
     """
+    # Disable HDF5 file locking. The post-run collimated-handoff report (in the
+    # sim subprocess) and the plot step open openPMD .h5 files that WarpX may
+    # have only just flushed/closed; macOS HDF5's default locking then returns
+    # "IO Task OPEN_FILE failed ... Inaccessible" on a perfectly intact file.
+    # Reading openPMD diagnostics never needs the lock, so turn it off. Set on
+    # os.environ so the spawned sim subprocess (which copies it) inherits it too.
+    os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
     # An explicitly-set OMP_THREADS always wins, even if OMP_NUM_THREADS was
     # already exported (e.g. inherited from a conda profile or prior run);
     # otherwise fall back to the documented single-threaded default.
