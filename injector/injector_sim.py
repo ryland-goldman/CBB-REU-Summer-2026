@@ -139,23 +139,23 @@ I_SOL0 = 40.0
 I_LENS0E = 10.0
 
 # ── Collimator (the faithful injector→linac iris/pipe) ────────────────────────
-# LinacSim gpt_master.in: a scatteriris of radius 9.547 mm at z=1.922 m, followed by
-# a 9.547 mm beam pipe to 2.1 m. So past 1.922 m the aperture is the SLAC ~9.55 mm
-# bore — particles outside it are scraped. MECHANISM (the plan's accepted-minimal
-# option): this is applied as a RADIAL CUT, not an in-run particle scrape — this
-# pywarpx RZ build's particle-position SoA accessors raise "Component x does not exist",
-# so an afterstep weight-zeroing callback is not available here. Two pieces:
-#   1. _report_collimated_handoff() below prints the collimated handoff charge
-#      (r ≤ COLLIM_R at the ~2.03 m dump) for the sanity log — a DIAGNOSTIC only.
-#      The injector run itself is NOT collimated in-flight (its space charge over the
-#      0.1 m COLLIM_Z→handoff tail includes the soon-to-be-scraped halo — a small,
-#      late, β≈0.7 approximation).
-#   2. the PHYSICAL cut is the linac reader's r ≤ RMAX=9.547 mm at injection (BORE_R),
-#      which is equivalent to the continuous pipe because the envelope grows
-#      monotonically over the 0.1 m tail (a particle inside 9.547 mm at 2.03 m was
-#      inside the whole pipe; one outside hit the wall before 2.03 m).
-# Do NOT widen the linac RMAX to contain a re-expanded envelope — that accepts charge
-# the real iris scrapes and inflates capture.
+# LinacSim gpt_master.in: a scatteriris of radius 9.547 mm at z=1.922 m, followed by a
+# 9.547 mm beam pipe to 2.1 m. A particle outside 9.547 mm anywhere from 1.922 m on hits the
+# wall. Applied POST-HOC (this pywarpx RZ build's particle-position SoA accessors raise
+# "Component x does not exist", so an in-run afterstep scrape is not available) as a
+# MULTI-PLANE id scrape (pipeline.collimator), NOT a single radial cut at the 2.03 m handoff.
+# The single-2.03-m cut is WRONG: the Sol 0 / Lens 0E telescope focuses the beam HARD across
+# the 1.922→2.03 m tail (it CONVERGES — in-iris ~38% @1.92 m → ~93% @2.03 m), so a particle
+# outside the iris at 1.922 m (scraped by the real machine) can converge back inside it by
+# 2.03 m and be wrongly kept. Tracking ids across every plane in the pipe removes exactly the
+# particles the aperture scrapes. Two pieces:
+#   1. _report_collimated_handoff() below prints the multi-plane-collimated handoff charge for
+#      the sanity log — a DIAGNOSTIC only. The injector run itself is NOT collimated in-flight
+#      (its space charge over the COLLIM_Z→handoff tail includes the soon-to-be-scraped halo —
+#      a small, late, β≈0.7 approximation).
+#   2. the PHYSICAL cut is the linac reader's multi-plane scrape at injection (only the iris
+#      survivors are injected; pipeline.collimator). Do NOT replace it with a single r ≤ RMAX
+#      cut at 2.03 m — that keeps converged halo the real iris scrapes and inflates capture.
 COLLIM_R = 0.009547              # [m] iris/pipe radius (SLAC bore; gpt scatteriris)
 COLLIM_Z = 1.922                # [m] iris start; the 9.547 mm pipe runs COLLIM_Z → ZMAX
 COLLIMATE = True                # report the collimated handoff charge (set False to skip)
@@ -174,7 +174,7 @@ PHASE = "crest"                  # faithful default: crest base + GUI phi_off
 REQUIRED_PRECISION = 1e-4        # MLMG relative tolerance (relaxed for the long-thin box)
 MAX_ITERS = 500                  # MLMG iteration cap
 MAX_STEPS = 0                    # 0 → auto-derive from transit; >0 → fixed
-TRANSIT_MARGIN = 0.97            # stop just before the bunch centre reaches the exit
+TRANSIT_MARGIN = 0.98            # stop just before the bunch centre reaches the exit (lands a dump ~2.03 m)
 N_DIAGS = 60                     # number of openPMD dumps over the run
 
 # ── Domain (RZ, single azimuthal mode — the cavity field is m = 0) ─────────────
@@ -283,33 +283,37 @@ def make_cavity(field_path, power, q_l, z_gap, v_at_gap, phi_off_deg, phase,
 def _report_collimated_handoff(outdir):
     """Report the COLLIMATED handoff charge at the ~Z_HANDOFF plane for the sanity log.
 
-    Reads the snapshot nearest ⟨z⟩ = Z_HANDOFF and applies the 9.547 mm iris/pipe cut
-    (r ≤ COLLIM_R), printing the charge that survives the aperture vs the in-domain
-    charge — the real transmission through the injector→linac iris. This is a diagnostic
-    print only; the physical cut at injection is applied by the linac reader (BORE_R).
+    Applies the SAME multi-plane iris scrape the linac reader uses (pipeline.collimator): a
+    particle outside COLLIM_R at any plane z ≥ COLLIM_Z hit the pipe wall. Prints the charge
+    that survives the aperture vs the full in-domain charge at the handoff — the real
+    transmission through the injector→linac iris. Diagnostic print only; the physical cut at
+    injection is applied by the linac reader.
     """
     try:
         from openpmd_viewer import OpenPMDTimeSeries
+        from pipeline.collimator import pipe_violator_ids, survivor_mask
         ts = OpenPMDTimeSeries(os.path.join(outdir, "particles"))
-        best, bd = None, 9e9
+        recs = []
         for it in ts.iterations:
-            x, y, z, w = _retry_io(ts.get_particle, ["x", "y", "z", "w"],
-                                   species="electrons", iteration=it)
+            z, w = _retry_io(ts.get_particle, ["z", "w"], species="electrons", iteration=it)
             if len(z) < 50:
                 continue
-            zm = float(np.average(z, weights=w))
-            if abs(zm - Z_HANDOFF) < bd:
-                bd, best = abs(zm - Z_HANDOFF), (zm, x, y, z, w)
-        if best is None:
+            recs.append((it, float(np.average(z, weights=w))))
+        if not recs:
             print("  collimated handoff: no populated snapshot near the plane", flush=True)
             return
-        zm, x, y, z, w = best
-        r = np.hypot(x, y)
+        it_h, zm_h = min(recs, key=lambda t: abs(t[1] - Z_HANDOFF))
+        idh, x, y, z, w = _retry_io(ts.get_particle, ["id", "x", "y", "z", "w"],
+                                    species="electrons", iteration=it_h)
         q_dom = float(w.sum()) * q_e
-        q_coll = float(w[r <= COLLIM_R].sum()) * q_e
-        print(f"  COLLIMATED handoff (⟨z⟩={zm*1e3:.1f} mm, iris {COLLIM_R*1e3:.3f} mm): "
-              f"{q_coll*1e9:.3f} nC within the iris / {q_dom*1e9:.3f} nC in-domain "
-              f"= {100*q_coll/q_dom:.0f}% through the aperture", flush=True)
+        scan_iters = [it for it, zm in recs if (COLLIM_Z - 0.05) <= zm <= (Z_HANDOFF + 0.03)]
+        violators = pipe_violator_ids(ts, scan_iters, COLLIM_R, COLLIM_Z)
+        keep = survivor_mask(idh, violators)
+        q_coll = float(w[keep].sum()) * q_e
+        print(f"  COLLIMATED handoff (⟨z⟩={zm_h*1e3:.1f} mm, iris {COLLIM_R*1e3:.3f} mm, "
+              f"multi-plane {len(scan_iters)} planes): {q_coll*1e9:.3f} nC survives the pipe / "
+              f"{q_dom*1e9:.3f} nC in-domain = {100*q_coll/q_dom:.0f}% through the aperture",
+              flush=True)
     except Exception as e:
         print(f"  collimated-handoff report unavailable: {e}", flush=True)
 
@@ -428,27 +432,38 @@ def main():
     dt = CFL * dz / v_beam
     # Stop just before the bunch centre reaches the exit (margin < 1): once the beam
     # clears the absorbing boundary the domain empties and the Multigrid solve aborts.
-    # Size the transit from the ACTUAL net energy kick at the gap, not the PHASE label:
-    # the faithful operating point is PHASE="crest" base + phi_off=-70 (a partial kick),
-    # NOT full on-crest acceleration, so keying off PHASE=="crest" would assume the full
-    # scale·V1J gain and stop far too early. The on-axis energy kick of an electron is
-    # ΔW ∝ -cos(ω t_gap + φ); at the gap ω t_gap + φ = base + phi_off (the -ω t_gap
-    # cancels), so the net kick fraction is -cos(base + radians(phi_off)). The kick can
-    # decelerate (negative), which SLOWS the beam, so the transit must be the LONGER of
-    # the kicked and unkicked estimates to guarantee the run still spans the box.
+    # Size the transit from the ACTUAL net energy kicks at the gaps, not the PHASE label:
+    # the faithful operating point is PHASE="crest" base + phi_off (a partial kick), NOT full
+    # on-crest acceleration. The on-axis energy kick of an electron is ΔW ∝ -cos(ω t_gap + φ);
+    # at the gap ω t_gap + φ = base + phi_off (the -ω t_gap cancels), so the net kick fraction
+    # is -cos(base + radians(phi_off)). Use a 3-leg estimate with the real per-leg speed after
+    # EACH cavity: inject→Z1 at v_beam, Z1→Z2 at v_after1, Z2→ZMAX at v_after2. Including
+    # Preb-2's kick (the larger, ~+54 keV — it SPEEDS the beam over the final leg) is the
+    # physics-review fix: the old estimate omitted it and used a v_beam "coast" term that, for
+    # an accelerating beam, OVER-estimated the transit and ran ~74 mm PAST the 2.10 m absorbing
+    # wall → latent MLMG abort. The per-leg estimate adapts to either sign of the kick (a
+    # decelerating scan phase gives a slower v_after ⇒ a longer, still-spanning transit), so the
+    # harmful coast term is dropped. The 0.98 margin then stops the centre ~60 mm short of the
+    # wall while still placing a dump on the 2.03 m handoff plane (the analytic estimate runs a
+    # ~15 mm ahead of the space-charge-loaded ensemble, so target ZMAX and trim with the margin).
     base1 = np.pi / 2.0 if PHASE == "zc" else np.pi
+    MC2_KEV = m_e * c**2 / q_e / 1e3
     kick_frac1 = -np.cos(base1 + np.radians(PREB1_PHI_OFF))
-    ke_after = ke_mean + kick_frac1 * scale1 * V1J_KEV
-    ke_after = max(ke_after, 1.0)                       # guard: keep γ real if over-decel
-    gamma_a = 1.0 + ke_after / (m_e * c**2 / q_e / 1e3)
-    v_after = c * np.sqrt(1.0 - 1.0 / gamma_a**2)
-    transit_kicked = ((Z_GAP_CENTER_1 - Z_INJECT) / v_beam
-                      + (ZMAX - Z_GAP_CENTER_1) / v_after)
-    transit_coast = (ZMAX - Z_INJECT) / v_beam
-    transit = max(transit_kicked, transit_coast)       # never stop short of the box
+    ke_after1 = max(ke_mean + (kick_frac1 * scale1 * V1J_KEV if PREB1_KW > 0 else 0.0), 1.0)
+    v_after1 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after1 / MC2_KEV) ** 2)
+    if PREB2_KW > 0:
+        kick_frac2 = -np.cos(base1 + np.radians(PREB2_PHI_OFF) + PREB2_REV_PHASE)
+        ke_after2 = max(ke_after1 + kick_frac2 * scale2 * V1J_KEV, 1.0)
+        v_after2 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after2 / MC2_KEV) ** 2)
+    else:
+        ke_after2, v_after2 = ke_after1, v_after1
+    v_after = v_after1                                  # used by period_handoff cadence below
+    transit = ((Z_GAP_CENTER_1 - Z_INJECT) / v_beam
+               + (Z_GAP_CENTER_2 - Z_GAP_CENTER_1) / v_after1
+               + (ZMAX - Z_GAP_CENTER_2) / v_after2)
     n_steps = MAX_STEPS or int(TRANSIT_MARGIN * transit / dt)
-    print(f"  Preb-1 net kick ≈ {kick_frac1*scale1*V1J_KEV:+.1f} keV "
-          f"(frac {kick_frac1:+.2f}); ⟨KE⟩ after ≈ {ke_after:.1f} keV", flush=True)
+    print(f"  Preb-1 net kick ≈ {kick_frac1*scale1*V1J_KEV:+.1f} keV (frac {kick_frac1:+.2f}); "
+          f"⟨KE⟩ after Preb-1 ≈ {ke_after1:.1f} keV, after Preb-2 ≈ {ke_after2:.1f} keV", flush=True)
     print(f"dt = {dt:.3e} s, max_steps = {n_steps}, "
           f"RF period = {1/F_RF*1e9:.2f} ns ({1/F_RF/dt:.0f} steps/period)",
           flush=True)
@@ -494,21 +509,18 @@ def main():
     print("\nDone.")
 
     # ── Collimator (9.547 mm iris at COLLIM_Z + pipe to ZMAX) ─────────────────
-    # The faithful injector→linac aperture (gpt scatteriris 9.547 mm at 1.922 m + a
-    # 9.547 mm pipe to 2.1 m). It is applied as a RADIAL CUT on the openPMD diagnostic
-    # snapshots (r > COLLIM_R for z ≥ COLLIM_Z → scraped), NOT as an in-run particle
-    # scrape: this pywarpx RZ build's particle-position SoA accessors raise "Component x
-    # does not exist" (the radial position is the AMReX particle position, not a named
-    # real comp), so an afterstep weight-zeroing callback is not reliably available here.
-    # Because the pipe HOLDS 9.547 mm continuously from COLLIM_Z to ZMAX and the envelope
-    # grows monotonically over that 0.1 m tail, the radial cut at the 2.03 m handoff
-    # plane is EQUIVALENT to the continuous pipe (any particle outside 9.547 mm at 2.03 m
-    # hit the pipe wall before reaching it; any inside was inside all along). The only
-    # approximation is the self-field of the scraped halo over the ~0.1 m COLLIM_Z→handoff
-    # tail (a small, late-stage, near-relativistic correction). The linac reader applies
-    # the same 9.547 mm cut at injection (BORE_R), so the handoff beam IS collimated; do
-    # NOT widen the linac RMAX to contain an uncollimated 36 mm envelope. The collimated
-    # handoff charge is reported by collimated_handoff_charge() below for the sanity log.
+    # The faithful injector→linac aperture (gpt scatteriris 9.547 mm at 1.922 m + a 9.547 mm
+    # pipe to 2.1 m), applied POST-HOC as a MULTI-PLANE id scrape on the openPMD snapshots: a
+    # particle outside COLLIM_R at ANY plane z ≥ COLLIM_Z hit the wall (pipeline.collimator).
+    # It is NOT an in-run scrape — this pywarpx RZ build's particle-position SoA accessors
+    # raise "Component x does not exist". And it is NOT a single radial cut at the 2.03 m
+    # handoff: the Sol 0 / Lens 0E telescope CONVERGES the beam across the COLLIM_Z→handoff
+    # tail (in-iris ~38% @1.92 m → ~93% @2.03 m), so a 2.03 m cut would keep halo that the real
+    # 1.922 m iris scrapes (overstating transmission ~3×). The only approximation left is the
+    # self-field of the to-be-scraped halo over the COLLIM_Z→handoff tail (small, late, β≈0.7)
+    # and the finite dump spacing between planes. The linac reader applies the SAME multi-plane
+    # scrape at injection, so only the iris survivors enter the structure; do NOT widen the
+    # linac RMAX. The surviving handoff charge is reported below for the sanity log.
     if COLLIMATE:
         _report_collimated_handoff(outdir)
 
