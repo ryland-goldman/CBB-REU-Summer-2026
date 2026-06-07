@@ -192,8 +192,8 @@ writing five figures to `results/`:
   normalised to the **injected** charge and shows the iris-collimation drop at the first dump
   (r > RMAX = 9.547 mm scrape) followed by the RF-capture loss.
 - `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured fraction **of the
-  true injected charge** (order ~1 % at the faithful 11 MW point), annotated with how much charge
-  passed the 9.547 mm iris.
+  true injected charge** (~18 % at the faithful 11 MW point), annotated with how much charge
+  passed the 9.547 mm iris (~91 %).
 
 ## Notes / caveats
 
