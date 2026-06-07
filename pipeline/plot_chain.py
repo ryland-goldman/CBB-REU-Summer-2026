@@ -54,10 +54,15 @@ MC2_KEV = 0.51099895e3           # electron rest energy [keV]
 Q_E = 1.602176634e-19           # elementary charge [C]
 RESULTS = "results"             # repo-root results/ (git-ignored; git add -f)
 
-# Each stage's openPMD particle series, in chain order. z0 is an escape-hatch lab-z
-# shift (0 everywhere: the openPMD z is already lab-frame and the segments abut
-# naturally — cathode ~0, gun ~0, injector 0.06–2.1, linac entrance ~2.03→3.5 m). The
-# cathode is 2D x–z (no y/uy); the rest are RZ.
+# Each stage's openPMD particle series, in chain order. z0 is a lab-z shift applied to
+# each dump's ⟨z⟩. The cathode/gun/injector diagnostics are already lab-frame and abut
+# naturally (cathode ~0, gun ~0, injector 0.06–2.1 m), so z0=0. The LINAC is the
+# exception: its sim resets the imported beam to a linac-LOCAL frame
+# (linac_sec1_sim.py: `z = z - z.min() + Z_INJECT`), so its openPMD z runs ~0→3.3 m in
+# that local frame, NOT lab-frame. Its z0 is filled in at runtime from the injection
+# summary (z_handoff_m − z_inject_mean_m ≈ 1.91 m) so the linac segment lands at the true
+# 2.03 m handoff plane instead of overlapping the injector — see _apply_linac_z0().
+# The cathode is 2D x–z (no y/uy); the rest are RZ.
 STAGES = [
     {"name": "cathode",  "path": "cathode/diags/particles",         "z0": 0.0, "geom": "2d", "color": "C0"},
     {"name": "gun",      "path": "gun/diags/particles",             "z0": 0.0, "geom": "rz", "color": "C1"},
@@ -66,6 +71,24 @@ STAGES = [
 ]
 LINAC_INJ_SUMMARY = "linac_sec1/diags/main/injection_summary.json"
 Z_HANDOFF = 2.03                # [m] linac entrance (Z_acc_1); the injector→linac handoff plane
+
+
+def _apply_linac_z0(linac_inj):
+    """Set the linac stage's lab-z offset from the injection summary.
+
+    The linac sim imports the injector beam at the 2.03 m handoff and resets it to a
+    linac-LOCAL frame (`z = z - z.min() + Z_INJECT`), so its openPMD z is NOT lab-frame.
+    The offset that maps local z back to lab z is the difference between the lab ⟨z⟩ of the
+    handoff dump and the local ⟨z⟩ the beam was placed at: z_handoff_m − z_inject_mean_m
+    (≈ 2.03 − 0.12 = 1.91 m). Both are recorded in injection_summary.json. Falls back to
+    Z_HANDOFF if the summary lacks the fields (older runs), so the segment still lands near
+    the handoff plane rather than overlapping the injector.
+    """
+    linac = next(st for st in STAGES if st["name"] == "linac")
+    if linac_inj and "z_handoff_m" in linac_inj and "z_inject_mean_m" in linac_inj:
+        linac["z0"] = linac_inj["z_handoff_m"] - linac_inj["z_inject_mean_m"]
+    else:
+        linac["z0"] = Z_HANDOFF
 
 
 def _exit_row(name, rows):
@@ -378,16 +401,17 @@ def main():
     # get_particle). See _runner._raise_fd_limit.
     from pipeline._runner import _raise_fd_limit
     _raise_fd_limit()
+    linac_inj = None
+    if os.path.isfile(LINAC_INJ_SUMMARY):
+        with open(LINAC_INJ_SUMMARY) as fh:
+            linac_inj = json.load(fh)
+    _apply_linac_z0(linac_inj)   # linac diagnostics are linac-local; shift to lab frame
     tables = {st["name"]: build_moment_table(st) for st in STAGES}
     present = [n for n, r in tables.items() if r]
     if not present:
         print("plot_chain: no stage particle series found — run the pipeline first.")
         return
     print(f"plot_chain: building cross-stage figures from stages {present}")
-    linac_inj = None
-    if os.path.isfile(LINAC_INJ_SUMMARY):
-        with open(LINAC_INJ_SUMMARY) as fh:
-            linac_inj = json.load(fh)
     render_chain_evolution(tables)
     render_emittance_budget(tables)
     render_transmission_waterfall(tables, linac_inj)
