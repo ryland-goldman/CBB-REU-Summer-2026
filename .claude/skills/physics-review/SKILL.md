@@ -59,11 +59,11 @@ Then synthesize a single **deduplicated, severity-ranked issue list** from the f
 
 ## Phase 2 — Confirm / fix / review workflow
 
-Launch a **dynamic `Workflow`** over the surviving issue list (this skill is your opt-in to call `Workflow`). Recommended shape — adapt to the issue count:
+Launch a three-stage **dynamic `Workflow`** over the surviving issue list (this skill is your opt-in to call `Workflow`). Recommended shape — adapt to the issue count:
 
-- **Confirm** (parallel, read-only): one skeptic agent per issue re-verifies it against the current tree; drop any it cannot reproduce. `log()` anything dropped.
-- **Fix** (per confirmed issue): implement the change. If fixes touch **disjoint** files, run them in parallel with `isolation: 'worktree'`; if any two fixes share a file, serialize those. Behavior-changing physics fixes must note what re-validation is needed (energy gain, Child–Langmuir current, bunching).
-- **Review** (per fix): an independent reviewer checks correctness, that it didn't break the inter-stage contract or the ≈3:1 aspect/MLMG constraints, and that no docs drifted. Reject → loop back to Fix once.
+- **Confirm**: one skeptic agent per issue re-verifies it against the current tree; drop any it cannot reproduce. `log()` anything dropped.
+- **Fix**: implement the change. If fixes touch **disjoint** files, run them in parallel with `isolation: 'worktree'`; if any two fixes share a file, serialize those. Behavior-changing physics fixes must note what re-validation is needed (energy gain, Child–Langmuir current, bunching).
+- **Review**: an independent reviewer checks correctness, that it didn't break the inter-stage contract or the ≈3:1 aspect/MLMG constraints, and that no docs drifted. Reject → loop back to Fix once.
 
 Use `pipeline()` so each issue flows confirm→fix→review independently. Apply verified fixes to the working tree (consolidate from worktrees if used). Keep `pipeline/`, READMEs, `CLAUDE.md`, `FIGURES.md`, and `requirements.txt` in sync per the repo's doc-sync rule — a fix isn't done until its docs match.
 
