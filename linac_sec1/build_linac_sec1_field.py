@@ -1,8 +1,8 @@
 """
-Convert the SLAC 3 m linac (Section 1) + solenoid GPT field maps into openPMD
-files that WarpX loads as externally applied fields.
+Convert the SLAC 3 m linac (Section 1) GPT field maps into openPMD files that WarpX
+loads as externally applied fields.
 
-Three openPMD files are written (all thetaMode, single azimuthal mode m = 0):
+Two openPMD files are written (both thetaMode, single azimuthal mode m = 0):
 
   * ``linac_rf1.h5`` / ``linac_rf2.h5`` — the **two quadrature (Re/Im) components
     of one 86-cell, 2π/3 traveling-wave SLAC accelerating structure**, driven at
@@ -18,21 +18,20 @@ Three openPMD files are written (all thetaMode, single azimuthal mode m = 0):
     runtime ``scale = sqrt(P_MW/0.001)`` and the cos/sin(ωt+φ) modulation are
     applied in ``linac_sec1_sim.py`` via two ``picmi.LoadAppliedField`` objects.
 
-  * ``linac_sol.h5`` — a **static** solenoid/lens focusing map (``Br, Bz``),
-    per-Ampere normalised. Applied with a constant time function = the chosen
-    current ``I_SOL`` (and no E field). Selectable via ``SOL_MAP`` (SOL_0 or
-    LENS_0A…0E). This is the transverse focusing that lets the diverging ~137 keV
-    prebuncher beam be captured into the 9.5 mm structure bore.
+**The in-linac solenoid map (``linac_sol.h5``) was removed in the injector upgrade.**
+Transverse focusing is now applied in the ``injector`` stage by the three real lenses
+(Lens 0A / Sol 0 / Lens 0E) at their true lab z, and the injector hands the linac a
+beam already focused and collimated to the 9.547 mm iris. The linac owns only the two
+SLAC RF maps; it no longer carries ``SOL_FILE``/``SOL_MAP``/``SOL_Z``/``I_SOL``.
 
 Layout WarpX's ``read_from_file`` reader expects (per mesh):
   geometry "thetaMode" (m=0); records "E"(r,t,z) and/or "B"(r,t,z);
   axisLabels ["r","z"]; dataset shape (1, nr, nz).
 
-The RF maps only reach r ≈ 9.55 mm (the structure bore); they are **zero-padded
-in r out to the sim domain RMAX** so every applied field covers the domain (WarpX
-then sees an explicit zero field in the bore shadow rather than relying on its
-out-of-range behaviour). The solenoid map already reaches 40 mm. Each map is
-placed in the lab frame via ``grid_global_offset`` (Z_STRUCT, SOL_Z).
+The RF maps only reach r ≈ 9.55 mm (the structure bore); they are **zero-padded in r
+out to the sim domain RMAX (now 9.547 mm = the bore/iris)** so every applied field
+covers the domain. Each map is placed in the lab frame via ``grid_global_offset``
+(Z_STRUCT).
 
 Run with:
     conda run -n CBB python -c "import linac_sec1; linac_sec1.run(plots=False)"
@@ -49,11 +48,9 @@ RF2_GDF = "fieldmaps/SLAC-3mLinac-field2.gdf"
 OUT_DIR = "linac_sec1/linac_sec1_field"
 RF1_FILE = os.path.join(OUT_DIR, "linac_rf1.h5")
 RF2_FILE = os.path.join(OUT_DIR, "linac_rf2.h5")
-SOL_FILE = os.path.join(OUT_DIR, "linac_sol.h5")
-
-# Which solenoid/lens map to convert (SOL_0 or LENS_0A…0E). The .gdf path is
-# rebuilt in main() so a config(SOL_MAP=...) override lands.
-SOL_MAP = "SOL_0"
+# NOTE: the in-linac solenoid map (linac_sol.h5) was removed in the injector upgrade.
+# Transverse focusing now lives in the injector stage (Lens 0A / Sol 0 / Lens 0E at
+# their true lab z ≈ 0.23/1.90/1.91 m); the linac no longer owns a solenoid field.
 
 # RF operating point used only for the build-time gradient/gain report (the maps
 # themselves are power-independent, 1-kW-normalised). Mirrors linac_sec1_sim.py so
@@ -73,18 +70,17 @@ V1KW_KEV = 331.2             # [keV] = on-axis ∫|Ez|dz of the 1-kW maps
 # map's own z runs −3.3…3012 mm; placing index 0 at Z_STRUCT puts the structure
 # entrance there. Z_STRUCT also anchors the RF phase reference in the sim.
 Z_STRUCT = 0.10              # [m] structure entrance (after a short injection drift)
-# Solenoid map index-0 z. SOL_0 peaks 813 mm into its own grid; a negative offset
-# slides that peak to ≈ lab z 0.21 m so the strongest focusing sits in the
-# low-energy capture region just inside the structure entrance (the beam is most
-# rigid-limited at ~137 keV there). The strongly-focusing peak sits inside the
-# domain (lab z ≈ 0.21 m); the rising edge below lab z = 0 is clipped — note the
-# clip plane is already at ~98% of peak |Bz|, so it is the map's far grid edge
-# (native z = 0), not this clip plane, where Bz → 0.
-SOL_Z = -0.60                # [m]
-RMAX = 0.012                 # [m] sim radial domain; RF maps are zero-padded in r to here
+# RMAX is now the SLAC bore / injector→linac collimator radius (9.547 mm). The injector
+# delivers a beam already collimated to this iris (gpt scatteriris 9.547 mm at z=1.922 m
+# + pipe), and the structure bore is ~9.55 mm, so the radial domain IS the aperture — a
+# particle outside it is scraped at injection, exactly as the real machine does. (Was
+# 12 mm, sized for the old blown-up, unfocused beam; the focused+collimated injector beam
+# makes the faithful 9.547 mm correct. Do NOT widen it to contain a re-expanded envelope —
+# that would accept charge the real iris scrapes and inflate the capture number.)
+RMAX = 0.009547              # [m] sim radial domain = SLAC bore / collimator iris
 BORE_R = 0.00955             # [m] structure bore radius (native r-extent of the SLAC maps);
-                             # particles beyond this feel zero RF field, beyond RMAX are lost.
-                             # Single source of truth — imported by the sim and the plotter.
+                             # particles beyond this feel zero RF field. ≈ RMAX (the iris),
+                             # so the bore and the aperture coincide. Single source of truth.
 
 # Electron-volt-free SI unit dimensions for the openPMD meshes.
 E_UNIT = {io.Unit_Dimension.M: 1.0, io.Unit_Dimension.L: 1.0,
@@ -190,23 +186,10 @@ def main():
     print(f"  → at P={POWER_MW:g} MW (scale={sc:.1f}): peak gradient "
           f"{env.max()*sc/1e6:.2f} MV/m, on-crest gain ≈ {sc*v1kW/1e6:.1f} MeV")
 
-    # ── Solenoid: static focusing map (Br, Bz), per-Ampere ────────────────────
-    sol_gdf = f"fieldmaps/{SOL_MAP}.gdf"
-    Rs, Zs, Br, Bz = load_cols(sol_gdf, ["R", "Z", "Br", "Bz"])
-    rs, zs, Br, Bz = to_grid(Rs, Zs, Br, Bz)
-    dr_s, dz_s = float(rs[1] - rs[0]), float(zs[1] - zs[0])
-    zero_s = np.zeros_like(Br)
-    write_series(SOL_FILE, SOL_Z, dr_s, dz_s, [
-        ("B", (("r", Br), ("t", zero_s), ("z", Bz)), B_UNIT),
-    ])
-    bz_axis = Bz[0]
-    ipk = int(np.argmax(np.abs(bz_axis)))
-    print(f"Solenoid map '{SOL_MAP}': nr={rs.size} (0–{rs[-1]*1e3:.0f} mm), "
-          f"nz={zs.size} (0–{zs[-1]*1e3:.0f} mm native), index-0 at lab z={SOL_Z*1e3:.0f} mm")
-    print(f"  peak on-axis |Bz| {np.abs(bz_axis[ipk])*1e3:.4f} mT/A at native "
-          f"z={zs[ipk]*1e3:.0f} mm; edge |Bz| {abs(bz_axis[0])*1e3:.4f}/"
-          f"{abs(bz_axis[-1])*1e3:.4f} mT/A")
-    print(f"\nWrote openPMD linac fields → {RF1_FILE}, {RF2_FILE}, {SOL_FILE}")
+    # (The in-linac solenoid map was removed in the injector upgrade — transverse
+    # focusing now lives in the injector stage at the lenses' true lab z. The linac
+    # owns only the two SLAC quadrature RF maps.)
+    print(f"\nWrote openPMD linac fields → {RF1_FILE}, {RF2_FILE}")
 
 
 if __name__ == "__main__":

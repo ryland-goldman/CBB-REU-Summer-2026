@@ -217,7 +217,7 @@ def main():
     # different grid/step count would otherwise mix old and new iterations (whose
     # diag steps interleave) into one series — the plots then show a fan of
     # overlapping curves. diags are git-ignored and regenerated, so clearing is
-    # safe. (Mirrors prebuncher_sim.py / linac_sec1_sim.py.)
+    # safe. (Mirrors injector_sim.py / linac_sec1_sim.py.)
     if os.path.isdir(DIAG_DIR):
         shutil.rmtree(DIAG_DIR)
 

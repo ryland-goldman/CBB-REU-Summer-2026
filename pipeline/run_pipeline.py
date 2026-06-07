@@ -2,11 +2,11 @@
 
 Orchestrates the four stages in order from one driver process:
 
-    cathode -> gun -> prebuncher -> linac_sec1
+    cathode -> gun -> injector -> linac_sec1
 
 Each stage's build/plot run in-process, but its WarpX simulation runs in a fresh
 Python subprocess (`pipeline._launch_sim`) to sidestep pywarpx's per-process
-geometry binding (cathode 2D -> gun/prebuncher/linac_sec1 RZ would otherwise trip a
+geometry binding (cathode 2D -> gun/injector/linac_sec1 RZ would otherwise trip a
 diagnostic state assertion). Each stage exposes `config(**kwargs)` (override module-level
 constants) and `run()` (build field map if any, simulate, plot). Stage execution is
 wrapped by the shared runner in `pipeline/_runner.py`, which drives the tqdm bar from
@@ -43,40 +43,42 @@ if _ROOT not in sys.path:
 
 import cathode
 import gun
-import prebuncher
+import injector
 import linac_sec1
 
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 
 # ── Operating-point overrides (physics; defaults live in the stage modules) ──
 # Matched to the original LinacSim input files (reference/Linac Simulation
-# Documentation/input_files/): cathode_master.in + gpt_master.in (gun, prebuncher,
+# Documentation/input_files/): cathode_master.in + gpt_master.in (gun, injector,
 # section-1) GUI defaults.
 cathode.config(V_anode=60.0)                          # Vpulse = 60 V
 gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)    # total_charge = -1e-9 (1 nC)
-prebuncher.config(POWER_KW=8, PHASE="zc")             # prebuncher1_input_power = 8 kW
-linac_sec1.config(POWER_MW=11.0, I_SOL=40.0)          # sec1_input_power = 11 MW; Sol 0 = 40 A
+injector.config(PREB1_KW=8, PREB2_KW=10, PHASE="crest")  # preb1=8 kW, preb2=10 kW; crest base + GUI phi_off
+# Sol 0 (40 A) and Lens 0A/0E live on the injector now (I_SOL0/I_LENS0A/I_LENS0E, faithful
+# defaults in injector_sim) — the linac no longer has a solenoid, only RF power + phase.
+linac_sec1.config(POWER_MW=11.0)                      # sec1_input_power = 11 MW (PHASE_DEG=0 default)
 
 # ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
-#    reason NZ must stay at 1024: see pipeline/README.md § Configuration. ──
+#    reason the injector NZ must stay at 1664: see pipeline/README.md § Configuration. ──
 # Balanced profile: ACTIVE (~1.7×, ~5 min). Comment these 3 lines for the baseline.
 cathode.config(PPC=6, REQUIRED_PRECISION=3e-5)
 gun.config(nz=256, MAX_PART=50000, REQUIRED_PRECISION=1e-4)
-prebuncher.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
+injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
 # Conservative (~1.3×, near-identical):
 # gun.config(MAX_PART=80000, REQUIRED_PRECISION=1e-4)
-# prebuncher.config(REQUIRED_PRECISION=2e-4, MAX_ITERS=400)
+# injector.config(REQUIRED_PRECISION=2e-4, MAX_ITERS=400)
 # Aggressive (~2.2×, looser space-charge solve):
 # cathode.config(nz=48, PPC=4, REQUIRED_PRECISION=5e-5, MAX_STEPS=1200)
 # gun.config(nz=192, MAX_PART=40000, REQUIRED_PRECISION=3e-4, N_DIAGS=20)
-# prebuncher.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
+# injector.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
 # linac_sec1.config(NZ=1024, CFL=0.6)   # coarser/faster linac run (default NZ=1664, ~40 s)
 
 
 def _beam_summary(diag, label, unit="keV"):
     """Report the final bunch from the last snapshot of `diag` (console + log).
 
-    `unit` selects the kinetic-energy scale ("keV" for the prebuncher exit, "MeV"
+    `unit` selects the kinetic-energy scale ("keV" for the injector exit, "MeV"
     for the linac exit). Also reports the captured-charge fraction (last/first
     snapshot) when both are available.
     """
@@ -88,7 +90,7 @@ def _beam_summary(diag, label, unit="keV"):
         # Capture denominator: prefer the TRUE injected charge the sim records in
         # injection_summary.json (the linac drops r>RMAX particles before the first dump, so
         # the first-dump charge already hides the injection loss). Fall back to the first dump
-        # for stages without a sidecar (e.g. the prebuncher exit).
+        # for stages without a sidecar (e.g. the injector exit).
         q0 = None
         summ_path = os.path.join(diag, "injection_summary.json")
         if os.path.isfile(summ_path):
@@ -130,22 +132,32 @@ def main():
     import time
     t0 = time.time()
     _cl("=" * 72)
-    _cl(" Cornell Linac WarpX pipeline:  cathode -> gun -> prebuncher -> linac_sec1")
+    _cl(" Cornell Linac WarpX pipeline:  cathode -> gun -> injector -> linac_sec1")
     _cl(f" OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS', '?')}")
     _cl("=" * 72)
     print(f" log: {log_path}")
 
     cathode.run()
     gun.run()
-    prebuncher.run()
-    linac_sec1.run()            # SLAC Section 1: ~15 MeV captured at 11 MW/40 A (~37 MeV at I_SOL≈1000)
+    injector.run()
+    linac_sec1.run()            # SLAC Section 1: ~26 MeV captured at 11 MW (~18% of true injected; γ² lower bound)
 
-    _beam_summary(prebuncher.resolve_outdir(), "prebuncher exit", "keV")
+    _beam_summary(injector.resolve_outdir(), "injector exit", "keV")
     _beam_summary(linac_sec1.resolve_outdir(), "linac_sec1 exit", "MeV")
+
+    # Cross-stage figures (in-process, no pywarpx): one moment table per stage →
+    # chain_evolution / emittance_budget / transmission_waterfall / scorecard in results/.
+    try:
+        import pipeline.plot_chain as plot_chain   # submodule, not the pipeline.plot_chain() fn
+        plot_chain.main()
+    except Exception as e:
+        import logging
+        _cl(f"    (cross-stage figures unavailable: {e})", level=logging.WARNING)
 
     _cl("\n" + "=" * 72)
     _cl(f" Pipeline complete in {(time.time()-t0)/60:.1f} min.")
-    _cl(" Figures: cathode/results/, gun/results/, prebuncher/results/, linac_sec1/results/")
+    _cl(" Figures: cathode/results/, gun/results/, injector/results/, linac_sec1/results/, "
+        "results/ (cross-stage)")
     _cl("=" * 72)
     print(f" log: {log_path}")
 

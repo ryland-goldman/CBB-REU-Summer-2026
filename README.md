@@ -6,14 +6,14 @@ Bright Beams (CBB) / Cornell Laboratory for Accelerator ScienceS and Education (
 
 The project rebuilds the front end of the **Cornell Linac** — Adam Bartnik's
 [LinacSim](https://cesrwww.lepp.cornell.edu/wiki/CESR/LinacSim) thermionic
-source → gun → prebuncher → linac chain — from first principles in [WarpX](https://warpx.readthedocs.io),
+source → gun → injector → linac chain — from first principles in [WarpX](https://warpx.readthedocs.io),
 the massively-parallel particle-in-cell code, using its Python/PICMI interface (`pywarpx`). Each
 stage reads the previous stage's openPMD beam as input, so the simulations form a single
 self-consistent accelerator chain.
 
 ```
-cathode  ─►  gun  ─►  prebuncher  ─►  linac_sec1
-(SCL diode)  (~146 keV)  (RF bunching)  (~15 MeV captured)
+cathode  ─►  gun  ─►  injector  ─►  linac_sec1
+(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~26 MeV captured)
 ```
 
 ## Setup
@@ -41,10 +41,11 @@ python pipeline/run_pipeline.py
 ```
 
 Each stage is also a top-level Python package — `import cathode; cathode.run()` (likewise
-`gun.run()`, `prebuncher.run()`, `linac_sec1.run()`) runs that stage alone. Use
+`gun.run()`, `injector.run()`, `linac_sec1.run()`) runs that stage alone. Use
 `cathode.config(V_anode=60)` etc. to override the module-level parameters before calling `.run()`
-(e.g. `linac_sec1.config(I_SOL=0)` for the unfocused linac case). See
-[`pipeline/README.md`](pipeline/README.md) for details.
+(e.g. `injector.config(I_SOL0=0)` to disable Sol 0). See
+[`pipeline/README.md`](pipeline/README.md) for details. After the four stages,
+`pipeline.plot_chain()` writes cross-stage figures to the repo-root `results/`.
 
 ## Components
 
@@ -52,9 +53,9 @@ Each stage is also a top-level Python package — `import cathode; cathode.run()
 |-------|-----------|--------------|
 | **1. Cathode** | [`cathode/`](cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
 | **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~146 keV. |
-| **3. Prebuncher** | [`prebuncher/`](prebuncher/README.md) | CESR standing-wave RF prebuncher (RZ) that velocity-bunches the gun's exit beam in the downstream drift. |
-| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ) with solenoid focusing. The injected 8 kW prebuncher beam (0.83 nC) has diverged to r_max ≈ 26 mm, so only ~32% enters the 12 mm domain; at the original LinacSim point (40 A, 11 MW) capture is ~0.7% of injected (≈5.7 pC) to ⟨KE⟩ ≈ 15.5 MeV (max ~30 MeV). `I_SOL≈1000 A` raises it to ~7% of injected — capture is injection-limited (bore fit), not focusing-limited. |
-| **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the four stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. |
+| **3. Injector** | [`injector/`](injector/README.md) | The full LinacSim injector subsection in one RZ space-charge run (RZ): Lens 0A → Prebuncher 1 (8 kW) → Prebuncher 2 (10 kW, reversed) → Sol 0 / Lens 0E, then the 9.547 mm collimator. Two-cavity velocity bunching + solenoid focusing; hands a focused, collimated beam to the linac at z ≈ 2.03 m. (Replaced the earlier single-cavity `prebuncher/` stage.) |
+| **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ). Reads the injector's focused beam at the z ≈ 2.03 m handoff (already collimated to the 9.547 mm iris); no in-stage solenoid (focusing is upstream now). At the faithful 11 MW point capture is ~18% of true injected to ⟨KE⟩ ≈ 26 MeV — a conservative (γ²) lower bound, tune-sensitive to the upstream lens currents. |
+| **Pipeline** | [`pipeline/`](pipeline/README.md) | Driver + shared `Stage` runner: orchestrates the four stages in order, spawning a fresh Python subprocess per simulation so pywarpx's per-process geometry binding doesn't trip between stages. Then `plot_chain` writes the cross-stage figures to the repo-root `results/`. |
 
 Each directory's `README.md` documents its physics, field maps, and outputs.
 
@@ -76,7 +77,9 @@ plus papers in `reference/Papers/`. See [`CLAUDE.md`](CLAUDE.md) for the full in
 
 - Simulation outputs (`diags/`, `results/`, `*.h5`, `*.gdf`, logs, etc.) are git-ignored — clone
   and re-run to regenerate them.
-- Field maps (`CESR_gun.gdf`, `prebuncher_25D.gdf`, plus the linac_sec1 SLAC traveling-wave and
-  solenoid/lens maps `SLAC-3mLinac-field1/field2.gdf`, `SOL_0.gdf`, `LENS_0A..0E.gdf`) live in
-  [`fieldmaps/`](fieldmaps/) and are read from there by the `build_*_field.py` scripts; paths are
-  set near the top of each script.
+- Field maps (`CESR_gun.gdf`; the injector's `prebuncher_25D.gdf` cavity + `SOL_0.gdf` /
+  `LENS_0A..0E.gdf` solenoid lenses; the linac's `SLAC-3mLinac-field1/field2.gdf` traveling-wave
+  pair) live in [`fieldmaps/`](fieldmaps/) and are read from there by the `build_*_field.py`
+  scripts; paths are set near the top of each script.
+- The repo-root [`results/`](results/) holds the cross-stage figures from `pipeline.plot_chain()`
+  (also git-ignored; regenerate by re-running). Commit result PNGs with `git add -f`.
