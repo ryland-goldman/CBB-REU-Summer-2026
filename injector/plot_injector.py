@@ -28,8 +28,9 @@ overwrites the same files instead of leaving orphans:
   * injector_bunch_profile.png — the real longitudinal line-charge density λ(z)
   * compare_power_phase.png    — σ_z(z) for the baseline vs all powers (scan only)
 
-Run with:
-    conda run -n CBB python injector/plot_injector.py
+Run with (module form — the script uses a package-relative import, so
+`python injector/plot_injector.py` will not work):
+    conda run -n CBB python -m injector.plot_injector
 """
 
 import os
@@ -403,6 +404,13 @@ def main(cases=None):
     With `cases=None`, plots `{DIAG_ROOT}/main` and every `{DIAG_ROOT}/P*` directory;
     pass a list of case dir names (e.g. ["main"]) to restrict.
     """
+    # Raise the fd limit before analyse_case loops the full ~280-dump series. The
+    # pipeline path (injector.plot() → Stage.plot()) already raises it, but this
+    # module is also a documented standalone entry (`python injector/plot_injector.py`),
+    # and openpmd-viewer leaks an fd per get_particle — enough to exhaust macOS's
+    # default 256-fd limit. See _runner._raise_fd_limit.
+    from pipeline._runner import _raise_fd_limit
+    _raise_fd_limit()
     if cases:
         dirs = [os.path.join(DIAG_ROOT, c) for c in cases]
     else:

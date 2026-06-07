@@ -244,3 +244,11 @@ writes to `injector/results/`:
   are sub-threshold (the design point); a hardened-Preb-1 scan needs a two-pass run.
 - The 9.547 mm collimation is a post-hoc handoff cut (the in-run scrape isn't available in this
   pywarpx RZ build) — physically equivalent for the monotonically-diverging design beam.
+- **openPMD fd-leak gotcha:** openpmd-viewer leaks one file descriptor per `get_particle()`, so
+  looping over this stage's ~280 diagnostic dumps exhausts macOS's default 256-fd soft limit and
+  the read fails with `IO Task OPEN_FILE failed … Inaccessible` (HDF5's report of EMFILE) at a
+  fixed dump *count*, not a specific file — the diag files are intact. The pipeline raises
+  `RLIMIT_NOFILE` (`pipeline/_runner._raise_fd_limit`, called from `_prepare_environment`, plus
+  `_launch_sim.py`, `plot_chain.main`, and `plot_injector.main`) to fix it; the `_retry_io`
+  backoff in the sim/plot scripts is only a backstop for a transient open and does **not** rescue
+  fd exhaustion. Any new code that loops reads over a long diag series needs the raised limit.
