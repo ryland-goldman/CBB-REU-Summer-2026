@@ -31,7 +31,7 @@ The chain is order-dependent — each stage accelerates/transports the previous 
 
 ```
 cathode  ─►  gun  ─►  injector  ─►  linac_sec1
-(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~26 MeV captured)
+(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)
 ```
 
 ---
@@ -43,19 +43,19 @@ per-dump moment table per stage, and renders four figures into the **repo-root `
 the whole-chain view. Called automatically at the end of `pipeline/run_pipeline.py`.
 
 ### `chain_evolution.png` — beam moments vs lab ⟨z⟩
-3×2 panels across cathode→gun→injector→linac vs lab ⟨z⟩: ⟨KE⟩ (±σ band, log-y), ε_n,x, σ_x/σ_r,
+3×2 panels across cathode→gun→injector→linac vs lab ⟨z⟩: ⟨KE⟩ (±σ band, log-y), ε_n,x, σ_x,
 σ_z (log-y), within-stage charge fraction, and I_peak. **Caveats baked into the figure:** the
 **cathode→gun ε_n,x step is a 2D→RZ definitional discontinuity** (the cathode is 2D x–z, slab
-x-emittance; downstream is RZ-projected) — annotated, not physical growth. The σ_r / capture
-caveat that the lab-frame ES self-field overestimates transverse SC by ~γ²≈1.7× (a conservative
-lower bound) is noted on the σ_x panel.
+x-emittance ⟨x²⟩=R²/3; the gun's disc resample gives ⟨x²⟩=R²/4 ⇒ ε_n,x ×√(3/4)≈0.87) — annotated,
+not physical growth. The σ_x / capture caveat that the lab-frame ES self-field overestimates
+transverse SC by ~γ²≈1.7× (a conservative lower bound) is noted on the σ_x panel.
 
 ### `emittance_budget.png` — ε_n,x entry vs exit per stage
 A waterfall of transverse normalized emittance at each stage's entry vs exit — which stage degrades
 beam quality. The cathode→gun bar carries the 2D→RZ definitional footnote.
 
 ### `transmission_waterfall.png` — the two-loss charge chain
-gun exit → injector exit (@2.03 m handoff) → **enters bore** (9.547 mm iris, ~91%) → **captured** (~26 MeV, ~18%).
+gun exit → injector exit (@2.03 m handoff) → **passes iris** (9.547 mm, ~32%) → **captured** (~25 MeV, ~7%).
 The bore-scrape and the RF-capture losses are **separate bars** — the separation that motivates the
 upstream solenoids. Starts at gun exit (physical ~1 nC renorm); the cathode's raw macroparticle
 weight is excluded (not a physical charge). Capture is vs the **true injected charge**.
@@ -133,8 +133,10 @@ panel of `cathode_2d.png`.
 
 The intrinsic (thermal) beam quality of the source, from the last particle snapshot. **Left:**
 transverse phase space `x` vs. `ux = γβ_x` (density via hexbin), annotated with the RMS normalized
-emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) ≈ 2.29 mm·mrad` — the irreducible emittance every downstream
-stage inherits. **Right:** the histogram of `ux`, the Maxwellian transverse-momentum spread set by
+emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²) ≈ 2.29 mm·mrad` — the irreducible source emittance. (This
+is the 2D-slab value, `⟨x²⟩=R²/3`; the gun's RZ disc resample gives `⟨x²⟩=R²/4`, so the gun
+actually receives `≈ 1.96 mm·mrad` — a geometry correction, not loss.) **Right:** the histogram of
+`ux`, the Maxwellian transverse-momentum spread set by
 the 1425 K cathode, with the expected `±√(kT/mₑc²)` scale overlaid (the run reproduces it: rms
 `ux` = 0.49 × 10⁻³ vs. √(kT/mc²) = 0.49 × 10⁻³).
 
@@ -176,12 +178,12 @@ Left: longitudinal phase space (`z` vs. `KE`) at the last dump. Right: the final
 (histogram) with `⟨KE⟩` marked — a narrow distribution at ~146 keV, the beam handed off to the
 injector.
 
-### `beam_envelope.png` — radial envelope and emittance
-![RMS radial size σ_r and normalized emittance vs ⟨z⟩](gun/results/beam_envelope.png)
+### `beam_envelope.png` — transverse envelope and emittance
+![per-plane RMS size σ_x and normalized emittance vs ⟨z⟩](gun/results/beam_envelope.png)
 
 The near-cathode focusing that `beam_rz.png` shows only as three snapshots, quantified along the
-gun. **Blue:** the RMS radial size `σ_r = √⟨x²⟩` (the per-plane RMS the plot axis is labelled with)
-contracts from ≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode
+gun. **Blue:** the per-plane RMS size `σ_x = √⟨x²⟩` (the per-plane RMS the plot axis is labelled
+with) contracts from ≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode
 emission is focused by the radial gun field (the full-radial `√⟨r²⟩ = √2·σ_x` is ≈ 5.7 → 4.1 mm).
 **Red (twin axis):**
 the normalized transverse emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²)` grows as space charge and
@@ -214,7 +216,7 @@ and writes the figures below with **config-independent filenames**.
 **Left:** bunch length `σ_z(z)` along the line, with vertical markers at both prebuncher gaps
 (Z1 = 534 mm, Z2 = 1318 mm). The two-cavity distributed buncher drives σ_z well below the drift
 baseline (σ_drift/σ_2cav ≈ 4.4× near the focus, ≈ 2.4× vs Preb-1 alone). **Right:** peak current
-and mean KE — the two mild kicks (Preb-1 +20 keV, Preb-2 +43 keV mean) raise ⟨KE⟩ through the line.
+and mean KE — the two kicks (Preb-1 +20 keV, Preb-2 ~+54 keV mean) raise ⟨KE⟩ through the line.
 
 ### `injector_phasespace.png` — the chirp through the two cavities
 ![Injector: z–KE phase space at three points](injector/results/injector_phasespace.png)
@@ -252,10 +254,11 @@ see `injector/README.md`.)
 SLAC-design 3 m, 86-cell, **2π/3 traveling-wave** accelerating structure in **RZ** (f = 2856 MHz),
 synthesised from the two quadrature field maps and driven at the original LinacSim **P = 11 MW**.
 **No in-stage solenoid** — focusing is upstream in the injector. The linac reads the injector's
-focused beam at the **z ≈ 2.03 m handoff** and applies the **9.547 mm iris cut** at injection.
-At the faithful currents the Sol 0 / Lens 0E matching telescope focuses ~91 % of the handoff charge
-through the 9.547 mm iris, and the linac captures **~18 % of the true injected charge** to
-⟨KE⟩ ≈ 26 MeV (max ~32 MeV). Produced by `plot_linac_sec1.py` from the run (`diags/main`) at
+focused beam at the **z ≈ 2.03 m handoff** and applies the **multi-plane 9.547 mm iris scrape** at
+injection (at the real 1.922 m iris plane; the beam converges through the tail, so a single 2.03 m
+cut would overstate transmission). At the faithful currents the Sol 0 / Lens 0E matching telescope
+focuses ~32 % of the handoff charge through the 9.547 mm iris, and the linac captures **~7 % of the
+true injected charge** to ⟨KE⟩ ≈ 25 MeV (max ~32 MeV). Produced by `plot_linac_sec1.py` from the run (`diags/main`) at
 `PHASE_DEG = 0`. Capture is a **conservative γ²≈1.7× lower bound** (real machine captures more),
 tune-sensitive to the upstream lens currents, and reported against the **true injected charge**
 (sidecar `injection_summary.json`), not the post-collimation first dump.
@@ -269,11 +272,11 @@ voltage). **Bottom:** a fixed-time snapshot `Ez(z, t₀)` zoomed to the structur
 the ~3.5 cm 2π/3 cell structure (the field reverses cell-to-cell; the forward traveling wave is the
 sum of the two 90°-offset quadrature maps).
 
-### `energy_gain.png` — ~220 keV → ~26 MeV (captured slice)
+### `energy_gain.png` — ~220 keV → ~25 MeV (captured slice)
 ![Linac: mean/max KE and β vs ⟨z⟩](linac_sec1/results/energy_gain.png)
 
 Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from the ~220 keV handoff; the
-captured slice reaches max ~32 MeV with charge-weighted ⟨KE⟩ ≈ 26 MeV (σ_KE ≈ 8 MeV), then goes
+captured slice reaches max ~32 MeV with charge-weighted ⟨KE⟩ ≈ 25 MeV (σ_KE ≈ 8 MeV), then goes
 flat in the field-free exit drift (the beam coasts). The β = v/c trace (right axis) shows the
 **capture**: the captured particles become relativistic (β → 1), while the bulk that is not
 captured (out of the RF bucket) falls behind.
@@ -287,7 +290,7 @@ over a broad energy range as only a fraction locks to the crest — the signatur
 sub-relativistic beam into a phase-velocity-c wave.
 
 ### `beam_envelope.png` — focusing and adiabatic damping
-![Linac: σ_r and surviving charge](linac_sec1/results/beam_envelope.png)
+![Linac: σ_x and surviving charge](linac_sec1/results/beam_envelope.png)
 
 **Top:** RMS transverse size σ_x vs ⟨z⟩ with the structure bore (9.55 mm) marked; **bottom:**
 surviving charge fraction q/q_inj normalised to the **injected** charge. The curve drops at the
@@ -298,9 +301,9 @@ surviving slice adiabatically damps (σ_r ∝ 1/√(γβ)) as it accelerates.
 ![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
 
 Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, titled with the
-captured fraction **of the true injected charge** (~18 % at the faithful 11 MW point) and
-annotated with how much passed the 9.547 mm iris (~91 %). The surviving particles span a broad
-~5–32 MeV distribution with charge-weighted ⟨KE⟩ ≈ 26 MeV (σ_KE ≈ 8 MeV) — wide because only a
+captured fraction **of the true injected charge** (~7 % at the faithful 11 MW point) and
+annotated with how much passed the 9.547 mm iris (~32 %). The surviving particles span a broad
+~5–32 MeV distribution with charge-weighted ⟨KE⟩ ≈ 25 MeV (σ_KE ≈ 8 MeV) — wide because only a
 phase-spread slice locks to the crest. The capture is a conservative γ² lower bound and
 tune-sensitive to the upstream lens currents; the injector current/phase scans characterize the
 achievable value.

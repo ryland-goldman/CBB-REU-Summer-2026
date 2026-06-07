@@ -128,7 +128,7 @@ transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** — ramping fro
 cathode (10 keV) to ~66 % at exit. (The genuine fix is WarpX's relativistic ES mode, out of
 scope for this single-pass demo; the same caveat applies, but shrinks, in the more relativistic
 injector/linac stages — see those READMEs.) Acceptable for the demo, but note it if pushing
-to higher voltage or interpreting the absolute σ_r / emittance.
+to higher voltage or interpreting the absolute σ_x / emittance.
 
 ## Figures (`results/`)
 
@@ -139,9 +139,10 @@ to higher voltage or interpreting the absolute σ_r / emittance.
 3. **`energy_gain.png`** — mean and max kinetic energy vs. ⟨z⟩, climbing toward ~150 keV.
 4. **`exit_phase_space.png`** — longitudinal `z–KE` phase space and the energy spectrum at the
    last dump.
-5. **`beam_envelope.png`** — RMS radial size `σ_r = √⟨x²⟩` and normalized transverse emittance
+5. **`beam_envelope.png`** — per-plane RMS size `σ_x = √⟨x²⟩` and normalized transverse emittance
    `εn,x` vs. `⟨z⟩`: the near-cathode radial focusing of `beam_rz.png` made quantitative, plus the
-   space-charge / aberration emittance growth along the gun.
+   space-charge / aberration emittance growth along the gun. (`σ_x` is the single-plane RMS that
+   pairs with `εn,x`; the radial RMS is `√⟨r²⟩ = √2·σ_x`.)
 6. **`space_charge.png`** — `r–z` maps of the beam **self-field** (`ρ` and the space-charge
    potential well `φ`, ≈ −250 V) at a near-launch snapshot — the dumped self-field nothing else
    plots, and the well that motivates renormalizing the bunch to 1 nC.
