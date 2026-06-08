@@ -307,3 +307,50 @@ annotated with how much passed the 9.547 mm iris (~32 %). The surviving particle
 phase-spread slice locks to the crest. The capture is a conservative γ² lower bound and
 tune-sensitive to the upstream lens currents; the injector current/phase scans characterize the
 achievable value.
+
+---
+
+## 5. Linac sections 2–8 (Impact-T) — `linac_rest/results/`
+
+The rest of the straight electron line to CHESS: seven S-band traveling-wave sections
+(CEA 2/3/4/5 + CU 3/4/5) run as one Impact-T deck, accelerating the captured ~25 MeV core
+on-crest to ≈308 MeV at the faithful 11 MW point (307.97 MeV survivors through the real bore;
+309.2 MeV full-beam — the bore scrapes lower-energy off-axis particles). Field shape reuses the
+lume-impact `rfdata4–7` TW template (shape only); all per-section physics is in the calibrated
+scale. Space charge OFF (γ > 49); quads present at real lengths but OFF (K1 = 0) for the
+headline. The vs-z panels come from Impact-T's continuous `I.stat(...)` arrays. See
+`linac_rest/README.md`.
+
+### `energy_gain.png` — cumulative energy to ≈308 MeV
+![linac_rest: ⟨KE⟩ ± σ_KE vs z](linac_rest/results/energy_gain.png)
+
+⟨KE⟩ (with the ± σ_KE band) vs ⟨z⟩ across the seven sections — the on-crest cumulative rise
+from the ~25 MeV captured core to ≈308 MeV at 11 MW (each section calibrated to its
+ΔE_target = ΔE_table·√(P/15)). The expected exit energy (measured ⟨KE⟩_in + Σ ΔE_target) is
+marked.
+
+### `energy_spread.png` — absolute σ_KE conserved, relative shrinks
+![linac_rest: σ_KE and relative spread vs z](linac_rest/results/energy_spread.png)
+
+**Top:** absolute σ_KE vs ⟨z⟩ (first-order conserved on-crest). **Bottom:** relative spread
+σ_KE/⟨KE⟩, which adiabatically shrinks as ⟨KE⟩ grows (≈32 % at injection → ≈2.6 % at exit).
+
+### `emittance.png` — normalized emittance (headline, quads OFF)
+![linac_rest: ε_n,x / ε_n,y vs z](linac_rest/results/emittance.png)
+
+Normalized RMS emittance ε_n,x / ε_n,y vs ⟨z⟩. With quads OFF (RF + drift only) it is
+near-conserved; the panel flags any numerical growth. Quad-ON emittance is exploratory and
+never the headline.
+
+### `section_gains.png` — per-section target vs achieved ΔE
+![linac_rest: per-section ΔE target vs achieved](linac_rest/results/section_gains.png)
+
+Bar chart of each section's calibrated achieved ΔE against its √P-scaled target — the §5
+gate-1 visual (±3 % per section). Read from the calibration table in `injection_summary.json`.
+
+### `fodo_optics.png` — exploratory transverse envelope
+![linac_rest: σ_x vs z (placeholder optics)](linac_rest/results/fodo_optics.png)
+
+σ_x vs ⟨z⟩, titled with the quad state. With quads OFF (default) this is **placeholder optics
+— NOT predictive** (the A→T quad calibrations are undocumented); only meaningful with
+`QUADS_ON` + `QUAD_K`, where it shows the exploratory FODO envelope.

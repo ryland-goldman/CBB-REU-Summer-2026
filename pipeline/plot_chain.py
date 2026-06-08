@@ -64,12 +64,18 @@ RESULTS = "results"             # repo-root results/ (git-ignored; git add -f)
 # 2.03 m handoff plane instead of overlapping the injector — see _apply_linac_z0().
 # The cathode is 2D x–z (no y/uy); the rest are RZ.
 STAGES = [
-    {"name": "cathode",  "path": "cathode/diags/particles",         "z0": 0.0, "geom": "2d", "color": "C0"},
-    {"name": "gun",      "path": "gun/diags/particles",             "z0": 0.0, "geom": "rz", "color": "C1"},
-    {"name": "injector", "path": "injector/diags/main/particles",   "z0": 0.0, "geom": "rz", "color": "C2"},
-    {"name": "linac",    "path": "linac_sec1/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C3"},
+    {"name": "cathode",    "path": "cathode/diags/particles",         "z0": 0.0, "geom": "2d", "color": "C0"},
+    {"name": "gun",        "path": "gun/diags/particles",             "z0": 0.0, "geom": "rz", "color": "C1"},
+    {"name": "injector",   "path": "injector/diags/main/particles",   "z0": 0.0, "geom": "rz", "color": "C2"},
+    {"name": "linac",      "path": "linac_sec1/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C3"},
+    # linac_rest = Cornell Linac sections 2–8 (Impact-T). Its openPMD z is the Impact-T
+    # LOCAL frame (~0 at section-2 zedge), so z0 is filled at runtime from the recorded
+    # z_inject_lab_m − z_inject_local_m (see _apply_linac_rest_z0). Color C5 (NOT C4 —
+    # C4 is the iris bar in the transmission waterfall).
+    {"name": "linac_rest", "path": "linac_rest/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C5"},
 ]
 LINAC_INJ_SUMMARY = "linac_sec1/diags/main/injection_summary.json"
+LINAC_REST_INJ_SUMMARY = "linac_rest/diags/main/injection_summary.json"
 Z_HANDOFF = 2.03                # [m] linac entrance (Z_acc_1); the injector→linac handoff plane
 
 
@@ -89,6 +95,40 @@ def _apply_linac_z0(linac_inj):
         linac["z0"] = linac_inj["z_handoff_m"] - linac_inj["z_inject_mean_m"]
     else:
         linac["z0"] = Z_HANDOFF
+
+
+def _apply_linac_rest_z0(rest_inj, tables=None):
+    """Set the linac_rest (sections 2–8, Impact-T) stage's lab-z offset.
+
+    Impact-T output z is the deck-LOCAL frame (≈0 at section-2's zedge), exactly like
+    the linac_sec1 local-frame case — so its dumps must be shifted to lab z to abut
+    linac_sec1 without overlap. The offset that maps Impact-T local z to lab z is
+
+        z0 = z_inject_lab_m − z_inject_local_m
+
+    where z_inject_lab_m is RECORDED in linac_rest/diags/main/injection_summary.json
+    (= the lab-z the sim injected the linac_sec1 exit beam at = linac_sec1's exit lab-z),
+    and z_inject_local_m is the Impact-T local z the beam was placed at. The sim zeroes z
+    at injection (`Pc.z -= mean_z`), so z_inject_local_m defaults to 0 when the summary
+    omits it. This is computed from RECORDED values, NOT a literal ~5.1 m, so it tracks the
+    real handoff plane if upstream geometry shifts.
+
+    Fallback (no summary at all): derive linac_sec1's exit lab-z from the moment tables —
+    the linac stage's already-applied z0 (from _apply_linac_z0) plus its EXIT dump's local
+    ⟨z⟩. Falls back further to the linac stage's z0 if no linac table is available, so the
+    segment still lands downstream of the injector rather than overlapping it.
+    """
+    rest = next(st for st in STAGES if st["name"] == "linac_rest")
+    if rest_inj and "z_inject_lab_m" in rest_inj:
+        rest["z0"] = rest_inj["z_inject_lab_m"] - rest_inj.get("z_inject_local_m", 0.0)
+        return
+    # Fallback: linac_sec1 exit lab-z from the tables (z0 already applied to those rows).
+    linac_rows = (tables or {}).get("linac") or []
+    if linac_rows:
+        rest["z0"] = linac_rows[-1]["z_mean"]    # z_mean already carries the linac z0
+    else:
+        linac = next(st for st in STAGES if st["name"] == "linac")
+        rest["z0"] = linac["z0"]
 
 
 def _exit_row(name, rows):
@@ -411,8 +451,18 @@ def main():
     if os.path.isfile(LINAC_INJ_SUMMARY):
         with open(LINAC_INJ_SUMMARY) as fh:
             linac_inj = json.load(fh)
+    rest_inj = None
+    if os.path.isfile(LINAC_REST_INJ_SUMMARY):
+        with open(LINAC_REST_INJ_SUMMARY) as fh:
+            rest_inj = json.load(fh)
     _apply_linac_z0(linac_inj)   # linac diagnostics are linac-local; shift to lab frame
     tables = {st["name"]: build_moment_table(st) for st in STAGES}
+    # linac_rest (Impact-T) is also local-frame; shift to lab using its recorded inject z
+    # (fallback derives the offset from the just-built linac table), then rebuild its rows
+    # so they carry the lab offset.
+    _apply_linac_rest_z0(rest_inj, tables)
+    rest_stage = next(st for st in STAGES if st["name"] == "linac_rest")
+    tables["linac_rest"] = build_moment_table(rest_stage)
     present = [n for n, r in tables.items() if r]
     if not present:
         print("plot_chain: no stage particle series found — run the pipeline first.")

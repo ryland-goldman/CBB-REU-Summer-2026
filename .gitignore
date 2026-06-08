@@ -40,6 +40,12 @@ warpx_metadata.txt
 # IMPACT-T / IMPACT-Z output files
 ImpactT.in.bak
 test.in.bak
+# Generated Impact-T deck if ever written in-tree (the linac_rest stage runs in
+# lume-impact's temp workdir, so this is belt-and-suspenders). NOTE: do NOT add a
+# blanket `rfdata*` ignore — the vendored TW field shapes in linac_rest/rfdata/ are
+# committed source and must stay tracked.
+/ImpactT.in
+/rfdata[0-9]*
 
 # G4beamline
 *.root
