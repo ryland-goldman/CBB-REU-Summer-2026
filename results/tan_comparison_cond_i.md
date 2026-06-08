@@ -1,6 +1,6 @@
 # Chapter 10 comparison — cond_i
 
-**Operating point:** Tan condition (i) — Preb1 50 kV @ phase-null (PREB1_PHI_OFF=−90, 5.83 kW), Preb2 150 kV @ crest (PREB2_PHI_OFF=0, 36.61 kW); achieved V_gap 50.0 / 150.0 kV. **This IS Tan's operating point — the repo numbers below may be compared NUMERICALLY to Table 10.2** (within the plan §6 tolerances; σ_E and capture diverge in a documented direction).
+**Operating point:** Tan condition (i) — Preb1 50 kV @ phase-null (PREB1_PHI_OFF=−90, 5.83 kW), Preb2 150 kV @ crest (PREB2_PHI_OFF=0, 36.61 kW); achieved V_gap 50.0 / 150.0 kV. **This IS Tan's operating point, but the numeric comparison to Table 10.2 applies to the ⟨E⟩ rows ONLY.** The repo gun is a DC single-snapshot emitter with NO 3.7 ns emission window, so the σ_z, σ_E, and capture rows are **input-window-limited — not comparable** to Tan (their deltas reflect the missing input bunch, not the prebuncher/linac physics).
 
 
 ### A at Gun
@@ -10,12 +10,16 @@
 | Tan (published) |  | 0.150 | 0.000 | 31.70 | 428.80 | 100.0 | 100.0 |
 | Δ (repo−Tan) |  | -0.004 | 0.005 | -30.631 | -414.545 |  |  |
 
+> ⟨E⟩ row is comparable to Tan; **σ_z, σ_E, and capture are input-window-limited — not comparable** (no 3.7 ns emission window).
+
 ### B before Preb2
 | location | zbar_m | Ebar_MeV | sigE_MeV | sigz_deg@214 | sigz_deg@2856 | capture_in_bucket_pct | capture_all_buckets_pct |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | B before Preb2 | 1.1634 | 0.141 | 0.015 | 16.20 | 216.00 |  |  |
 | Tan (published) |  | 0.139 | 0.023 | 14.40 | 194.80 | 100.0 | 100.0 |
 | Δ (repo−Tan) |  | 0.002 | -0.008 | 1.799 | 21.200 |  |  |
+
+> ⟨E⟩ row is comparable to Tan; **σ_z, σ_E, and capture are input-window-limited — not comparable** (no 3.7 ns emission window).
 
 ### C before Sec1
 | location | zbar_m | Ebar_MeV | sigE_MeV | sigz_deg@214 | sigz_deg@2856 | capture_in_bucket_pct | capture_all_buckets_pct |
@@ -24,12 +28,18 @@
 | Tan (published) |  | 0.253 | 0.043 | 5.57 | 75.30 | 100.0 | 100.0 |
 | Δ (repo−Tan) |  | 0.028 | -0.019 | 15.268 | 202.565 |  |  |
 
+> ⟨E⟩ row is comparable to Tan; **σ_z, σ_E, and capture are input-window-limited — not comparable** (no 3.7 ns emission window).
+
 ### D after Sec1
 | location | zbar_m | Ebar_MeV | sigE_MeV | sigz_deg@214 | sigz_deg@2856 | capture_in_bucket_pct | capture_all_buckets_pct |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | D after Sec1 | 3.3993 | 26.274 | 5.343 |  | 163.87 | 2.34 | 2.90 |
 | Tan (published) |  | 27.200 | 3.500 |  | 11.10 | 89.4 | 96.8 |
-| Δ (repo−Tan) |  | -0.926 | 1.843 |  | 152.766 |  |  |
+| Δ (repo−Tan) |  | -0.926 | 1.843 |  | n/a (multi-bucket) |  |  |
+
+> ⟨E⟩ row is comparable to Tan; **σ_z, σ_E, and capture are input-window-limited — not comparable** (no 3.7 ns emission window).
+
+> σ_z@2856 here is an UNWRAPPED multi-bucket phase extent (captured core spans 2.2 RF periods at 2856 MHz), NOT a single-bucket bunch length — its Δ-vs-Tan is blanked.
 
 ## Capture bookkeeping (denominators)
 
@@ -40,7 +50,9 @@
 
 ## Footnotes
 
-- **σ_z internal ratio:** the repo @2856/@214 columns derive from ONE σ_t, so their ratio is BY CONSTRUCTION F_2856/F_214 = 13.335 — an internal-consistency check only. Tan's own ratio is 13.52 (a different spatial-σ_z definition with a per-location β); the 13.335 check is NOT agreement with Tan.
+- **σ_z internal ratio:** the repo @2856/@214 columns derive from ONE σ_t, so their ratio is BY CONSTRUCTION F_2856/F_214 = 13.334 — an internal-consistency check only. Tan's own ratio is 13.52 (a different spatial-σ_z definition with a per-location β); the 13.334 check is NOT agreement with Tan. Because @214 and @2856 are the same σ_t scaled by two frequencies, their two Δ-vs-Tan columns are **NOT independent** — they are one measurement presented at two frequencies (both kept to match Tan's table layout).
+- **after-Sec1 σ_z@2856 Δ blanked (multi-bucket):** the captured core spans >1 RF period at 2856 MHz, so its σ_z@2856 is an UNWRAPPED multi-bucket phase extent, NOT a single-bucket bunch length. It is not comparable to Tan's 11.1° (a single tightly-captured bucket), so the Δ is blanked. The raw σ_z value is kept; the core is NOT wrapped (wrapping a genuinely multi-period bunch would fake a short bunch length).
 - **Denominator mismatch:** Tan's 100% (upstream) and 89.4/96.8 (postSec1) reference the gun-emitted bunch with no loss yet. The repo's `q_injected_C` already sits past the converging halo and includes the real 9.547 mm iris scrape. Repo capture = 2.3% in-bucket / 2.9% all-buckets (both vs `q_injected_C`); iris transmission = 14.2% (`q_in_bore`/`q_injected`) is a SEPARATE quantity (do NOT conflate it with capture). The repo numbers are far below Tan's BY CONSTRUCTION (γ² self-field + real iris + operating point). Annotate, do NOT 'fix'.
+- **Iris transmission is tune-sensitive, not fundamental:** the cond_i iris transmission reflects the LinacSim DEFAULT lens currents, which were NOT re-matched to cond (i) (Preb2 150 kV @ crest blows the beam up radially into the still-default telescope). Per `injector/README.md` caveat 2 the transmission is tune-sensitive to the upstream lens currents — re-matching the lenses to cond (i) would recover transmission; this is not a fundamental limit.
 - **Location C capture = n/a (pre-iris):** C is the pre-scrape injector population; its charge differs from D's iris survivors, so the C→D ratio is not a clean repo capture fraction.
 - **after-Sec1 σ_z@214 blank:** Tan leaves it blank; the captured-core σ_z is reported @2856 only.

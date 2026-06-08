@@ -14,7 +14,9 @@ comparison table against Tan's Table 10.2.
   * results/tan_comparison_<case>.md / .csv      — the comparison table
 
 Run with (in the CBB env, from repo root):
-    python pipeline/plot_chapter10.py
+    python pipeline/plot_chapter10.py            # repo_default (the 8/10 kW point)
+    python pipeline/plot_chapter10.py cond_i     # Tan condition (i), reads */diags/cond_i
+                                                 #   (produced by pipeline/_run_cond_i.py)
 
 SCOPE (critical): the repo default operating point is NOT Tan condition (i). The default
 is the LinacSim 8 kW / 10 kW two-cavity point (Preb1 −70°, Preb2 −45°), so these figures
@@ -31,8 +33,10 @@ PHYSICS / UNITS NOTES:
   - v_z guard: drop particles with v_z ≤ 1e-3·c (space-charge tails at the gun can have
     small/negative uz → |t|→∞); excluded from φ AND σ_t and counted in the caption.
   - σ_z@214 = 360·F_214·σ_t, σ_z@2856 = 360·F_2856·σ_t — both from one σ_t, so the repo
-    @2856/@214 ratio is BY CONSTRUCTION F_2856/F_214 = 13.335 (an INTERNAL consistency
+    @2856/@214 ratio is BY CONSTRUCTION F_2856/F_214 = 13.334 (an INTERNAL consistency
     check, NOT agreement with Tan's 13.52 which uses a different spatial-σ_z definition).
+    The @214 and @2856 σ_z columns are therefore the SAME measurement at two frequencies —
+    their two Δ-vs-Tan columns are NOT independent.
   - Histograms are PEAK-normalized (counts/counts.max()), NOT density=True: Tan's ~16 nC
     bunch vs the repo's ~0.8 nC means shapes compare, not absolute charge.
   - The linac_sec1 local-frame z-reset (linac_sec1_sim.py:178 `z = z - z.min() + Z_INJECT`)
@@ -237,15 +241,20 @@ def main(case="repo_default",
     q_in_bore_C = summ["q_in_bore_C"]      # post-iris denominator
     q_in_domain_C = summ["q_in_domain_C"]
 
-    ratio_expected = F_2856 / F_214        # 13.335
+    ratio_expected = F_2856 / F_214        # 13.334
 
     # Operating-point label is case-aware: repo_default is a QUALITATIVE-only comparison
     # (NOT Tan cond i); cond_i IS the physics-correct Tan condition (i) and may be compared
     # numerically to Table 10.2. Add new cases here as they are run.
     if case == "cond_i":
+        # cond_i IS Tan's operating point, but the numeric comparison applies ONLY to the
+        # ENERGY (⟨E⟩) rows: the repo gun is a DC single-snapshot emitter with NO 3.7 ns
+        # emission window, so σ_z / σ_E / capture are input-window-limited and NOT comparable
+        # to Tan (see the missing-emission-window caveat below).
         op_label = ("Tan condition (i): Preb1 50 kV @ phase-null (PREB1_PHI_OFF=-90, 5.83 kW), "
                     "Preb2 150 kV @ crest (PREB2_PHI_OFF=0, 36.61 kW) — achieved V_gap 50.0/150.0 kV; "
-                    "numeric comparison to Tan Table 10.2 applies")
+                    "numeric comparison to Tan Table 10.2 applies to ⟨E⟩ ONLY "
+                    "(σ_z/σ_E/capture are input-window-limited, NOT comparable)")
         title_tag = "Tan cond (i)"           # figure-title operating-point tag (case-aware)
     else:
         op_label = ("repo default operating point: 8 kW / 10 kW two-cavity "
@@ -253,28 +262,40 @@ def main(case="repo_default",
         title_tag = "repo default"
     sign_note = "sign: head = φ<0; φ=0 = charge-weighted centroid"
     iris_pct = 100.0 * q_in_bore_C / q_injected_C   # in-bore iris transmission for this case
-    caveat = ("charge PEAK-normalized (Tan ~16 nC vs repo ~0.8 nC — shapes compare, not pC); "
+    # PRIMARY caveat (cond_i): the repo gun has NO emission time window — it injects a single
+    # DC snapshot, so the bunch is ~270× shorter than Tan's 3.7 ns base; σ_z/σ_E/capture are
+    # set by that input bunch, NOT the prebuncher physics. γ²/iris are secondary.
+    window_caveat = ("repo gun has NO 3.7 ns emission window (DC single-snapshot inject) ⇒ σ_z/σ_E/"
+                     "capture are input-window-limited, NOT comparable to Tan; ") if case == "cond_i" else ""
+    caveat = (f"{window_caveat}charge PEAK-normalized (Tan ~16 nC vs repo ~0.8 nC — shapes compare, not pC); "
               f"non-relativistic ES self-field (~γ² pessimism); real 9.547 mm iris scrape "
               f"(in-bore transmission {iris_pct:.0f}%)")
     # B/C bunching note: the repo default does NOT reproduce Tan's bunching (different
-    # operating point), so a shape gap there is not a code error. cond_i IS Tan's point and
-    # should bunch — the note flips to a numeric-comparison cue.
+    # operating point), so a shape gap there is not a code error. cond_i IS Tan's point but
+    # the missing emission window (not the optics) limits the bunching — so ⟨E⟩ compares,
+    # σ_z does not.
     if case == "cond_i":
-        bunch_note = "NOTE: this is Tan cond (i) — expect Tan's bunching here; numeric comparison to Table 10.2 applies"
+        bunch_note = ("NOTE: this is Tan cond (i) — ⟨E⟩ compares numerically to Table 10.2, but the "
+                      "missing emission window (input-window-limited σ_z/σ_E) means a σ_z shape gap vs "
+                      "Tan is NOT a code error")
     else:
         bunch_note = ("NOTE: repo default does not bunch at this plane (operating-point divergence) "
                       "— a shape gap vs Tan is NOT a code error")
 
     table_rows = []   # (key, location, zbar, Ebar, sigE, sz214, sz2856, cap_in, cap_all)
 
-    def _record(key, location, zbar, Ebar, sigE, sigt, cap_in, cap_all, sz214_blank=False):
+    def _record(key, location, zbar, Ebar, sigE, sigt, cap_in, cap_all, sz214_blank=False,
+                sz2856_multibucket=False, n_periods_2856=None):
         sz214 = None if sz214_blank else (360.0 * F_214 * sigt if sigt is not None else None)
         sz2856 = 360.0 * F_2856 * sigt if sigt is not None else None
         # internal consistency: both from one sigma_t
         if sigt is not None and not sz214_blank:
-            assert abs(sz2856 / sz214 - ratio_expected) < 1e-6, "sigma_z internal ratio != 13.335"
+            assert abs(sz2856 / sz214 - ratio_expected) < 1e-6, "sigma_z internal ratio != 13.334"
+        # sz2856_multibucket: the σ_z@2856 is a multi-period (multi-bucket) unwrapped spread, so
+        # its Δ-vs-Tan is not meaningful (Tan's is a single-bucket bunch length) — blanked below.
         table_rows.append(dict(key=key, location=location, zbar=zbar, Ebar=Ebar, sigE=sigE,
-                               sz214=sz214, sz2856=sz2856, cap_in=cap_in, cap_all=cap_all))
+                               sz214=sz214, sz2856=sz2856, cap_in=cap_in, cap_all=cap_all,
+                               sz2856_multibucket=sz2856_multibucket, n_periods_2856=n_periods_2856))
         return sz214, sz2856
 
     # ── A: at Gun (Tan 10.2) ──
@@ -296,9 +317,15 @@ def main(case="repo_default",
     # this is a narrow falling band, not Tan's full sine lobe (computed from sigt, not hard-coded).
     gun_len_note = (f"repo gun σ_t ≈ {sigt*1e12:.1f} ps (σ_z@214 = {sz214_gun:.2f}°) vs Tan's 3.7 ns base "
                     f"— bunch ~{3.7e-9/sigt:.0f}× shorter, so this is a narrow falling band, not Tan's full sine lobe")
+    # I7: location A reads the gun diag, which is NOT re-run per case — the gun is upstream of
+    # the prebunchers, so the same gun exit feeds every operating point (physically correct).
+    gun_reuse_note = (f"location A reads {gun_diag} — the gun is NOT re-run for cond_i (it is upstream "
+                      "of the prebunchers, so the same gun exit feeds every operating point)") \
+        if case == "cond_i" else ""
     cap = (f"{op_label}\n{sign_note}; ref 214.18 MHz; <z>={zbar:.4f} m; "
            f"v_z-dropped={ndrop}/{len(z)}; {caveat}\n{gun_len_note}\n"
-           f"Tan Fig 10.2 (expect sine KE(φ), high-KE on φ<0)")
+           + (f"{gun_reuse_note}\n" if gun_reuse_note else "")
+           + "Tan Fig 10.2 (expect sine KE(φ), high-KE on φ<0)")
     location_panel(phi[good], ke[good], w[good], f"Tan Fig 10.2 — at Gun ({title_tag})",
                    cap, "@214 MHz", f"{RESULTS}/tan_fig10p2_at_gun_{case}.png")
 
@@ -332,8 +359,16 @@ def main(case="repo_default",
     print(f"[C sec1]  zbar={zbar:.4f} m  <KE>={Ebar:.4f} MeV  sigE={sigE:.4f}  "
           f"vz-dropped={ndrop}/{len(z)}")
     _record("before_sec1", "C before Sec1", zbar, Ebar, sigE, sigt, "n/a (pre-iris)", "n/a (pre-iris)")
+    # I6: when the nearest dump lands SHORT of the 2.03 m handoff (the cond_i relaxed-knob run
+    # stopped ~17 mm early), the TRANSVERSE read (r_max, iris%) is on a still-converging
+    # envelope; the LONGITUDINAL columns (⟨E⟩, σ_z) are drift-invariant over that short gap.
+    short_mm = (Z_HANDOFF - zbar) * 1e3
+    short_note = (f"NOTE: <z> is {short_mm:.0f} mm SHORT of the {Z_HANDOFF} m handoff (run stopped early) "
+                  "— the transverse read (r_max, iris%) is on a still-converging envelope; the "
+                  "longitudinal columns are drift-invariant over that gap\n") if short_mm > 5.0 else ""
     cap = (f"{op_label}\n{sign_note}; ref 214.18 MHz; <z>={zbar:.4f} m (target Z_HANDOFF={Z_HANDOFF}); "
            f"PRE-iris full population; v_z-dropped={ndrop}/{len(z)}; {caveat}\n"
+           f"{short_note}"
            f"{bunch_note}\n"
            f"Tan Fig 10.4 (expect left-opening parabola/'C'; sharp spike near φ≈0 + tail)")
     location_panel(phi[good], ke[good], w[good], f"Tan Fig 10.4 — before Sec1 ({title_tag}, pre-iris)",
@@ -362,12 +397,20 @@ def main(case="repo_default",
     q_in_bucket = float(wc[in_bucket].sum()) * Q_E
     in_bucket_pct = 100.0 * q_in_bucket / q_injected_C
     in_bucket_over_bore_pct = 100.0 * q_in_bucket / q_in_bore_C
+    # Multi-bucket flag: if the captured core's UNWRAPPED 2856 MHz phase extent exceeds one
+    # RF period, σ_z@2856 is a multi-bucket spread (NOT a single-bucket bunch length) and is
+    # not comparable to Tan's 11.1° single-bucket value — so the table BLANKS its Δ. Do NOT
+    # wrap: the cond_i core genuinely spans >2 periods, so wrapping would fake a short bunch.
+    phi_extent_2856 = float(phi[good].max() - phi[good].min()) if good.any() else 0.0
+    n_periods_2856 = phi_extent_2856 / 360.0
+    sz2856_multibucket = phi_extent_2856 > 360.0
     print(f"[D sec1]  zbar={zbar:.4f} m  <KE_core>={Ebar:.4f} MeV  sigE={sigE:.4f}  "
           f"core={int(core.sum())}/{len(z)}  vz-dropped={ndrop}/{len(zc)}")
     print(f"          capture in-bucket={in_bucket_pct:.2f}%  all-buckets={all_buckets_pct:.2f}%  "
-          f"in-bucket/in-bore={in_bucket_over_bore_pct:.2f}%")
+          f"in-bucket/in-bore={in_bucket_over_bore_pct:.2f}%  "
+          f"core φ-extent@2856={phi_extent_2856:.0f}° ({n_periods_2856:.2f} periods)")
     _record("after_sec1", "D after Sec1", zbar, Ebar, sigE, sigt, in_bucket_pct, all_buckets_pct,
-            sz214_blank=True)
+            sz214_blank=True, sz2856_multibucket=sz2856_multibucket, n_periods_2856=n_periods_2856)
     cap = (f"{op_label}\n{sign_note} (captured-core centroid); ref 2856 MHz; <z>={zbar:.4f} m (local frame); "
            f"captured core KE>={MIN_KE_MEV} MeV ({int(core.sum())}/{len(z)} parts); v_z-dropped={ndrop}/{len(zc)}; "
            f"\nSec1 POWER_MW=11 → peak |Ez| 14.89 MV/m, on-crest-average ≈ 11.5 MV/m "
@@ -415,6 +458,11 @@ def _write_table(case, rows, q_injected_C, q_in_bore_C, q_in_domain_C, in_bucket
         for repo_v, tan_v in [(r["Ebar"], t["Ebar"]), (r["sigE"], t["sigE"]),
                               (r["sz214"], t["sz214"]), (r["sz2856"], t["sz2856"])]:
             d.append(_fmt(repo_v - tan_v) if (repo_v is not None and tan_v is not None) else "")
+        # BLANK the σ_z@2856 Δ when the captured core is a multi-bucket spread: the raw σ_z@2856
+        # is an unwrapped multi-period phase extent, not a single-bucket bunch length, so a
+        # Δ-vs-Tan (single-bucket 11.1°) is not meaningful (see footnote).
+        if r.get("sz2856_multibucket"):
+            d[3] = "n/a (multi-bucket)"
         return ["Δ (repo−Tan)", "", d[0], d[1], d[2], d[3], "", ""]
 
     # CSV: flat — repo / Tan / delta interleaved per location, with a 'row_type' column.
@@ -435,9 +483,11 @@ def _write_table(case, rows, q_injected_C, q_in_bore_C, q_in_domain_C, in_bucket
     if case == "cond_i":
         lines.append("**Operating point:** Tan condition (i) — Preb1 50 kV @ phase-null "
                      "(PREB1_PHI_OFF=−90, 5.83 kW), Preb2 150 kV @ crest (PREB2_PHI_OFF=0, 36.61 kW); "
-                     "achieved V_gap 50.0 / 150.0 kV. **This IS Tan's operating point — the repo numbers "
-                     "below may be compared NUMERICALLY to Table 10.2** (within the plan §6 tolerances; "
-                     "σ_E and capture diverge in a documented direction).\n")
+                     "achieved V_gap 50.0 / 150.0 kV. **This IS Tan's operating point, but the numeric "
+                     "comparison to Table 10.2 applies to the ⟨E⟩ rows ONLY.** The repo gun is a DC "
+                     "single-snapshot emitter with NO 3.7 ns emission window, so the σ_z, σ_E, and capture "
+                     "rows are **input-window-limited — not comparable** to Tan (their deltas reflect the "
+                     "missing input bunch, not the prebuncher/linac physics).\n")
     else:
         lines.append("**Operating point:** repo default 8 kW / 10 kW two-cavity "
                      "(Preb1 −70°, Preb2 −45°). **QUALITATIVE comparison only — NOT Tan cond (i)** "
@@ -453,6 +503,15 @@ def _write_table(case, rows, q_injected_C, q_in_bore_C, q_in_domain_C, in_bucket
         lines.append("| " + " | ".join(repo_cells(r)) + " |")
         lines.append("| " + " | ".join(tan_cells(r["key"])) + " |")
         lines.append("| " + " | ".join(delta_cells(r, r["key"])) + " |")
+        if case == "cond_i":
+            lines.append("")
+            lines.append("> ⟨E⟩ row is comparable to Tan; **σ_z, σ_E, and capture are "
+                         "input-window-limited — not comparable** (no 3.7 ns emission window).")
+        if r.get("sz2856_multibucket"):
+            lines.append("")
+            lines.append(f"> σ_z@2856 here is an UNWRAPPED multi-bucket phase extent "
+                         f"(captured core spans {r['n_periods_2856']:.1f} RF periods at 2856 MHz), "
+                         "NOT a single-bucket bunch length — its Δ-vs-Tan is blanked.")
         lines.append("")
     lines.append("## Capture bookkeeping (denominators)\n")
     lines.append(f"- `q_injected_C` (honest, pre-iris) = {q_injected_C:.4e} C")
@@ -462,9 +521,17 @@ def _write_table(case, rows, q_injected_C, q_in_bore_C, q_in_domain_C, in_bucket
                  "(separates iris loss from capture loss)\n")
     lines.append("## Footnotes\n")
     lines.append("- **σ_z internal ratio:** the repo @2856/@214 columns derive from ONE σ_t, so their "
-                 "ratio is BY CONSTRUCTION F_2856/F_214 = 13.335 — an internal-consistency check only. Tan's "
-                 "own ratio is 13.52 (a different spatial-σ_z definition with a per-location β); the 13.335 "
-                 "check is NOT agreement with Tan.")
+                 "ratio is BY CONSTRUCTION F_2856/F_214 = 13.334 — an internal-consistency check only. Tan's "
+                 "own ratio is 13.52 (a different spatial-σ_z definition with a per-location β); the 13.334 "
+                 "check is NOT agreement with Tan. Because @214 and @2856 are the same σ_t scaled by two "
+                 "frequencies, their two Δ-vs-Tan columns are **NOT independent** — they are one measurement "
+                 "presented at two frequencies (both kept to match Tan's table layout).")
+    if any(r.get("sz2856_multibucket") for r in rows):
+        lines.append("- **after-Sec1 σ_z@2856 Δ blanked (multi-bucket):** the captured core spans >1 RF "
+                     "period at 2856 MHz, so its σ_z@2856 is an UNWRAPPED multi-bucket phase extent, NOT a "
+                     "single-bucket bunch length. It is not comparable to Tan's 11.1° (a single tightly-captured "
+                     "bucket), so the Δ is blanked. The raw σ_z value is kept; the core is NOT wrapped (wrapping "
+                     "a genuinely multi-period bunch would fake a short bunch length).")
     # Capture/iris numbers computed from THIS case's data (not hard-coded — they differ per case).
     d_row = next((r for r in rows if r["key"] == "after_sec1"), None)
     cap_in_v = d_row["cap_in"] if d_row else None
@@ -478,6 +545,13 @@ def _write_table(case, rows, q_injected_C, q_in_bore_C, q_in_domain_C, in_bucket
                  f"all-buckets (both vs `q_injected_C`); iris transmission = {iris_pct:.1f}% (`q_in_bore`/`q_injected`) "
                  "is a SEPARATE quantity (do NOT conflate it with capture). The repo numbers are far below Tan's "
                  "BY CONSTRUCTION (γ² self-field + real iris + operating point). Annotate, do NOT 'fix'.")
+    if case == "cond_i":
+        lines.append("- **Iris transmission is tune-sensitive, not fundamental:** the cond_i iris transmission "
+                     "reflects the LinacSim DEFAULT lens currents, which were NOT re-matched to cond (i) (Preb2 "
+                     "150 kV @ crest blows the beam up radially into the still-default telescope). Per "
+                     "`injector/README.md` caveat 2 the transmission is tune-sensitive to the upstream lens "
+                     "currents — re-matching the lenses to cond (i) would recover transmission; this is not a "
+                     "fundamental limit.")
     lines.append("- **Location C capture = n/a (pre-iris):** C is the pre-scrape injector population; its charge "
                  "differs from D's iris survivors, so the C→D ratio is not a clean repo capture fraction.")
     lines.append("- **after-Sec1 σ_z@214 blank:** Tan leaves it blank; the captured-core σ_z is reported @2856 only.")
@@ -487,4 +561,15 @@ def _write_table(case, rows, q_injected_C, q_in_bore_C, q_in_domain_C, in_bucket
 
 
 if __name__ == "__main__":
-    main()
+    # `python pipeline/plot_chapter10.py [case]` — default repo_default; `cond_i` reads the
+    # Tan condition (i) re-run diags (produced by pipeline/_run_cond_i.py) so the committed
+    # cond_i figures regenerate from the script alone. The gun diag stays the default (the gun
+    # is upstream of the prebunchers and is not re-run per case — see I7).
+    _case = sys.argv[1] if len(sys.argv) > 1 else "repo_default"
+    if _case == "cond_i":
+        main(case="cond_i",
+             inj_diag="injector/diags/cond_i/particles",
+             sec1_diag="linac_sec1/diags/cond_i/particles",
+             sec1_summary="linac_sec1/diags/cond_i/injection_summary.json")
+    else:
+        main()

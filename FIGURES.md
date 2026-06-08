@@ -75,8 +75,9 @@ histogram (Tan's ~16 nC vs the repo's ~0.8 nC ⇒ shapes compare, not absolute p
 particle's **arrival time** at the bunch centroid plane, `t = −(z − z_ref)/v_z` (head = φ<0); a
 `v_z ≤ 1e-3·c` guard drops the pathological low-/negative-`v_z` tail. φ uses **214.18 MHz** at the gun
 / injector planes and **2856 MHz** after Sec1. A gun `corr(φ,KE) < 0` assertion gates the sign; the
-@2856/@214 σ_z columns share one σ_t so their ratio is **by construction 13.335** (internal check,
-NOT Tan's 13.52 spatial-σ_z ratio).
+@2856/@214 σ_z columns share one σ_t so their ratio is **by construction 13.334** (internal check,
+NOT Tan's 13.52 spatial-σ_z ratio) — so the two Δ-vs-Tan σ_z columns are the **same measurement** at
+two frequencies, not independent.
 
 **Headline finding.** The WarpX/Impact-T rebuild reproduces Tan's **mean energies** along the injector
 chain (gun → handoff → Sec1 exit, all within tolerance at cond i) but does **not** reproduce his
@@ -91,13 +92,18 @@ Two operating-point **cases**, each writing its own `<case>`-tagged figures + ta
   with deltas, not a target.
 - **`_cond_i`** — the physics-correct **Tan condition (i)** (Preb1 50 kV @ phase-null, Preb2 150 kV @
   crest; achieved V_gap 50.0/150.0 kV). Requires an injector + linac_sec1 re-run into `*/diags/cond_i`
-  (see CLAUDE.md Commands). **This case may be compared numerically to Table 10.2** — energies match
-  (gun 0.146, prePreb2 0.141, preSec1 0.281, postSec1 26.3 MeV vs Tan 0.150/0.139/0.253/27.2), but the
-  downstream σ_z does **not** tighten to Tan's (the 150 kV crest blows the beam up radially; capture is
-  iris-limited).
+  (run `python pipeline/_run_cond_i.py`, then `python pipeline/plot_chapter10.py cond_i`).
+  **The numeric comparison to Table 10.2 applies to the ⟨E⟩ (mean-energy) rows ONLY** — energies match
+  (gun 0.146, prePreb2 0.141, preSec1 0.281, postSec1 26.3 MeV vs Tan 0.150/0.139/0.253/27.2). The
+  **σ_z, σ_E, and capture rows are input-window-limited and NOT comparable**: the repo gun is a DC
+  single-snapshot emitter with no 3.7 ns emission window, so σ_z does not tighten to Tan's and capture
+  is iris-limited (the 150 kV crest blows the beam up radially into the un-rematched lens telescope —
+  tune-sensitive, not fundamental). The location-D σ_z@2856 Δ is **blanked** (the captured core spans
+  >2 RF periods at 2856 MHz, so its raw σ_z@2856 is an unwrapped multi-bucket extent, not a
+  single-bucket bunch length comparable to Tan's 11.1°).
 
-(Embeds below show the `_cond_i` case — the numerically-comparable Tan condition (i); the `_repo_default`
-twins are the same four figures at the qualitative default point.)
+(Embeds below show the `_cond_i` case — Tan condition (i), where the ⟨E⟩ rows compare numerically;
+the `_repo_default` twins are the same four figures at the qualitative default point.)
 
 `tan_fig10p2_at_gun_<case>.png` (Tan 10.2, gun exit): sine-like falling KE(φ), high-KE on φ<0.
 

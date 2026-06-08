@@ -29,7 +29,9 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | D after Sec1 | 3.3134 | 27.130 | 5.424 |  | 121.42 | 5.40 | 6.09 |
 | Tan (published) |  | 27.200 | 3.500 |  | 11.10 | 89.4 | 96.8 |
-| Δ (repo−Tan) |  | -0.070 | 1.924 |  | 110.319 |  |  |
+| Δ (repo−Tan) |  | -0.070 | 1.924 |  | n/a (multi-bucket) |  |  |
+
+> σ_z@2856 here is an UNWRAPPED multi-bucket phase extent (captured core spans 1.2 RF periods at 2856 MHz), NOT a single-bucket bunch length — its Δ-vs-Tan is blanked.
 
 ## Capture bookkeeping (denominators)
 
@@ -40,7 +42,8 @@
 
 ## Footnotes
 
-- **σ_z internal ratio:** the repo @2856/@214 columns derive from ONE σ_t, so their ratio is BY CONSTRUCTION F_2856/F_214 = 13.335 — an internal-consistency check only. Tan's own ratio is 13.52 (a different spatial-σ_z definition with a per-location β); the 13.335 check is NOT agreement with Tan.
+- **σ_z internal ratio:** the repo @2856/@214 columns derive from ONE σ_t, so their ratio is BY CONSTRUCTION F_2856/F_214 = 13.334 — an internal-consistency check only. Tan's own ratio is 13.52 (a different spatial-σ_z definition with a per-location β); the 13.334 check is NOT agreement with Tan. Because @214 and @2856 are the same σ_t scaled by two frequencies, their two Δ-vs-Tan columns are **NOT independent** — they are one measurement presented at two frequencies (both kept to match Tan's table layout).
+- **after-Sec1 σ_z@2856 Δ blanked (multi-bucket):** the captured core spans >1 RF period at 2856 MHz, so its σ_z@2856 is an UNWRAPPED multi-bucket phase extent, NOT a single-bucket bunch length. It is not comparable to Tan's 11.1° (a single tightly-captured bucket), so the Δ is blanked. The raw σ_z value is kept; the core is NOT wrapped (wrapping a genuinely multi-period bunch would fake a short bunch length).
 - **Denominator mismatch:** Tan's 100% (upstream) and 89.4/96.8 (postSec1) reference the gun-emitted bunch with no loss yet. The repo's `q_injected_C` already sits past the converging halo and includes the real 9.547 mm iris scrape. Repo capture = 5.4% in-bucket / 6.1% all-buckets (both vs `q_injected_C`); iris transmission = 31.9% (`q_in_bore`/`q_injected`) is a SEPARATE quantity (do NOT conflate it with capture). The repo numbers are far below Tan's BY CONSTRUCTION (γ² self-field + real iris + operating point). Annotate, do NOT 'fix'.
 - **Location C capture = n/a (pre-iris):** C is the pre-scrape injector population; its charge differs from D's iris survivors, so the C→D ratio is not a clean repo capture fraction.
 - **after-Sec1 σ_z@214 blank:** Tan leaves it blank; the captured-core σ_z is reported @2856 only.

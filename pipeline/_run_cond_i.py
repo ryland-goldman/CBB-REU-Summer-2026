@@ -39,9 +39,16 @@ def main():
         PREB1_KW=PREB1_KW_CONDI, PREB1_PHI_OFF=-90.0,   # 50 kV @ phase-null
         PREB2_KW=PREB2_KW_CONDI, PREB2_PHI_OFF=0.0,     # 150 kV @ crest
         OUTDIR="injector/diags/cond_i",
-        MAX_ITERS=1000,                                 # more MLMG headroom for the dense bunch
-        REQUIRED_PRECISION=3e-4,                        # looser tol (long-thin box, dense self-field)
-        CFL=0.6,                                        # finer dt → smaller per-step field change
+        MAX_ITERS=1000,                                 # more MLMG iterations — accuracy-NEUTRAL
+                                                        #   (lets the solve converge; does not trade tol)
+        REQUIRED_PRECISION=3e-4,                        # looser convergence tol — accuracy-TRADING
+                                                        #   (long-thin box, dense self-field). But the
+                                                        #   injector-exit (C) relative σ_E is ~8.7%
+                                                        #   (< Tan's 17%), so this relaxation is NOT
+                                                        #   broadening σ_E — the σ_E gap is downstream/
+                                                        #   input-bunch-dominated, not solve-tol-driven.
+        CFL=0.6,                                        # finer dt → MLMG warm-start + a cleaner handoff
+                                                        #   dump (a dump lands at the handoff plane)
     )
     injector.run(plots=False)
 
