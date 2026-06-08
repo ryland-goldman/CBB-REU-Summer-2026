@@ -117,7 +117,14 @@ true value is higher). The robust deliverable is the energy gain, not the transm
 
 ## Space charge & quads
 
-- **SC OFF** (`Bcurr = 0`): negligible at >25 MeV (transverse SC ∝ 1/γ², γ > 49 at entry).
+- **SC OFF by default** (`SPACE_CHARGE=False` ⇒ `Bcurr = 0`): the headline. SC is negligible at
+  >25 MeV (transverse SC ∝ 1/γ², γ > 49 at entry). `SPACE_CHARGE=True` (a `config()`-overridable
+  module constant) sets `Bcurr = |q_injected|·Bfreq` so Impact-T's single-bunch SC solve carries
+  `Q = Bcurr/Bfreq = q_injected` on the `Nxyz³` mesh. This path is **exploratory/unvalidated** (like
+  QUADS_ON): the per-section ΔE gates were validated SC-off, and `Nxyz=16` is an order-of-magnitude
+  mesh (~1 cell per σ), not converged — re-confirm gates 1/2/5/6 and raise `Nxyz` before relying on
+  SC-on numbers. The per-section field-scale **calibration always runs SC-free** (the on-crest ΔE it
+  fits is SC-independent at γ>49); `Bcurr` is applied only to the final run deck.
 - **Quads present at real tabulated lengths but OFF (`K1 = 0`)** for the headline beam — the
   A→T (current→field) calibrations are undocumented. Each inter-section spacing is a
   `DRIFT_M` (0.4 m placeholder) field-free margin split around the real-length quadrupole

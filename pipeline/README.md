@@ -76,6 +76,18 @@ python pipeline/run_pipeline.py
   physics-neutral SC-off deck the ≈308 MeV energy headline is built on); `True` sets Impact-T
   `Bcurr = q_injected·Bfreq` to drive the SC mesh. Toggle per stage in `run_pipeline.py`, e.g.
   `gun.config(SPACE_CHARGE=False)` or `linac_rest.config(SPACE_CHARGE=True)`.
+  - **Caveat — the cathode is the exception.** For `cathode`, space charge is not a correction on
+    an applied-field beam; it is the *sole current-limiting mechanism* (the SCL virtual cathode).
+    `SPACE_CHARGE=False` there disables Child–Langmuir limiting, so the diode passes the full
+    2×J_CL over-injection (~double the physical current) and the validation figures become invalid —
+    it is **not a meaningful operating point**, only a forces-off sanity check (the stage prints a
+    warning). For `gun` the self-field is *dominant* at 146 keV (it "dwarfs the gun field"), so
+    SC-off is a large change there too, not a mild diagnostic.
+  - **Caveat — `linac_rest` SC-on is exploratory/unvalidated.** The per-section ΔE gates were
+    validated SC-off; the calibration always runs SC-free (energy gain is SC-independent at γ>49)
+    and `Bcurr` is applied only to the final run. With `Nxyz=16` the SC mesh is an order-of-magnitude
+    sanity toggle, not a mesh-converged prediction — re-confirm the gates and raise `Nxyz` before
+    relying on SC-on numbers.
 - **OMP threads:** set the `OMP_THREADS` environment variable (default 1 — keep this pipeline
   single-threaded). The grids are small and the MLMG solve is memory-bandwidth-bound, so threads
   add fork/join + barrier overhead with no gain; only raise `OMP_THREADS` for the much larger
@@ -115,12 +127,16 @@ python pipeline/beam_gui.py
 
 It reads each stage's existing openPMD series (nothing is re-simulated), loads every dump into a
 `pmd_beamphysics.ParticleGroup`, and offers three GPT-style modes: **Trends** (a beam statistic —
-emittance, σ, ⟨KE⟩, charge, … — vs lab ⟨z⟩ across a stage's dumps), **1D Distribution** (weighted
+emittance, σ, ⟨KE⟩, charge, … — vs dump ⟨z⟩ across a stage's dumps), **1D Distribution** (weighted
 histogram of one coordinate on one dump), and **2D Distribution** (phase space as hist2d or
 scatter). A screen slider walks the dumps by ⟨z⟩, a live readout shows the selected dump's beam
 stats, and postprocessing toggles (drop zero-weight, radial cut, longitudinal slice) preview cuts.
-Note: WarpX dumps are time snapshots (all particles share one `t`, so bunch length is reported as
-σ_z, not GPT's σ_t).
+Notes: WarpX dumps are time snapshots (all particles share one `t`, so bunch length is reported as
+σ_z, not GPT's σ_t). The z axis is each dump's raw openPMD ⟨z⟩ — lab-frame for cathode/gun/injector
+but **stage-local** for `linac_sec1` (offset ~1.9 m) and `linac_rest` (offset ~5.1 m); unlike
+`plot_chain` this single-stage explorer does not apply the per-stage z0 shift, so it does not stitch
+the chain in absolute lab z (every derived quantity is z-offset-invariant, so only the absolute z
+position is affected).
 
 ## Cross-stage figures (`pipeline/plot_chain.py`)
 

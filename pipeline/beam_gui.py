@@ -16,7 +16,15 @@ quantities (emittance, σ, energy, …) come for free, exactly as GPT_tools lean
 ParticleGroup.
 
 Three plot modes mirror the GPT GUI:
-  * Trends         — a beam statistic vs lab ⟨z⟩ across every dump of a stage.
+  * Trends         — a beam statistic vs dump ⟨z⟩ across every dump of a stage.
+
+NOTE ON THE z AXIS: each dump is placed at its raw openPMD charge-weighted ⟨z⟩. For cathode/gun/
+injector that ⟨z⟩ is already lab-frame; for linac_sec1 and linac_rest the openPMD z is STAGE-LOCAL
+(linac_sec1 writes z−z.min()+Z_INJECT; linac_rest zeroes z at injection), so their ⟨z⟩ is offset
+from lab z by ~1.9 m / ~5.1 m respectively. `plot_chain` applies those per-stage z0 shifts to stitch
+the chain in true lab z; this explorer does NOT — it shows each stage one at a time, so the absolute
+axis is labelled "dump ⟨z⟩ (stage-local for the two linac sections)". Every derived quantity (σ,
+emittance, ⟨KE⟩, σ_E, charge) is z-offset-invariant, so only the absolute z position is affected.
   * 1D Distribution — a weighted histogram of one coordinate on one dump (screen).
   * 2D Distribution — a phase-space view (hist2d or scatter) of two coordinates.
 
@@ -136,7 +144,7 @@ class StageData:
         self._pg_cache = {}          # iteration -> ParticleGroup
         self._trend_cache = {}       # trend-label -> (z[N], {key: vals[N]})
 
-    # ── screen (dump) index, ordered by lab ⟨z⟩ ──────────────────────────────
+    # ── screen (dump) index, ordered by ⟨z⟩ (stage-local for linac_sec1/linac_rest) ──
     def build_screen_list(self, progress=None):
         """Populate `self.screens` = [(iteration, mean_z), …] sorted by ⟨z⟩.
 
@@ -249,6 +257,9 @@ class BeamGUI:
         self.stage_data = {}          # name -> StageData (lazy)
         self.q = queue.Queue()        # worker-thread → main-thread results
         self._busy = False
+        self._gen = 0                 # monotonic token: a newer _run_async supersedes older ones,
+                                      # so an in-flight worker's payload can't be mis-delivered to a
+                                      # later request's `done` callback (see _run_async / _drain).
         self._progress_text = ""      # written by worker threads, reflected to the
                                       # status label only on the main thread (Tk is not
                                       # thread-safe — see _run_async / _drain).
@@ -445,25 +456,38 @@ class BeamGUI:
         `work` may report progress by assigning to `self._progress_text` (a plain string —
         NEVER touch Tk widgets from the worker). `_drain`, which runs on the main thread via
         `root.after`, reflects that string to the status label.
+
+        Re-entrant by design: each call bumps `self._gen` and stamps its worker payload with that
+        token. If the user triggers a second `_run_async` (e.g. switches stage while a Trends
+        computation is still running), the older drain loop sees `gen != self._gen` and stops
+        WITHOUT delivering — so a stale worker's result is never routed to the newer request's
+        `done`, and the orphaned 60 ms poll loop is not left rescheduling forever.
         """
+        self._gen += 1
+        gen = self._gen
         self._busy = True
         self._progress_text = "Loading…"
         self._set_status(self._progress_text)
 
         def runner():
             try:
-                self.q.put(("ok", work()))
+                self.q.put((gen, "ok", work()))
             except Exception as e:        # surface loader errors to the status line
-                self.q.put(("err", e))
+                self.q.put((gen, "err", e))
         threading.Thread(target=runner, daemon=True).start()
-        self._drain(done)
+        self._drain(done, gen)
 
-    def _drain(self, done):
+    def _drain(self, done, gen):
+        if gen != self._gen:             # superseded by a newer _run_async — stop, deliver nothing
+            return
         try:
-            kind, payload = self.q.get_nowait()
+            item_gen, kind, payload = self.q.get_nowait()
         except queue.Empty:
             self._set_status(self._progress_text)   # main-thread progress reflection
-            self.root.after(60, lambda: self._drain(done))
+            self.root.after(60, lambda: self._drain(done, gen))
+            return
+        if item_gen != gen:              # a stale leftover payload — discard, keep draining for `gen`
+            self.root.after(0, lambda: self._drain(done, gen))
             return
         self._busy = False
         if kind == "err":
@@ -543,7 +567,7 @@ class BeamGUI:
         self._reset_axes()
         for k in keys:
             self.ax.plot(z * 1e3, series[k] * scale, "-o", ms=3, label=k)
-        self.ax.set_xlabel("lab ⟨z⟩ [mm]")
+        self.ax.set_xlabel("dump ⟨z⟩ [mm] (stage-local for linac_sec1 / linac_rest)")
         self.ax.set_ylabel(ylabel)
         self.ax.set_title(f"{self._data().name}: {label}")
         if len(keys) > 1:
@@ -593,7 +617,7 @@ class BeamGUI:
             order = np.argsort(P.weight)   # heavy macroparticles drawn on top
             sc = self.ax.scatter(xv[order], yv[order], c=P.weight[order] * 1e9,
                                  s=4, cmap="viridis")
-            self.cbar = self.fig.colorbar(sc, ax=self.ax, label="weight [nC]")
+            self.cbar = self.fig.colorbar(sc, ax=self.ax, label="charge [nC]")
         if self.equal_var.get():
             self.ax.set_aspect("equal", adjustable="datalim")
         self.ax.set_xlabel(lx)

@@ -84,8 +84,11 @@ PHASE_DEG = 0.0                  # injection RF phase offset [deg] (= phi_sec1_o
 CFL = 0.5                        # dt = CFL · Δz / v_inject
 REQUIRED_PRECISION = 1e-4        # MLMG relative tolerance (space charge is a small perturbation)
 SPACE_CHARGE = True              # beam self-field (space charge) on/off. False →
-                                 # warpx_do_not_deposit: only the applied RF maps act
-                                 # (at ~25 MeV the self-field is already a small perturbation).
+                                 # warpx_do_not_deposit: only the applied RF maps act. Keep TRUE:
+                                 # the self-field is LARGEST at the ~220 keV injection handoff (the
+                                 # beam is captured to relativistic energy over the stage, exiting
+                                 # ~25 MeV), where the lab-frame ES solver even overstates it ~γ², so
+                                 # SC-off is a real change at the low-energy front — diagnostic-only.
 MAX_ITERS = 200                  # MLMG iteration cap
 MAX_STEPS = 0                    # 0 → auto-derive from transit; >0 → fixed
 TRANSIT_MARGIN = 1.0             # transit already targets Z_END short of the wall

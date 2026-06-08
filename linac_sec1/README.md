@@ -122,7 +122,7 @@ Lens 0E) at their true lab z focus the beam upstream and hand it across the 9.54
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
 | grid | `NR`=16 (r) × `NZ`=1664 (z), r ∈ [0, 9.547 mm], z ∈ [0, 3.5 m] |
-| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200 |
+| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200; `SPACE_CHARGE` (default `True`) — `False` passes `warpx_do_not_deposit` (only the RF maps act), a diagnostic-only mode; the self-field is largest at the ~220 keV injection (overstated ~γ² by the lab-frame ES solver), not negligible, so keep it on |
 | applied fields | `linac_rf1/rf2.h5` × `scale` × cos/sin(ωt+φ) (E+B) — two quadrature RF maps only (no solenoid) |
 | beam | injector snapshot nearest the **z ≈ 2.03 m handoff**, downsampled to `MAX_PART`=50k (reweighted), z head at `Z_INJECT` = 5 mm |
 | time step | `dt = CFL · Δz / v_inject` (`CFL`=0.5; ≈ 5 ps; RF period 0.35 ns) |
