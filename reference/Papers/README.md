@@ -91,3 +91,10 @@ Presents the design, simulation, and cold RF test of a C-band (5712 MHz) constan
 **Author:** Denis Vrdoljak (Santa Clara University, September 3, 2003)
 
 Uses envelope simulations in Fortran, PAW, Perl, and C-Shell to optimize injection parameters for CESR following the installation of six wiggler magnets, studying three lattice configurations: the old 1.88 GeV lattice, the 5 GeV CHESS lattice with wigglers off, and the 1.9 GeV lattice with wigglers on. The old lattice yields efficient injection (~50%) at horizontal tunes of 10.535 and 10.565, while the new wiggler lattices present significant injection challenges requiring further investigation.
+
+---
+
+## The CESR Injector (Tan dissertation)
+**File:** *not vendored* — Cheng-Yang Tan, Ph.D. dissertation, Cornell University, 1997.
+
+The comparison target for `pipeline/plot_chapter10.py`. Tan's Chapter 10 documents the PARMELA simulation of the CESR injector front end (thermionic gun → two 214 MHz prebunchers → SLAC traveling-wave Section 1) as KE-vs-RF-phase scatter plots (Tan Fig 10.2–10.5) and a per-location summary (Table 10.2: ⟨E⟩, σ_E, σ_z@214/@2856, capture). The plotter reproduces those figures from this repo's WarpX/Impact-T diags — qualitatively at the repo default operating point, and numerically at Tan **condition (i)** (Preb1 50 kV @ phase-null, Preb2 150 kV @ crest). The PDF is not committed to this repo; this entry indexes it as the reference Table-10.2 source.

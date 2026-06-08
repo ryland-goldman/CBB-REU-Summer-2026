@@ -231,3 +231,8 @@ writing five figures to `results/`:
   β≈0.63 → ~66 % overestimate in `gun/README.md`) and
   shrinking toward negligible once captured (γ ≫ 1). Space charge is a small perturbation here, so
   this is acceptable for the demonstration.
+- **Chapter-10 comparison:** `pipeline/plot_chapter10.py` reads this stage's exit dump
+  (`diags/main/particles`, and `diags/cond_i` for the Tan condition (i) re-run) to reproduce Tan
+  Fig 10.5 (the after-Sec1 captured-core KE-vs-RF-phase, φ@2856 MHz). The caption records the
+  achieved Sec1 gradient (POWER_MW=11 → peak |Ez| 14.89 MV/m, on-crest-average ≈ 11.5 MV/m). See
+  `FIGURES.md`.

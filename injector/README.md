@@ -263,3 +263,7 @@ writes to `injector/results/`:
   `_launch_sim.py`, `plot_chain.main`, and `plot_injector.main`) to fix it; the `_retry_io`
   backoff in the sim/plot scripts is only a backstop for a transient open and does **not** rescue
   fd exhaustion. Any new code that loops reads over a long diag series needs the raised limit.
+- **Chapter-10 comparison:** `pipeline/plot_chapter10.py` reads this stage's `diags/main/particles`
+  (and `diags/cond_i` for the Tan condition (i) re-run) to reproduce Tan Fig 10.3/10.4 (the
+  before-Preb2 and before-Sec1 KE-vs-RF-phase planes). The before-Preb2 plane samples the Preb2
+  **entrance** (`Z_GAP_CENTER_2 − MAP_HALF_Z` ≈ 1.166 m), not the gap center. See `FIGURES.md`.

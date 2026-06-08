@@ -1,0 +1,13 @@
+row_type,location,zbar_m,Ebar_MeV,sigE_MeV,sigz_deg@214,sigz_deg@2856,capture_in_bucket_pct,capture_all_buckets_pct
+repo,A at Gun,0.0467,0.146,0.005,1.07,14.25,,
+tan_published,Tan (published),,0.150,0.000,31.70,428.80,100.0,100.0
+delta,Δ (repo−Tan),,-0.004,0.005,-30.631,-414.545,,
+repo,B before Preb2,1.1682,0.160,0.014,14.32,191.00,,
+tan_published,Tan (published),,0.139,0.023,14.40,194.80,100.0,100.0
+delta,Δ (repo−Tan),,0.021,-0.009,-0.076,-3.800,,
+repo,C before Sec1,2.0308,0.220,0.006,16.07,214.30,n/a (pre-iris),n/a (pre-iris)
+tan_published,Tan (published),,0.253,0.043,5.57,75.30,100.0,100.0
+delta,Δ (repo−Tan),,-0.033,-0.037,10.501,138.999,,
+repo,D after Sec1,3.3134,27.130,5.424,,121.42,5.40,6.09
+tan_published,Tan (published),,27.200,3.500,,11.10,89.4,96.8
+delta,Δ (repo−Tan),,-0.070,1.924,,110.319,,
