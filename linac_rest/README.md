@@ -23,6 +23,14 @@ stage runs **in-process** (`pipeline._impact_runner.ImpactStage`), not in a per-
 subprocess like the WarpX stages — but it still reuses the pipeline's repo-root chdir +
 fd-limit raise + shared log, and redirects `ImpactTexe` stdout into the pipeline log.
 
+**Progress bars.** The WarpX stages drive a tqdm bar from a pywarpx `afterstep` callback;
+Impact-T is an opaque external exe with no such hook, so this stage shows two
+`pipeline._impact_runner.terminal_progress` bars instead: a **calibrate** bar (one tick per
+TW section, `calibration.calibrate_sections(bar=…)`) and a **track** bar for the final
+`I.run()` driven by a background thread watching the run's `fort.18` (column 2 = reference
+`mean_z`) advance 0 → lattice length. Both write to a saved duplicate of the terminal fd, so
+they survive the sim-phase stdout redirect (the same trick `_runner.run_step` uses).
+
 ## Field model — generic constant-gradient TW, no field maps
 
 Sections 2–8 have **no GPT/CST field maps** (none exist; LinacSim/BMAD model them with the

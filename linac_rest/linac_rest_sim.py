@@ -41,10 +41,12 @@ Handoff OUT (Impact-T → openPMD for plot_chain + summary):
 import json
 import os
 import shutil
+import threading
 
 import numpy as np
 
 from pipeline.impact_io import read_warpx_dump, write_openpmd_particles
+from pipeline._impact_runner import terminal_progress
 from . import build_linac_rest_lattice as L
 from . import calibration as cal
 from . import DEFAULT_OUTDIR
@@ -191,6 +193,51 @@ def _stat_vs_z(I, n=200):
     return out
 
 
+def _watch_fort18(I, bar, stop_evt, poll=0.3):
+    """Drive the final-run progress bar from Impact-T's ``fort.18`` (the WarpX stages get a
+    per-step ``afterstep`` callback; Impact-T is an opaque external exe, so we watch its
+    on-disk reference trajectory instead).
+
+    ``fort.18`` column 2 is the reference particle's ``mean_z`` [m] (impact.parsers FORT_KEYS[18]),
+    written live by the exe in the run workdir (``I.path``). Poll its last line and advance ``bar``
+    toward the lattice length. Best-effort: the file is written concurrently, so a partial last
+    line / missing file just skips that tick (the bar still shows elapsed time, and main() snaps it
+    to full when the run returns).
+    """
+    f18 = None
+    while not stop_evt.is_set():
+        try:
+            if f18 is None and I.path:
+                cand = os.path.join(I.path, "fort.18")
+                if os.path.exists(cand):
+                    f18 = cand
+            if f18:
+                with open(f18, "rb") as fh:
+                    tail = fh.read().rsplit(b"\n", 2)
+                line = next((ln for ln in reversed(tail) if ln.strip()), b"")
+                z = float(line.split()[1])
+                if bar.total and z > bar.n:
+                    bar.update(min(z, bar.total) - bar.n)
+        except Exception:
+            pass
+        stop_evt.wait(poll)
+
+
+def _run_with_progress(I, total_len):
+    """Run the full Impact-T deck with a fort.18-driven z-progress bar (0 → total_len [m])."""
+    with terminal_progress(total=round(float(total_len), 2),
+                           desc="linac_rest: track", unit="m") as rbar:
+        stop_evt = threading.Event()
+        watcher = threading.Thread(target=_watch_fort18, args=(I, rbar, stop_evt),
+                                   daemon=True)
+        watcher.start()
+        try:
+            I.run()
+        finally:
+            stop_evt.set()
+            watcher.join(timeout=1.0)
+
+
 def _write_outputs(I, outdir, inj):
     """Write the Impact-T result as WarpX-layout openPMD + the injection summary JSON.
 
@@ -247,11 +294,14 @@ def main():
     # ── Per-section scale calibration (Task 5) ────────────────────────────────
     print("Calibrating per-section field scale to ΔE_target (on-crest, scale-only)…",
           flush=True)
-    calib = cal.calibrate_sections(I, P_in, power_mw=POWER_MW, np_calib=Np_calib)
+    with terminal_progress(total=L.N_SECTIONS, desc="linac_rest: calibrate",
+                           unit="sec") as cbar:
+        calib = cal.calibrate_sections(I, P_in, power_mw=POWER_MW, np_calib=Np_calib,
+                                       bar=cbar)
 
     # ── Full run ──────────────────────────────────────────────────────────────
     print(f"Running Impact-T ({L.N_SECTIONS} sections, Ntstep={Ntstep})…", flush=True)
-    I.run()
+    _run_with_progress(I, total_len)
     if not I.finished or I.error:
         raise RuntimeError(f"Impact-T did not finish cleanly (finished={I.finished}, "
                            f"error={I.error})")
