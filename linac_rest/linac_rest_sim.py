@@ -38,6 +38,7 @@ Handoff OUT (Impact-T → openPMD for plot_chain + summary):
     output z is local-frame; the cross-stage z0 shift lives in ``plot_chain``).
 """
 
+import inspect
 import json
 import os
 import shutil
@@ -52,6 +53,11 @@ from . import calibration as cal
 from . import DEFAULT_OUTDIR
 
 MC2_MEV = 0.51099895069          # electron rest energy [MeV]
+
+# Design per-cell phase advance [deg] the FODO gradients are derived at — read from the helper's
+# signature default so the recorded value can never drift from what fodo_quad_gradients() actually
+# used (the sim calls it with the default μ). Placeholder optics (nominal μ; see fodo_quad_gradients).
+_FODO_PHASE_ADV_DEG = inspect.signature(L.fodo_quad_gradients).parameters["phase_adv_deg"].default
 
 # ── Upstream input ────────────────────────────────────────────────────────────
 # linac_sec1's exit dump (its captured ~25 MeV coasting beam). The reader picks the
@@ -188,6 +194,7 @@ def _stat_vs_z(I, n=200):
            "ke_mev": (I.stat("mean_kinetic_energy")[idx] / 1e6).tolist(),
            "sigma_ke_mev": (I.stat("sigma_gamma")[idx] * MC2_MEV).tolist(),
            "sigma_x_m": I.stat("sigma_x")[idx].tolist(),
+           "sigma_y_m": I.stat("sigma_y")[idx].tolist(),
            "norm_emit_x": I.stat("norm_emit_x")[idx].tolist(),
            "norm_emit_y": I.stat("norm_emit_y")[idx].tolist()}
     return out
@@ -280,24 +287,70 @@ def main():
     # ── Handoff IN: captured core from linac_sec1 ─────────────────────────────
     P_in, core_info = load_sec1_core()
 
-    # ── Build the chained 7-section deck ──────────────────────────────────────
-    I, total_len = L.build_impact(
+    # ── Build the CALIBRATION deck — ALWAYS quads-OFF (zero quad/drift radius) ─
+    # Calibration fits each section's crest phase + field scale on `mean_energy`, which is
+    # transverse-independent ONLY on-axis. A quads-OFF, zero-new-aperture deck keeps the decimated
+    # Np_calib bunch neither focused nor bore-scraped mid-fit, so no particle leaves the mean and
+    # the fit is clean and IDENTICAL to today's headline. Quads (+ the new quad bore radius) appear
+    # only on the fresh final-run deck below. Built unconditionally with quads_on=False, quad_k=None.
+    I_cal, total_len = L.build_impact(
         power_mw=POWER_MW, phase_deg=PHASE_DEG, drift_m=DRIFT_M,
         np_particles=P_in.n_particle, dt=Dt, ntstep=Ntstep, nxyz=Nxyz,
-        quads_on=QUADS_ON, quad_k=QUAD_K)
-    I.initial_particles = P_in
-    I.configure()
+        quads_on=False, quad_k=None)
+    I_cal.initial_particles = P_in
+    I_cal.configure()
     print(f"Deck: {L.N_SECTIONS} TW sections, Σ {total_len:.2f} m, P={POWER_MW:g} MW, "
           f"on-crest θ₀={PHASE_DEG:g}°, SC off, quads {'ON' if QUADS_ON else 'OFF (K1=0)'} "
           f"→ {outdir}/", flush=True)
 
-    # ── Per-section scale calibration (Task 5) ────────────────────────────────
+    # ── Per-section scale calibration (Task 5) — on the quads-OFF deck ─────────
     print("Calibrating per-section field scale to ΔE_target (on-crest, scale-only)…",
           flush=True)
     with terminal_progress(total=L.N_SECTIONS, desc="linac_rest: calibrate",
                            unit="sec") as cbar:
-        calib = cal.calibrate_sections(I, P_in, power_mw=POWER_MW, np_calib=Np_calib,
+        calib = cal.calibrate_sections(I_cal, P_in, power_mw=POWER_MW, np_calib=Np_calib,
                                        bar=cbar)
+    # `calib` carries per-section {scale, crest_phase_deg} — both are re-applied to the run deck.
+    calibrated_scales = [r["scale"] for r in calib]
+
+    # ── Assemble the RUN deck ─────────────────────────────────────────────────
+    applied_quad_k = [0.0] * L.N_SECTIONS    # placed b1_gradient [T/m] (all-zero quads-OFF)
+    if QUADS_ON:
+        # Build a FRESH quads-ON deck (no in-place-mutate-then-configure ambiguity): the calibrated
+        # `scales` are baked in at build time, the derived (or overridden) FODO gradients are placed,
+        # and the new quad/drift bore radius is active. The measured `ke_in` energy-scales the FODO.
+        quad_k = (QUAD_K if QUAD_K is not None
+                  else L.fodo_quad_gradients(ke_in_mev=core_info["ke_in_mev"]))
+        applied_quad_k = list(quad_k)        # the per-quad T/m actually placed on the run deck
+        I, total_len = L.build_impact(
+            power_mw=POWER_MW, phase_deg=PHASE_DEG, drift_m=DRIFT_M,
+            np_particles=P_in.n_particle, dt=Dt, ntstep=Ntstep, nxyz=Nxyz,
+            quads_on=True, quad_k=quad_k, scales=calibrated_scales)
+        # Re-apply the calibration onto the fresh deck VIA THE CONTROLGROUP, exactly as
+        # calibrate_sections writes the live deck — NOT just the build-time `scales=` element values.
+        # Adding the rf_field_scale ControlGroup (absolute=True, group value defaults 0) and then
+        # configure() would OVERWRITE the baked-in element scales with 0 (a silent no-acceleration
+        # run that still passes the b1_gradient assert). So set the group scale AND the absolute
+        # crest phase per section (θ₀ is absolute ⇒ scales alone don't put the section on crest),
+        # then configure once.
+        for r in calib:
+            gname = cal._ensure_section_group(I, r["index"])
+            cal._set_section_phase(I, r["index"], r["crest_phase_deg"])
+            cal._set_group_scale(I, gname, r["scale"])
+        I.initial_particles = P_in
+        I.configure()
+        # Guard: the FODO must actually be placed on the run deck (catches a silent quads-off build).
+        # Each gap is an H/V doublet (quad{N}a lead pole + quad{N}b opposite-sign half); check the
+        # lead half of the first placed doublet.
+        assert I.ele["quad3a"]["b1_gradient"] != 0.0, (
+            "QUADS_ON run deck has zero b1_gradient on quad3a — FODO gradients did not apply")
+        print(f"Run deck: quads ON, H/V-doublet lead-pole b1_gradient [T/m] = "
+              f"{[round(quad_k[i], 4) for i in range(L.N_SECTIONS - 1)]} "
+              f"(placeholder optics — guessed K1, A→T undocumented, H/V doublet (±g halves), "
+              f"nominal μ={_FODO_PHASE_ADV_DEG:g}°)", flush=True)
+    else:
+        # Headline: the run deck IS the quads-OFF calibrated deck (byte-identical to before).
+        I = I_cal
 
     # ── Full run ──────────────────────────────────────────────────────────────
     print(f"Running Impact-T ({L.N_SECTIONS} sections, Ntstep={Ntstep})…", flush=True)
@@ -355,6 +408,13 @@ def main():
         total_lattice_length_m=float(total_len),
         power_mw=float(POWER_MW), phase_deg=float(PHASE_DEG),
         quads_on=bool(QUADS_ON),
+        # Applied FODO optics (placeholder — guessed K1, A→T undocumented, H/V doublet (±g qL/2
+        # halves), nominal μ): the per-quad b1_gradient [T/m] ACTUALLY PLACED on the run deck (all-zero when
+        # quads OFF), and the design per-cell phase advance used to derive them. Length-N_SECTIONS;
+        # only [0..N_SECTIONS-2] (Q2–Q7) are placed — the trailing entry (Q8, after the last section)
+        # is never installed (see fodo_quad_gradients / README Q8-inert note).
+        quad_k=[float(k) for k in applied_quad_k],
+        quad_phase_adv_deg=float(_FODO_PHASE_ADV_DEG),
         # Aperture provenance: which aperture the transmission was measured against. The real
         # tapered bore is ON for the headline (bore_aperture_on True or quads_on); xyrad_m is the
         # containment-box half-width (kept just above the bore so the bore is the binding aperture).
@@ -368,6 +428,13 @@ def main():
         # Transmission from MACRO COUNT (n_out/n_in), measured before re-imposing charge.
         n_core_in=n_in, n_out=n_out,
         transmission_core=transmission,              # n_out/n_in — honest (1.0 only if no scrape)
+        # Envelope-in-bore soft gate (T6): 3σ_max of the transverse RMS envelope vs the narrowest
+        # bore radius [m], and the PASS/FAIL boolean. Soft/diagnostic — characterizes whether the
+        # FODO contains the beam; never gated (guessed K1). Can legitimately FAIL quads-OFF (the
+        # no-focusing beam diverges past the bore — see validate_run).
+        max_envelope_m=float(gates["max_envelope_m"]),
+        min_bore_m=float(gates["min_bore_m"]),
+        envelope_in_bore=gates["envelope_in_bore"],
         q_out_C=q_out,                               # q_core × transmission (physically transmitted)
         core_charge_frac_of_sec1_exit=core_info["core_charge_frac"],
         q_after_cut_C=core_info["q_after_cut_C"],

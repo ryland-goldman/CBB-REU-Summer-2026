@@ -89,6 +89,11 @@ injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
 # linac_rest (Impact-T, serial ImpactTexe): SC off ⇒ cheap (~tens of s incl. per-section
 # calibration). Np is the tracked macroparticle count; Ntstep is sized for the ~36 m line.
 linac_rest.config(Np=4000, Ntstep=200000)
+# Exploratory FODO (headline stays quads OFF): derives energy-scaled K1 from optics (nominal
+# μ=50°, A→T undocumented ⇒ placeholder strengths). Contains BOTH transverse planes (bounded,
+# oscillating σ_x/σ_y) — the deliverable is the bounded envelope, NOT transmission (which lands
+# ≈ the quads-OFF ~78% baseline, not above it). Leave commented for the headline run.
+# linac_rest.config(QUADS_ON=True)                     # exploratory FODO
 
 
 def _beam_summary(diag, label, unit="keV"):

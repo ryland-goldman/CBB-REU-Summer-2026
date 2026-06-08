@@ -123,8 +123,53 @@ true value is higher). The robust deliverable is the energy gain, not the transm
   `DRIFT_M` (0.4 m placeholder) field-free margin split around the real-length quadrupole
   (`gap/2` drift, quad, `gap/2` drift — the quad length is NOT subtracted from the gap, since
   several real quads exceed 0.4 m). With `K1 = 0` a quad is optically a drift of its length.
-  Set `QUADS_ON=True` + `QUAD_K=[...]` for the **exploratory** FODO figure (labeled
-  "placeholder optics — not predictive").
+- **`QUADS_ON=True` → derived energy-scaled FODO (exploratory).** Turns the inert quads into a
+  real focusing lattice. `build_linac_rest_lattice.fodo_quad_gradients(ke_in_mev=…)` derives the
+  per-quad `b1_gradient` [T/m] from **accelerator optics**, NOT measured quad current (A→T
+  undocumented):
+  - **constant per-cell phase advance** (nominal **μ = 50°**), with the gradient **energy-scaled by
+    the local beam momentum** Bρ_i = √(KE·(KE+2·mc²))/c at the section *exit* energy (Bρ rises ~5×
+    across the line, so a fixed Bg would under-focus downstream);
+  - **each gap is a real H/V doublet** — the tabulated machine quad is a focus-pole + defocus-pole
+    assembly, so the deck splits it into **two opposite-sign `L_q/2` halves back-to-back** (`quad{N}a`
+    lead pole at the alternating sign `(-1)**i`, `quad{N}b` its negation; the halves sum to `qL`).
+    A doublet **net-focuses in BOTH planes**, so the envelope stays bounded in x *and* y (a single
+    thick quad of one sign would defocus one plane over the multi-metre half-cell and that plane would
+    scrape — that was the over-pinched first attempt, 49–58 % transmission). The lead-pole sign
+    alternates gap-to-gap.
+  - K1 is solved from the **exact thick-lens cell matrix** (`_solve_doublet_k1`), NOT a thin-lens
+    formula — the half-quads are not thin (K1·L_q/2 ≈ 0.7–1.4). The cell is
+    `drift(gap/2)·(+K1 half-quad, L_q/2)·(−K1 half-quad, L_q/2)·drift(gap/2)·drift(L_section(i+1))`
+    with the following **RF section treated as a field-free drift**; per gap, K1_i solves
+    `cos μ = ½·Tr(cell_i)` by bisection (the symmetric ± doublet gives the same `½·Tr` in both
+    planes ⇒ both get μ), then `g_i = (-1)**i · K1_i · Bρ_i` [T/m]. `k1_max` (=14) caps the bracket;
+    a cell that can't reach μ within it falls back to `k1_max`. μ=50° is reachable by every gap
+    (the weakest, gap 2 / short CEA-2, tops out near 56°) and sits mid-band (0–180° stable).
+
+  Returns **length-`N_SECTIONS` (7)**: the first 6 are the placed quads (`quad2…quad7`, one after
+  every section except the last, each placed as an `a`/`b` doublet); the **7th (Q8, after the final
+  section 8) is never placed** and is fixed at `0.0` (`QUAD_K[6]` / the helper's last entry are inert
+  — the Q8-inert off-by-one). A `QUAD_K=[…]` override (T/m, signed, the per-gap doublet strength)
+  replaces the derived list. Two approximations are stamped on **every** QUADS_ON output and must stay
+  there: (1) the inter-quad multi-metre RF section is treated as a **field-free drift** (the lattice is
+  non-periodic and the beam accelerates through it), so **μ is nominal, not realized** — the acceptance
+  is σ_x/σ_y *boundedness*, NOT a measured 50°/cell; (2) the K1
+  **magnitude** is guessed (A→T undocumented), so the focusing strength is order-of-magnitude only.
+  Label: "placeholder optics — guessed K1, A→T undocumented, H/V doublet (±g qL/2 halves), nominal μ."
+- **Calibrate quads-OFF, then build a fresh quads-ON run deck.** The per-section crest-phase + field-
+  scale calibration fits `mean_energy`, which is transverse-independent **only on-axis**, so it runs on
+  an unconditionally **quads-OFF, zero-quad-radius** deck (the decimated `Np_calib` bunch is neither
+  focused nor bore-scraped mid-fit ⇒ gates 1/2 PASS *identically* OFF/ON). The quads-ON path then
+  builds a **fresh** deck with the calibrated `scales`, re-applies each section's absolute crest phase
+  AND its `rf_field_scale` ControlGroup value (`cal._set_group_scale` — the group is `absolute=True`
+  defaulting 0, so a naive scale carry-over would silently run **zero-field**), and asserts
+  `quad3.b1_gradient ≠ 0` before tracking. The quads-OFF headline run deck is byte-identical to before.
+- **New quad / inter-section-drift bore aperture — gated on `quads_on`, NOT `bore_aperture_on`.** When
+  `quads_on`, the quad (and the two inter-section drifts) get `radius = section_bore_radii(i)[1]` — the
+  section **exit** bore (the quad sits *downstream* of the section exit at the narrower taper; the solrf
+  body already uses the **entrance** radius `[0]`, an intentional taper). Gating on `quads_on` (not the
+  already-True `bore_aperture_on`) keeps the quads-OFF path byte-identical (`radius` stays `0.0`) so the
+  published 78.5% can't silently regress; the box `XYRAD_M` is never widened.
 - **Transverse confinement: the quads-OFF headline does NOT contain the beam — the energy gain
   is the result, transmission is only a no-focusing lower bound.** With **no quad focusing** over
   the 36 m line the beam genuinely diverges. Transmission is measured against the **real tapered
@@ -139,12 +184,26 @@ true value is higher). The robust deliverable is the energy gain, not the transm
   loss** — the real FODO lattice (quad A→T calibrations undocumented, `details.md`) contains the
   beam, so the true transmission is higher. The reported transmission (count-based `n_out/n_in`
   against the real bore, measured *before* the openPMD charge re-imposition so it can never be
-  masked) is therefore a **lower bound, not a prediction**; capture/transmission through
+  masked) is therefore a **quads-OFF lower bound, not a prediction**; capture/transmission through
   sections 2–8 is not predicted by the quads-OFF
   headline. The robust, quad-independent deliverable is the **longitudinal physics** (exit ⟨KE⟩,
-  per-section ΔE), which does not depend on transverse confinement. Meaningful aperture/transmission
-  physics requires `QUADS_ON` (then the real tapered bore `section_bore_radii` auto-enables), which
-  is exploratory only (guessed K1).
+  per-section ΔE), which does not depend on transverse confinement.
+- **`QUADS_ON` contains the beam ⇒ both transverse planes are BOUNDED — that is the deliverable, NOT
+  transmission.** With the μ=50° doublet the measured envelope stays bounded and **out-of-phase
+  oscillating** the full 36 m: σ_x ≈ 0.6–4.4 mm, σ_y ≈ 0.7–3.9 mm (FODO beating, no blow-up), vs the
+  quads-OFF monotonic rise. The longitudinal headline is preserved (exit ⟨KE⟩ ≈ **309.0 MeV**, gates
+  1/2/5/6 PASS; chromatic εn growth as expected, not a runaway). The soft `envelope_in_bore` 3σ is
+  ~13 mm (vs ~19 mm no-focus / ~25 mm an over-pinched single-sign quad) — much improved, the win is
+  the **bounded** envelope visible in `fodo_optics.png`, not the 3σ < narrowest-bore threshold.
+- **Transmission lands ≈ the quads-OFF baseline (~78.2 %, 1775/2271), NOT above it.** This is expected
+  and is **not** a regression of the focusing, for two structural reasons: (1) the doublet halves now
+  carry the real **exit-bore `radius` aperture** that the no-quad baseline lacks — extra scrape planes
+  the quads-OFF run simply does not have; and (2) the injected beam **expands σ from ~1.2 mm to ~4.4 mm
+  over the first ~3.5 m** (through section 2) **before the first quad** (placed *after* section 2) can
+  act — the real lattice has no quad ahead of section 2, so that initial divergence is already past the
+  narrowing bore by the time focusing begins. So there is **no "> 78.5 %" or predictive-transmission
+  claim** — transmission stays a soft/print-only number ≈ baseline; the contained, bounded σ_x/σ_y is
+  the exploratory result. Still placeholder optics — guessed K1, A→T undocumented, nominal μ.
 
 ## e+ compressor (CU 2)
 
@@ -155,17 +214,21 @@ is asserted. Future work.
 
 | File | Role |
 |------|------|
-| `build_linac_rest_lattice.py` | Per-section table + `√P` scaling helpers; `build_impact(...)` assembles the chained 7-section deck in-memory (reuses vendored `rfdata4–7`, drifts, quads). |
+| `build_linac_rest_lattice.py` | Per-section table + `√P` scaling helpers; `fodo_quad_gradients(...)` (derived energy-scaled FODO K1, exploratory); `build_impact(...)` assembles the chained 7-section deck in-memory (reuses vendored `rfdata4–7`, drifts, quads). |
 | `linac_rest_sim.py` | `main()`: handoff IN (captured core from `linac_sec1`) → build deck → calibrate → `I.run()` → §5 validation gates → openPMD handoff OUT + `injection_summary.json`. |
 | `calibration.py` | `calibrate_sections` (per-section local-crest + scale fit) and `validate_run` (§5 gates). |
-| `plot_linac_rest.py` | Energy/σ_KE/emittance vs z (from `I.stat`), per-section target-vs-achieved bars, exploratory FODO σ_x. |
+| `plot_linac_rest.py` | Energy/σ_KE/emittance vs z (from `I.stat`), per-section target-vs-achieved bars, FODO transverse envelope σ_x/σ_y. |
 | `rfdata/rfdata4–7` | Vendored S-band TW field shapes (committed). |
 
 ## Performance knobs (via `linac_rest.config(...)`)
 
 `POWER_MW`, `PHASE_DEG`, `MIN_KE_MEV` (capture cut), `Np` (tracked macroparticles), `Ntstep`
 (step cap; the run asserts `mean_z` reached the final zedge so a truncated run fails loudly,
-NOT silently), `Dt`, `Nxyz`, `DRIFT_M`, `QUADS_ON`, `QUAD_K`, `BORE_APERTURE_ON` (default
+NOT silently), `Dt`, `Nxyz`, `DRIFT_M`, `QUADS_ON` (default `False`; `True` ⇒ the exploratory
+derived-FODO path — `fodo_quad_gradients` auto-derives the per-quad K1 from optics, no need to
+supply `QUAD_K`), `QUAD_K` (optional signed-`b1_gradient` [T/m] override; `None` ⇒ auto-derive
+when `QUADS_ON`, else zeros — only `QUAD_K[0..5]` / Q2–Q7 are placed, the 7th entry/Q8 after the
+last section is **never installed**, the Q8-inert off-by-one), `BORE_APERTURE_ON` (default
 `True` — the real tapered bore is the aperture; set `False` only to disable bore scraping, e.g.
 a divergence study), `Np_calib` (decimated bunch for the per-section calibration;
 the final run uses full `Np`), `OUTDIR`. SC-off + the seeded/decimated calibration make the run
@@ -189,7 +252,18 @@ from a full-bunch full-scan calibration); `ImpactTexe` is serial.
 6. min captured KE ⇒ β > 0.999 — hard, justifies no-slip;
 7. transmission (count-based `n_out/n_in`) — diagnostic + **no-focusing LOWER BOUND, not a
    prediction**: quads-OFF the beam diverges and a fraction leaves the transverse domain (model
-   artifact, not real-machine loss — the real FODO contains it). Predictive only with `QUADS_ON`.
+   artifact, not real-machine loss — the real FODO contains it). With `QUADS_ON` it lands **≈ the
+   quads-OFF baseline (~78.2 %), NOT above it** (the doublet's win is the bounded envelope, not
+   transmission — see *Space charge & quads* for the two structural reasons); stays **soft/print-only**,
+   never a hard gate (K1 is guessed).
+8. `envelope_in_bore` (**soft**, print-only, `QUADS_ON`-relevant) — `3σ·max(σ_x, σ_y) < min bore`,
+   a **conservative 3σ** check on whether the derived FODO contains the envelope. NOT a hard gate (K1
+   unvalidated — it must never gate the energy headline). It currently prints **FAIL both OFF and ON**
+   because the **3σ multiple** exceeds the ~9.9 mm narrowest bore (~19 mm OFF, ~13 mm ON) — but the
+   **RMS σ itself stays well inside** the bore quads-ON (≤ 4.4 mm vs 9.9 mm), so the FAIL is the
+   conservative 3σ edge, not the beam hitting the pipe. It is therefore **not** a "FAIL-when-OFF /
+   PASS-when-ON" liveness test — the meaningful improvement is the much smaller 3σ and the **bounded,
+   oscillating** σ_x/σ_y with quads ON (vs the OFF monotonic rise), seen in `fodo_optics.png`.
 
 ## Gotchas (Impact-T / lume-impact)
 

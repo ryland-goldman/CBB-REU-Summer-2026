@@ -375,6 +375,22 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     ke_min_mev = (P_out["energy"].min() / 1e6) - ELECTRON_REST_MEV
     beta_min = _beta_from_ke_mev(ke_min_mev)
 
+    # Envelope-in-bore soft gate (NEW, T6): does the transverse RMS envelope stay inside the
+    # real tapered bore along the whole line? σ_x/σ_y are RMS, not the beam edge, so we test a
+    # BEAM_EDGE_SIGMA=3σ multiple (a meaningful edge-vs-bore proxy) against the NARROWEST bore
+    # radius (entrance + exit of every section). This is the meaningful check that the FODO
+    # actually CONTAINS the beam (vs. a few core particles squeaking through). It is print-only /
+    # soft — K1 is the guessed-strength placeholder FODO (A→T undocumented), so it must never
+    # gate the energy headline. NOT a "FAIL-when-quads-OFF" liveness test: the quads-OFF beam
+    # transmits ~78.5% with adiabatic damping, so its RMS σ may stay under the bore even while
+    # distribution tails scrape — this gate can legitimately PASS quads-OFF (liveness is shown by
+    # the figure: bounded oscillation quads-ON vs. monotonic RMS rise quads-OFF).
+    BEAM_EDGE_SIGMA = 3.0
+    sx = I.stat("sigma_x")
+    sy = I.stat("sigma_y")
+    max_env_m = BEAM_EDGE_SIGMA * float(max(sx.max(), sy.max())) if len(sx) else float("nan")
+    min_bore_m = min(min(L.section_bore_radii(i)) for i in range(L.N_SECTIONS))
+
     # Transmission from the macroparticle COUNT, NOT charge. Count-based is the authoritative
     # measure (it's what sim.main() records); a charge ratio would only equal it because main()
     # re-imposes q_out = q_core·(n_out/n_in) before calling this — a hidden ordering dependency.
@@ -403,6 +419,9 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     gates["beta_min"] = beta_min
     gates["beta_min_ok"] = beta_min > 0.999
     gates["transmission"] = transmission
+    gates["max_envelope_m"] = max_env_m
+    gates["min_bore_m"] = min_bore_m
+    gates["envelope_in_bore"] = (max_env_m < min_bore_m) if max_env_m == max_env_m else None
 
     def mark(ok):
         return "PASS" if ok else "FAIL" if ok is not None else "n/a "
@@ -421,6 +440,9 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
           f"β_min = {beta_min:.5f} (>0.999 ⇒ no-slip OK)")
     print(f"[ -- ] 7. transmission {transmission*100:.1f}% "
           f"(meaningful only with aperture scraping; else ~100% tautology)")
+    print(f"[{mark(gates['envelope_in_bore'])}] 8. envelope-in-bore: 3σ_max = "
+          f"{max_env_m*1e3:.2f} mm vs min bore {min_bore_m*1e3:.2f} mm "
+          f"(soft — does the FODO contain the RMS envelope?)")
 
     # Hard gates the team locked as must-pass (concrete asserts for T6 to verify the run).
     if require_gates:
