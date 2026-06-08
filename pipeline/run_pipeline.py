@@ -53,6 +53,7 @@ import cathode
 import gun
 import injector
 import linac_sec1
+import linac_rest
 
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 
@@ -66,6 +67,10 @@ injector.config(PREB1_KW=8, PREB2_KW=10, PHASE="crest")  # preb1=8 kW, preb2=10 
 # Sol 0 (40 A) and Lens 0A/0E live on the injector now (I_SOL0/I_LENS0A/I_LENS0E, faithful
 # defaults in injector_sim) — the linac no longer has a solenoid, only RF power + phase.
 linac_sec1.config(POWER_MW=11.0)                      # sec1_input_power = 11 MW (PHASE_DEG=0 default)
+# linac_rest = Cornell Linac sections 2–8 (Impact-T): one power convention for the whole
+# linac (11 MW), √P-scaled per section. The captured-core cut (MIN_KE_MEV) drops the sec-1
+# low-energy un-captured tail so the injected beam has β > 0.999 (rigid-crest no-slip).
+linac_rest.config(POWER_MW=11.0)                      # one power convention across the linac
 
 # ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
 #    reason the injector NZ must stay at 1664: see pipeline/README.md § Configuration. ──
@@ -81,6 +86,9 @@ injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
 # gun.config(nz=192, MAX_PART=40000, REQUIRED_PRECISION=3e-4, N_DIAGS=20)
 # injector.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
 # linac_sec1.config(NZ=1024, CFL=0.6)   # coarser/faster linac run (default NZ=1664, ~40 s)
+# linac_rest (Impact-T, serial ImpactTexe): SC off ⇒ cheap (~tens of s incl. per-section
+# calibration). Np is the tracked macroparticle count; Ntstep is sized for the ~36 m line.
+linac_rest.config(Np=4000, Ntstep=200000)
 
 
 def _beam_summary(diag, label, unit="keV"):
@@ -140,7 +148,7 @@ def main():
     import time
     t0 = time.time()
     _cl("=" * 72)
-    _cl(" Cornell Linac WarpX pipeline:  cathode -> gun -> injector -> linac_sec1")
+    _cl(" Cornell Linac pipeline:  cathode -> gun -> injector -> linac_sec1 -> linac_rest")
     _cl(f" OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS', '?')}")
     _cl("=" * 72)
     print(f" log: {log_path}")
@@ -149,9 +157,11 @@ def main():
     gun.run()
     injector.run()
     linac_sec1.run()            # SLAC Section 1: ~26 MeV captured at 11 MW (~18% of true injected; γ² lower bound)
+    linac_rest.run()            # Sections 2–8 (Impact-T): captured core → ≈307 MeV at 11 MW
 
     _beam_summary(injector.resolve_outdir(), "injector exit", "keV")
     _beam_summary(linac_sec1.resolve_outdir(), "linac_sec1 exit", "MeV")
+    _beam_summary(linac_rest.resolve_outdir(), "linac exit (8 sections)", "MeV")
 
     # Cross-stage figures (in-process, no pywarpx): one moment table per stage →
     # chain_evolution / emittance_budget / transmission_waterfall / scorecard in results/.
@@ -165,7 +175,7 @@ def main():
     _cl("\n" + "=" * 72)
     _cl(f" Pipeline complete in {(time.time()-t0)/60:.1f} min.")
     _cl(" Figures: cathode/results/, gun/results/, injector/results/, linac_sec1/results/, "
-        "results/ (cross-stage)")
+        "linac_rest/results/, results/ (cross-stage)")
     _cl("=" * 72)
     print(f" log: {log_path}")
 

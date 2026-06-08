@@ -6,7 +6,7 @@ ONE per-dump moment table per stage (placed at each dump's own lab ⟨z⟩), and
 four figures — all views of that single table:
 
   * results/chain_evolution.png      — 3×2 panels vs lab ⟨z⟩ across cathode→gun→
-                                       injector→linac: ⟨KE⟩ (log-y), ε_n,x, σ_x/σ_r,
+                                       injector→linac: ⟨KE⟩ (log-y), ε_n,x, σ_x,
                                        σ_z (log-y), within-stage charge fraction, I_peak.
   * results/emittance_budget.png     — ε_n,x entry vs exit per stage (waterfall).
   * results/transmission_waterfall.png — the end-to-end charge chain with the TWO
@@ -35,7 +35,7 @@ PHYSICS / UNITS NOTES (reviewer-flagged):
     (gun/injector downsample-reweight), so panel (5) shows WITHIN-stage transmission and the
     waterfall stitches the true end-to-end chain via the recorded denominators.
   - Lab-frame ES self-field overestimates transverse space charge by ~γ² (≈1.66× at β≈0.7);
-    the injector/linac σ_r and capture numbers are conservative (pessimistic) — noted on the
+    the injector/linac σ_x and capture numbers are conservative (pessimistic) — noted on the
     panels.
 """
 
@@ -64,12 +64,18 @@ RESULTS = "results"             # repo-root results/ (git-ignored; git add -f)
 # 2.03 m handoff plane instead of overlapping the injector — see _apply_linac_z0().
 # The cathode is 2D x–z (no y/uy); the rest are RZ.
 STAGES = [
-    {"name": "cathode",  "path": "cathode/diags/particles",         "z0": 0.0, "geom": "2d", "color": "C0"},
-    {"name": "gun",      "path": "gun/diags/particles",             "z0": 0.0, "geom": "rz", "color": "C1"},
-    {"name": "injector", "path": "injector/diags/main/particles",   "z0": 0.0, "geom": "rz", "color": "C2"},
-    {"name": "linac",    "path": "linac_sec1/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C3"},
+    {"name": "cathode",    "path": "cathode/diags/particles",         "z0": 0.0, "geom": "2d", "color": "C0"},
+    {"name": "gun",        "path": "gun/diags/particles",             "z0": 0.0, "geom": "rz", "color": "C1"},
+    {"name": "injector",   "path": "injector/diags/main/particles",   "z0": 0.0, "geom": "rz", "color": "C2"},
+    {"name": "linac",      "path": "linac_sec1/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C3"},
+    # linac_rest = Cornell Linac sections 2–8 (Impact-T). Its openPMD z is the Impact-T
+    # LOCAL frame (~0 at section-2 zedge), so z0 is filled at runtime from the recorded
+    # z_inject_lab_m − z_inject_local_m (see _apply_linac_rest_z0). Color C5 (NOT C4 —
+    # C4 is the iris bar in the transmission waterfall).
+    {"name": "linac_rest", "path": "linac_rest/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C5"},
 ]
 LINAC_INJ_SUMMARY = "linac_sec1/diags/main/injection_summary.json"
+LINAC_REST_INJ_SUMMARY = "linac_rest/diags/main/injection_summary.json"
 Z_HANDOFF = 2.03                # [m] linac entrance (Z_acc_1); the injector→linac handoff plane
 
 
@@ -89,6 +95,40 @@ def _apply_linac_z0(linac_inj):
         linac["z0"] = linac_inj["z_handoff_m"] - linac_inj["z_inject_mean_m"]
     else:
         linac["z0"] = Z_HANDOFF
+
+
+def _apply_linac_rest_z0(rest_inj, tables=None):
+    """Set the linac_rest (sections 2–8, Impact-T) stage's lab-z offset.
+
+    Impact-T output z is the deck-LOCAL frame (≈0 at section-2's zedge), exactly like
+    the linac_sec1 local-frame case — so its dumps must be shifted to lab z to abut
+    linac_sec1 without overlap. The offset that maps Impact-T local z to lab z is
+
+        z0 = z_inject_lab_m − z_inject_local_m
+
+    where z_inject_lab_m is RECORDED in linac_rest/diags/main/injection_summary.json
+    (= the lab-z the sim injected the linac_sec1 exit beam at = linac_sec1's exit lab-z),
+    and z_inject_local_m is the Impact-T local z the beam was placed at. The sim zeroes z
+    at injection (`Pc.z -= mean_z`), so z_inject_local_m defaults to 0 when the summary
+    omits it. This is computed from RECORDED values, NOT a literal ~5.1 m, so it tracks the
+    real handoff plane if upstream geometry shifts.
+
+    Fallback (no summary at all): derive linac_sec1's exit lab-z from the moment tables —
+    the linac stage's already-applied z0 (from _apply_linac_z0) plus its EXIT dump's local
+    ⟨z⟩. Falls back further to the linac stage's z0 if no linac table is available, so the
+    segment still lands downstream of the injector rather than overlapping it.
+    """
+    rest = next(st for st in STAGES if st["name"] == "linac_rest")
+    if rest_inj and "z_inject_lab_m" in rest_inj:
+        rest["z0"] = rest_inj["z_inject_lab_m"] - rest_inj.get("z_inject_local_m", 0.0)
+        return
+    # Fallback: linac_sec1 exit lab-z from the tables (z0 already applied to those rows).
+    linac_rows = (tables or {}).get("linac") or []
+    if linac_rows:
+        rest["z0"] = linac_rows[-1]["z_mean"]    # z_mean already carries the linac z0
+    else:
+        linac = next(st for st in STAGES if st["name"] == "linac")
+        rest["z0"] = linac["z0"]
 
 
 def _exit_row(name, rows):
@@ -211,8 +251,8 @@ def render_chain_evolution(tables):
                       xy=(seam_z, a_ex.get_ylim()[1]), xytext=(0.30, 0.92),
                       textcoords="axes fraction", fontsize=7, color="0.3",
                       arrowprops=dict(arrowstyle="->", color="0.5", lw=0.8))
-    a_sx.set_ylabel("σ_x / σ_r  [mm]"); a_sx.set_title("Transverse size")
-    a_sx.annotate("σ_r conservative:\nES omits 1/γ² pinch (~γ²≈1.7×)",
+    a_sx.set_ylabel("σ_x  [mm]"); a_sx.set_title("Transverse size (per-plane RMS)")
+    a_sx.annotate("σ_x conservative:\nES omits 1/γ² pinch (~γ²≈1.7×)",
                   xy=(0.50, 0.92), xycoords="axes fraction", fontsize=7, color="0.3")
     a_sz.set_yscale("log"); a_sz.set_ylabel("σ_z  [mm]"); a_sz.set_title("Bunch length")
     a_q.set_ylabel("q(z) / q(stage entry)")
@@ -254,12 +294,15 @@ def render_emittance_budget(tables):
     ax.set_ylabel(r"$\varepsilon_{n,x}$  [mm·mrad]")
     ax.set_title("Transverse emittance budget: entry vs exit per stage")
     ax.legend()
-    ax.annotate("Footnotes: (1) the cathode→gun jump is a 2D→RZ DEFINITIONAL change (slab "
-                "x-emittance → projected RZ), not physical emittance growth. (2) the injector "
-                "ε_n growth is space-charge + solenoid-aberration dominated over the 2 m "
-                "low-energy drift; the γ²≈1.7× ES transverse-SC overestimate makes it an UPPER "
-                "bound (real growth is somewhat less — opposite sense to the capture lower bound).",
-                xy=(0.0, -0.15), xycoords="axes fraction", fontsize=7, color="0.3")
+    ax.annotate("Footnotes: (1) the cathode→gun jump is a 2D→RZ DEFINITIONAL change: the slab "
+                "x-emittance (uniform x∈[−R,R], ⟨x²⟩=R²/3) becomes the gun's projected RZ "
+                "emittance after the r-importance resample builds a uniform DISC (⟨x²⟩=R²/4), so "
+                "ε_n,x drops ×√(3/4)≈0.87 (~2.3→~2.0 mm·mrad) — a geometry correction (the disc is "
+                "more physical), NOT physical growth. (2) the injector ε_n growth is space-charge + "
+                "solenoid-aberration dominated over the 2 m low-energy drift; the γ²≈1.7× ES "
+                "transverse-SC overestimate makes it an UPPER bound (real growth is somewhat less — "
+                "opposite sense to the capture lower bound).",
+                xy=(0.0, -0.17), xycoords="axes fraction", fontsize=7, color="0.3")
     os.makedirs(RESULTS, exist_ok=True)
     path = f"{RESULTS}/emittance_budget.png"
     fig.savefig(path, dpi=140); plt.close(fig)
@@ -292,21 +335,23 @@ def render_transmission_waterfall(tables, linac_inj):
     if inj:
         bars.append("injector exit\n(@2.03m handoff)"); vals.append(_exit_row("injector", inj)["q"] * 1e9)
     # The two distinct downstream losses, anchored on the linac's recorded true-injected
-    # breakdown (q_injected_C at the handoff, q_in_bore_C through the 9.547 mm iris) and the
-    # captured charge from the last linac dump.
+    # breakdown (q_injected_C at the handoff, q_in_domain_C = the multi-plane survivors of the
+    # 9.547 mm iris/pipe) and the captured charge from the last linac dump. Use q_in_domain_C
+    # (the 9.547 mm iris radius), NOT q_in_bore_C (the 9.55 mm RF bore) — the bar is labelled
+    # for the iris.
     if linac_inj:
-        bars.append("enters bore\n(9.547mm iris)"); vals.append(linac_inj["q_in_bore_C"] * 1e9)
+        bars.append("passes iris\n(9.547mm)"); vals.append(linac_inj["q_in_domain_C"] * 1e9)
         lin = tables.get("linac") or []
         if lin:
             bars.append("captured\n(~26 MeV)"); vals.append(lin[-1]["q"] * 1e9)
     if not bars:
         return
     fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
-    cols = ["C1", "C2", "C4", "C3"][:len(bars)]   # gun / injector / bore / captured
+    cols = ["C1", "C2", "C4", "C3"][:len(bars)]   # gun / injector / iris / captured
     ax.bar(range(len(bars)), vals, color=cols)
     for i, v in enumerate(vals):
         ax.annotate(f"{v:.4f} nC", (i, v), ha="center", va="bottom", fontsize=8)
-    # Annotate the two loss steps that matter most (bore scrape, capture) vs true injected.
+    # Annotate the two loss steps that matter most (iris scrape, capture) vs true injected.
     if linac_inj:
         qinj = linac_inj["q_injected_C"] * 1e9
         ax.axhline(qinj, color="0.6", ls="--", lw=0.8)
@@ -349,7 +394,8 @@ def render_scorecard(tables, linac_inj):
         qinj = linac_inj["q_injected_C"]; qcap = tables["linac"][-1]["q"]
         cap_note = (f"linac capture = {qcap/qinj*100:.2f}% of true injected "
                     f"({qcap*1e9:.4f}/{qinj*1e9:.4f} nC); "
-                    f"iris transmission = {linac_inj['q_in_bore_C']/qinj*100:.1f}%. "
+                    f"iris transmission = {linac_inj['q_in_domain_C']/qinj*100:.1f}% "
+                    f"(multi-plane 9.547 mm scrape). "
                     f"γ²≈1.7× → capture is a conservative LOWER bound. σ_KE charge-conditional.")
     # Two reader notes (physics-flagged) so adjacent-dump and emittance effects aren't misread:
     note_handoff = ("the injector-exit row is the dump at the 2.03 m handoff plane (same dump the "
@@ -405,8 +451,20 @@ def main():
     if os.path.isfile(LINAC_INJ_SUMMARY):
         with open(LINAC_INJ_SUMMARY) as fh:
             linac_inj = json.load(fh)
+    rest_inj = None
+    if os.path.isfile(LINAC_REST_INJ_SUMMARY):
+        with open(LINAC_REST_INJ_SUMMARY) as fh:
+            rest_inj = json.load(fh)
     _apply_linac_z0(linac_inj)   # linac diagnostics are linac-local; shift to lab frame
-    tables = {st["name"]: build_moment_table(st) for st in STAGES}
+    # Build every stage EXCEPT linac_rest first; linac_rest (Impact-T) is local-frame and
+    # needs its lab z0 resolved before its rows are built, so build it once below (not twice).
+    tables = {st["name"]: build_moment_table(st)
+              for st in STAGES if st["name"] != "linac_rest"}
+    # linac_rest: resolve the lab offset from its recorded inject z (fallback derives it from
+    # the just-built linac table), then build its rows ONCE so they carry the lab offset.
+    _apply_linac_rest_z0(rest_inj, tables)
+    rest_stage = next(st for st in STAGES if st["name"] == "linac_rest")
+    tables["linac_rest"] = build_moment_table(rest_stage)
     present = [n for n, r in tables.items() if r]
     if not present:
         print("plot_chain: no stage particle series found — run the pipeline first.")

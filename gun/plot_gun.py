@@ -12,7 +12,7 @@ self-field (gun/diags/fields/: phi, rho), and the openPMD beam output
   3. energy_gain.png   — mean/max kinetic energy of the beam vs. ⟨z⟩, climbing
                          toward the ~150 keV gun voltage.
   4. exit_phase_space.png — longitudinal (z–KE) and the final energy spectrum.
-  5. beam_envelope.png — RMS radial size σ_r and normalized transverse emittance
+  5. beam_envelope.png — per-plane RMS size σ_x and normalized transverse emittance
                          εn,x vs. ⟨z⟩: the near-cathode focusing, quantified.
   6. space_charge.png  — r–z maps of the beam self charge density ρ and its
                          space-charge potential well φ at a near-launch snapshot.
@@ -91,8 +91,9 @@ def main():
         zmean.append(z.mean() * 1e3)
         ke_mean.append(ke.mean()); ke_max.append(ke.max())
         # ── Envelope diagnostics (one transverse plane; RZ ⇒ x and y are equivalent) ──
-        # RMS radial size: in RZ the cloud is azimuthally symmetric, so the radial RMS
-        # equals σ_x = sqrt(⟨x²⟩) (the per-plane RMS), reported in mm.
+        # Per-plane RMS size σ_x = sqrt(⟨x²⟩), reported in mm. This is the SINGLE-PLANE RMS
+        # (the convention paired with εn,x below and used by plot_chain / linac), NOT the
+        # radial RMS: for an axisymmetric beam √⟨r²⟩ = √2·σ_x, so do not label this σ_r.
         sig_r.append(np.sqrt(np.mean(x**2)) * 1e3)
         # Normalized transverse emittance εn,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²): a phase-space
         # area that is invariant under linear (and acceleration) forces; growth ⇒ nonlinear
@@ -154,14 +155,14 @@ def main():
     print(f"wrote {RESULTS}/exit_phase_space.png")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Fig 5: beam_envelope.png — RMS radial size σ_r and emittance εn,x vs ⟨z⟩
+    # Fig 5: beam_envelope.png — per-plane RMS size σ_x and emittance εn,x vs ⟨z⟩
     # ──────────────────────────────────────────────────────────────────────────
     ok = np.isfinite(zmean) & np.isfinite(sig_r)
     fig, ax = plt.subplots(figsize=(7.6, 4.6), constrained_layout=True)
     l1, = ax.plot(zmean[ok], sig_r[ok], "o-", color="C0", ms=3,
-                  label=r"RMS size  $\sigma_r=\sqrt{\langle x^2\rangle}$")
+                  label=r"RMS size  $\sigma_x=\sqrt{\langle x^2\rangle}$")
     ax.set_xlabel("mean beam position  ⟨z⟩  [mm]")
-    ax.set_ylabel(r"RMS radial size  $\sigma_r$  [mm]", color="C0")
+    ax.set_ylabel(r"per-plane RMS size  $\sigma_x$  [mm]", color="C0")
     ax.tick_params(axis="y", labelcolor="C0")
     ax.set_title("Transverse envelope and emittance along the gun")
     ax2 = ax.twinx()

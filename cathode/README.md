@@ -136,8 +136,12 @@ finite-cathode effect the 1D Child–Langmuir picture omits. (Contour companion 
 ### `emission_phase_space.png` — intrinsic thermal emittance
 Transverse phase space `x` vs. `ux = γβ_x` and the histogram of `ux`, from the last particle
 snapshot. The RMS normalized emittance `εn,x ≈ 2.29 mm·mrad` (annotated) is the source's intrinsic
-thermal emittance, set by the 1425 K cathode and the 8 mm emitting half-width — the beam quality
-handed to the gun. The run reproduces the expected thermal momentum spread `√(kT/mₑc²)`.
+thermal emittance, set by the 1425 K cathode and the 8 mm emitting half-width. The run reproduces
+the expected thermal momentum spread `√(kT/mₑc²)`. **Note:** this is the *2D-slab* value
+(`x` uniform on `[−R, R]` ⇒ `⟨x²⟩ = R²/3`). The gun's RZ remap importance-resamples the slab into a
+uniform *disc* (`⟨x²⟩ = R²/4`, the more physical cathode geometry), so the beam the gun actually
+receives has `εn,x ≈ 2.29·√(3/4) ≈ 1.96 mm·mrad` — a geometry correction, not emittance loss (see
+the cathode→gun seam note on `results/emittance_budget.png`).
 
 ---
 

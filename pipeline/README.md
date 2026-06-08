@@ -7,7 +7,7 @@ each stage's top-level facade module and calling `.run()`:
 cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
 gun.run()          # build gun field map + RZ acceleration (~146 keV) + plots
 injector.run()     # build injector fields (2 cavities + 3 solenoids) + RZ run + plots
-linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~26 MeV captured) + plots
+linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~25 MeV captured) + plots
 pipeline.plot_chain.main()   # cross-stage figures into the repo-root results/
 ```
 
@@ -89,7 +89,7 @@ colours are written only to an interactive terminal, so the log stays plain text
 
 Per-stage figures land in `{cathode,gun,injector,linac_sec1}/results/`. The **cross-stage**
 figures land in the repo-root `results/` (from `pipeline.plot_chain`): `chain_evolution.png`
-(3×2 panels of ⟨KE⟩, ε_n,x, σ_x/σ_r, σ_z, charge fraction, I_peak vs lab ⟨z⟩),
+(3×2 panels of ⟨KE⟩, ε_n,x, σ_x, σ_z, charge fraction, I_peak vs lab ⟨z⟩),
 `emittance_budget.png`, `transmission_waterfall.png`, and `chain_scorecard.png`. All are
 git-ignored; commit with `git add -f results/*.png`. `plot_chain` reads each stage's existing
 openPMD series and works even if only some stages have run.
@@ -103,5 +103,5 @@ moment table per stage and renders four figures — all views of that table. It 
 (x–z; only x/ux requested) so its ε_n,x is the slab x-emittance — the cathode→gun ε_n step is a
 2D→RZ **definitional** discontinuity, annotated as such. Longitudinal ε_n,z is the z–(γβ_z)
 emittance in mm (NOT mm·mrad). Capture is reported vs the TRUE injected charge
-(`linac_sec1/diags/main/injection_summary.json`), and the σ_r / capture panels carry the
+(`linac_sec1/diags/main/injection_summary.json`), and the σ_x / capture panels carry the
 γ²≈1.7× ES-self-field conservative-lower-bound caveat.

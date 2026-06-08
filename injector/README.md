@@ -73,8 +73,9 @@ Each cavity drives its 1-J map as a standing-wave TM mode (GPT's `Map25D_TM`):
   bunching slope (on-axis kick fraction −cos(π − 70°) ≈ +0.34; slope sin ≈ +0.94 ⇒ the tail
   gains energy and the bunch compresses downstream).
 - **Preb-2** (10 kW, Q=4300, reversed, −45° from crest): the second velocity buncher. Its
-  mean kick is ~+43.5 keV; it drives the head→tail chirp compressive (dchirp ≈ −0.33 keV/mm
-  in the Preb-2-only test).
+  mean kick is ~+54 keV (measured: gun-exit 146 keV → ~220 keV at the handoff, of which Preb-1
+  is +20 keV); it drives the head→tail chirp compressive (dchirp ≈ −0.33 keV/mm in the
+  Preb-2-only test).
 
 **Two-cavity bunching (vs the P=0 drift baseline AND vs Preb-1 alone):** σ_drift/σ_2cav ≈
 **4.4×** near the focus and ≈ **2.4× vs Preb-1 alone** — Preb-2 genuinely *adds* bunching.
@@ -137,7 +138,7 @@ others nr=16/nz~601 — so they cannot be combined), placed in the lab frame via
   conservative (γ²) lower bound, not a precise value, and use the optional current scan to
   characterize it. *(An earlier ~7× LENS_0A sensitivity figure — 0.21% vs 1.6% — was measured
   before the LENS_0E grid_global_offset bug was fixed and is superseded; with all three lenses
-  correctly placed the default captures ~18%.)*
+  correctly placed, and with the multi-plane iris scrape, the default captures ~7%.)*
 - **Ordering gotcha:** picmi forces the global `E_ext_particle_init_style` to "none" if the
   last-added `LoadAppliedField` has `load_E=False`, so the B-only solenoids are added **before**
   the RF cavities; an unconditional `assert applied[-1].load_E` guards it (a pure-drift baseline
@@ -154,16 +155,20 @@ restriction is the SLAC ~9.55 mm bore, and Sol 0 / Lens 0E peak just upstream of
 to squeeze the beam through. So the faithful success metric is **transmission through the
 9.547 mm iris**, NOT "contained within the 36 mm domain."
 
-It is applied as a **radial cut at the handoff snapshot** (and the linac's `RMAX=9.547 mm`
-injection cut), not an in-run scrape: this pywarpx RZ build's particle-position SoA accessors
-raise *"Component x does not exist"* (the radial position is the AMReX particle position, not a
-named real component), so an afterstep weight-zeroing callback is not available here. The cut
-is physically equivalent to the continuous pipe: the pipe holds 9.547 mm from 1.922 m to 2.1 m
-and the envelope grows monotonically over that 0.1 m tail, so a particle inside 9.547 mm at
-2.03 m was inside the whole pipe and one outside hit the wall before 2.03 m. (The only
-approximation is the scraped-halo self-field over that 0.1 m tail — small, late, β≈0.7.) **A
-future current scan that focuses a waist INTO 1.922–2.03 m would break the monotonic-divergence
-assumption and need a true multi-plane scrape.**
+It is applied as a **multi-plane id scrape** (`pipeline/collimator.py`), not an in-run scrape:
+this pywarpx RZ build's particle-position SoA accessors raise *"Component x does not exist"*
+(the radial position is the AMReX particle position, not a named real component), so an
+afterstep weight-zeroing callback is not available here. **A single radial cut at the 2.03 m
+handoff would be wrong**: the Sol 0 / Lens 0E telescope focuses the beam *hard* across the
+1.922→2.03 m tail — it **converges**, not diverges (measured at the faithful 6/40/10 A tune:
+in-iris ~38 % @1.92 m → ~93 % @2.03 m; σ_r 12.4 → 4.9 mm), so a particle outside the iris at
+1.922 m — scraped by the real machine — can converge back inside it by 2.03 m and be wrongly
+kept. Instead we emulate the continuous 9.547 mm pipe by tracking particle `id` across every
+dump from z = 1.922 m on: a particle outside the aperture at *any* plane in the pipe hit the
+wall and is removed; only the survivors are injected into the linac. (Approximations left: the
+scraped-halo self-field over the tail — small, late, β≈0.7 — and the finite dump spacing
+between planes.) This is exact in the dense-dump limit and reduces to the entrance-plane cut
+when the envelope happens to be monotone.
 
 ## Domain / grid
 
@@ -188,18 +193,23 @@ assumption and need a true multi-plane scrape.**
 At the faithful currents (6/40/10 A) the three lenses focus the beam through the injector:
 Lens 0A (z ≈ 0.225 m) sets the early envelope, and the Sol 0 / Lens 0E matching telescope at
 z ≈ 1.9 m — just upstream of the 1.922 m iris — squeezes it through the 9.547 mm aperture.
-**~91% of the handoff charge passes the iris** (≈0.69 / 0.76 nC), and the downstream linac
-captures **~18% of the true injected charge** into the RF bucket (⟨KE⟩ ≈ 26 MeV, σ_KE ≈ 8 MeV,
-max ~32 MeV). The two prebunchers net-accelerate the beam **146 → ~220 keV** at the handoff
-while velocity-bunching it. This is **faithful machine behavior** — real lenses at real z, real
-iris, real handoff — and a large improvement over the old mislocated-solenoid hack.
+**~32% of the handoff charge passes the iris** (≈0.24 / 0.75 nC, via the multi-plane scrape at
+the real 1.922 m iris plane — see *The 9.547 mm collimator*), and the downstream linac captures
+**~7% of the true injected charge** into the RF bucket (⟨KE⟩ ≈ 25 MeV, σ_KE ≈ 8 MeV, max
+~32 MeV). The two prebunchers net-accelerate the beam **146 → ~220 keV** at the handoff while
+velocity-bunching it. This is **faithful machine behavior** — real lenses at real z, real iris,
+real handoff — and a large improvement over the old mislocated-solenoid hack.
 
-> **Fixed (physics-review):** an earlier version placed LENS_0E ~800 mm out of position (a
-> `grid_global_offset` bug that omitted the native grid origin `z[0]`, putting its peak at
-> 1.114 m instead of 1.914 m — so no lens focused at the iris). That gave only ~8% iris
-> transmission / ~1% capture. The fix (corrected offset + a read-back assertion that validates
-> the *stored* peak, not an input recompute) restores the matching lens to the iris and yields
-> the 91% / 18% above. The capture is **~18×** what the buggy build reported.
+> **Fixed (physics-review):** two corrections fed these numbers. (1) An earlier version placed
+> LENS_0E ~800 mm out of position (a `grid_global_offset` bug that omitted the native grid origin
+> `z[0]`, putting its peak at 1.114 m instead of 1.914 m — so no lens focused at the iris); the
+> fix (corrected offset + a read-back assertion on the *stored* peak) restored the matching lens
+> to the iris. (2) The iris scrape was applied as a single radial cut at the 2.03 m handoff, but
+> the beam **converges** across the 1.922→2.03 m tail, so that cut kept converged halo the real
+> 1.922 m iris scrapes and reported **~91 % / ~18 %** — overstated ~3×. Replacing it with the
+> multi-plane scrape at the true iris plane gives the **~32 % / ~7 %** above. (The buggy
+> LENS_0E build reported only ~8 % iris / ~1 % capture, so the corrected build still captures
+> several× more than that.)
 
 Three caveats frame this number:
 1. **Conservative lower bound:** the lab-frame electrostatic self-field omits the 1/γ² magnetic
@@ -242,8 +252,9 @@ writes to `injector/results/`:
   transverse SC by ~γ²); the focusing solution is pessimistic and the capture a lower bound.
 - Preb-2 phasing uses the injection β (+ analytic Preb-1 kick): valid only while both cavities
   are sub-threshold (the design point); a hardened-Preb-1 scan needs a two-pass run.
-- The 9.547 mm collimation is a post-hoc handoff cut (the in-run scrape isn't available in this
-  pywarpx RZ build) — physically equivalent for the monotonically-diverging design beam.
+- The 9.547 mm collimation is a post-hoc **multi-plane id scrape** (the in-run scrape isn't
+  available in this pywarpx RZ build) — applied at the real 1.922 m iris plane, because the beam
+  *converges* through the 1.922→2.03 m tail, so a single 2.03 m cut would overstate transmission.
 - **openPMD fd-leak gotcha:** openpmd-viewer leaks one file descriptor per `get_particle()`, so
   looping over this stage's ~280 diagnostic dumps exhausts macOS's default 256-fd soft limit and
   the read fails with `IO Task OPEN_FILE failed … Inaccessible` (HDF5's report of EMFILE) at a

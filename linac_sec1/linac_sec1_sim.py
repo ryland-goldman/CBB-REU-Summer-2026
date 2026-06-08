@@ -13,8 +13,9 @@ at the **z ≈ 2.03 m handoff plane** (the dump whose ⟨z⟩ is nearest Z_HANDO
 load_injector_bunch; NOT the old min-σ_z / max-in-bore selector), translated to the
 injection point, and tracked through:
 
-  * a short injection drift (the r ≤ RMAX=9.547 mm cut at injection IS the physical
-    iris collimation — the halo it removes is what the real 9.547 mm aperture scrapes), and
+  * a short injection drift (collimation is the multi-plane iris scrape applied in
+    load_injector_bunch — only the particles that pass the 9.547 mm iris/pipe from
+    z=1.922 m onward are injected; the halo removed is what the real aperture scrapes), and
   * the SLAC Section-1 traveling wave.
 
 The traveling wave is synthesised exactly as the reference GPT model does — the sum
@@ -37,6 +38,7 @@ from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
+from pipeline.collimator import pipe_violator_ids, survivor_mask   # multi-plane iris scrape
 from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R, V1KW_KEV   # keep field/phasing/domain in sync
 from . import DEFAULT_OUTDIR
 
@@ -61,6 +63,12 @@ RF_NORM_MW = 0.001               # field-map power normalisation (1 kW)
 # on an off-plane snapshot now that a real longitudinal waist forms near the handoff).
 INJECTOR_DIAG = "injector/diags/main/particles"      # focused, bunched injector beam
 Z_HANDOFF = 2.03                 # [m] injector→linac handoff plane (Z_acc_1)
+COLLIM_Z = 1.922                 # [m] iris start (LinacSim scatteriris); the 9.547 mm pipe runs
+                                 #     COLLIM_Z→wall. RMAX (imported) is the iris radius. The
+                                 #     injector→linac collimation is a multi-plane id scrape from this
+                                 #     plane (pipeline.collimator), NOT a single cut at the 2.03 m
+                                 #     handoff — the beam CONVERGES through the tail, so a 2.03 m cut
+                                 #     would pass halo the real 1.922 m iris scrapes.
 Z_INJECT = 0.005                 # lab z where the bunch head is placed [m]
 MAX_PART = 50000                 # downsample the injected snapshot (reweighted)
 RNG_SEED = 0
@@ -136,8 +144,29 @@ def load_injector_bunch():
               f"the handoff diagnostic may be too coarse; the injected beam is off-plane.",
               flush=True)
 
-    x, y, z, ux, uy, uz, w = ts.get_particle(
-        ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it_handoff)
+    idh, x, y, z, ux, uy, uz, w = ts.get_particle(
+        ["id", "x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it_handoff)
+    # TRUE injected charge = the full beam delivered to the handoff (all r) — the honest
+    # capture denominator. Recorded BEFORE the iris scrape below.
+    q_inj = float(w.sum()) * q_e
+
+    # ── Iris/pipe collimation: multi-plane id scrape (the physical injector→linac cut) ──
+    # The real 9.547 mm scatteriris is at COLLIM_Z=1.922 m with a 9.547 mm pipe to the wall.
+    # The Sol 0 / Lens 0E telescope focuses the beam HARD across the 1.922→2.03 m tail (it
+    # CONVERGES — measured in-iris ~38 % @1.92 m → ~93 % @2.03 m), so a single radial cut at
+    # the 2.03 m handoff (what this used to do) would pass halo the real iris scrapes and
+    # overstate transmission. Instead scrape by tracking particle ids across every dump that
+    # samples the pipe: a particle outside the iris at ANY plane z ≥ COLLIM_Z hit the wall.
+    # See pipeline.collimator. Only the survivors are injected into the linac.
+    scan_iters = [it for it, _n, zm in recs if (COLLIM_Z - 0.05) <= zm <= (Z_HANDOFF + 0.03)]
+    violators = pipe_violator_ids(ts, scan_iters, RMAX, COLLIM_Z)
+    keep = survivor_mask(idh, violators)
+    idh, x, y, z, ux, uy, uz, w = (a[keep] for a in (idh, x, y, z, ux, uy, uz, w))
+    r = np.hypot(x, y)
+    q_dom = float(w.sum()) * q_e                         # iris survivors carried to the handoff (in-iris)
+    q_bore = float(w[r <= BORE_R].sum()) * q_e           # of those, within the 9.55 mm RF bore
+
+    # Downsample the SURVIVORS (reweighted to preserve their charge) for the run.
     if z.size > MAX_PART:
         rng = np.random.default_rng(RNG_SEED)
         sel = rng.choice(z.size, MAX_PART, replace=False)
@@ -152,28 +181,20 @@ def load_injector_bunch():
     v_beam = float(np.average(uz / gb, weights=w) * c)
     ke_mean = float(np.average(gb - 1.0, weights=w) * MC2_KEV)
     sz = float(np.sqrt(np.average((z - np.average(z, weights=w)) ** 2, weights=w)))
-    r = np.hypot(x, y)
-    rmax = float(r.max())
-    # Injection-loss bookkeeping. WarpX silently drops particles initialised at r > RMAX
-    # before the first diagnostic dump, so the first dump's charge is already the post-scrape
-    # (in-domain) charge. Capture must therefore be reported against the TRUE injected charge
-    # recorded here. RMAX is now the 9.547 mm iris/bore (the injector already collimated the
-    # beam to it), so this r ≤ RMAX cut IS the physical injector→linac collimation: the charge
-    # it removes is the halo the real 9.547 mm iris scrapes, not a numerical-domain artifact.
-    q_inj = float(w.sum()) * q_e                         # total at the handoff [C]
-    q_dom = float(w[r <= RMAX].sum()) * q_e              # within the 9.547 mm iris/domain (captured into the bore)
-    q_bore = float(w[r <= BORE_R].sum()) * q_e           # within the 9.55 mm RF bore
+    rmax = float(np.hypot(x, y).max())
     inj = dict(it_handoff=int(it_handoff), z_handoff_m=float(zm_handoff),
                n_injected=int(z.size), q_injected_C=q_inj, q_in_domain_C=q_dom,
                q_in_bore_C=q_bore, z_inject_mean_m=float(np.average(z, weights=w)),
                rmax_m=rmax, sigma_z_m=sz, ke_mean_keV=ke_mean)
-    print(f"Injected {z.size} macroparticles from injector handoff (iter {it_handoff}, "
-          f"⟨z⟩={zm_handoff*1e3:.0f} mm); ⟨KE⟩ {ke_mean:.1f} keV, σ_z {sz*1e3:.2f} mm, "
-          f"r_max {rmax*1e3:.2f} mm, v_beam {v_beam:.3e} m/s, q {q_inj*1e9:.4f} nC", flush=True)
-    print(f"  collimation at the {RMAX*1e3:.3f} mm iris: {q_dom/q_inj*100:.1f}% of the handoff "
-          f"charge is within the iris ({q_dom*1e12:.1f} pC captured into the bore), "
-          f"{q_bore/q_inj*100:.1f}% within the {BORE_R*1e3:.2f} mm RF bore — the rest is "
-          f"scraped by the iris (the real machine's aperture).", flush=True)
+    print(f"Injected {z.size} macroparticles (iris survivors) from injector handoff "
+          f"(iter {it_handoff}, ⟨z⟩={zm_handoff*1e3:.0f} mm); ⟨KE⟩ {ke_mean:.1f} keV, "
+          f"σ_z {sz*1e3:.2f} mm, r_max {rmax*1e3:.2f} mm, v_beam {v_beam:.3e} m/s, "
+          f"true-injected q {q_inj*1e9:.4f} nC", flush=True)
+    print(f"  multi-plane iris scrape at the {RMAX*1e3:.3f} mm aperture (z≥{COLLIM_Z*1e3:.0f} mm, "
+          f"{len(scan_iters)} planes): {q_dom/q_inj*100:.1f}% of the handoff charge survives the "
+          f"pipe ({q_dom*1e12:.1f} pC into the bore), {q_bore/q_inj*100:.1f}% within the "
+          f"{BORE_R*1e3:.2f} mm RF bore — the rest hit the iris/pipe wall (the real aperture).",
+          flush=True)
     # openPMD ux/uy/uz are γβ; PICMI wants proper velocity γβc in m/s → ×c.
     return (dict(x=x, y=y, z=z, ux=ux * c, uy=uy * c, uz=uz * c, w=w),
             v_beam, ke_mean, inj)
