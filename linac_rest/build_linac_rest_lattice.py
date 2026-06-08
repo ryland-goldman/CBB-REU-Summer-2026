@@ -143,6 +143,133 @@ def section_quad_length_m(index):
     return SECTIONS[index]["quad_in"] * IN_TO_M
 
 
+def _quad_transfer_2x2(k1, length):
+    """2×2 single-plane transfer matrix (x, x') of a thick quadrupole [SI], as a flat tuple
+    ``(m11, m12, m21, m22)``. ``k1`` is the geometric focusing strength K1 [1/m²] in THIS plane
+    (k1>0 focusing → trig matrix; k1<0 defocusing → hyperbolic; k1=0 → drift)."""
+    if k1 > 0.0:
+        s = math.sqrt(k1)
+        c_, sn = math.cos(s * length), math.sin(s * length)
+        return (c_, sn / s, -s * sn, c_)
+    if k1 < 0.0:
+        s = math.sqrt(-k1)
+        ch, sh = math.cosh(s * length), math.sinh(s * length)
+        return (ch, sh / s, s * sh, ch)
+    return (1.0, length, 0.0, 1.0)
+
+
+def _mat2_mul(a, b):
+    """Multiply two flat 2×2 matrices (a·b), each ``(m11, m12, m21, m22)``."""
+    return (a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3],
+            a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3])
+
+
+def _doublet_cell_half_trace(k1, l_q, l_drift):
+    """½·Tr of one FODO-doublet cell's transfer matrix in the lead-focusing plane.
+
+    The cell is: half-gap drift → +K1 half-quad (L_q/2) → −K1 half-quad (L_q/2) → half-gap drift
+    → the following RF SECTION treated as a field-free drift (``l_drift`` = L_section(i+1)). The
+    per-cell phase advance is ``cos μ = ½·Tr(M_cell)``; ``|½·Tr| < 1`` ⇒ stable (μ real). The
+    OTHER (defocusing-lead) plane has the same |½·Tr| for a symmetric ± doublet — that plane
+    equality is exactly why the doublet net-focuses BOTH planes (unlike a single thick quad)."""
+    half_q = l_q / 2.0
+    half_gap = DRIFT_M / 2.0
+    m = _quad_transfer_2x2(0.0, half_gap)                       # half inter-section gap
+    m = _mat2_mul(_quad_transfer_2x2(k1, half_q), m)            # +K1 lead half-quad
+    m = _mat2_mul(_quad_transfer_2x2(-k1, half_q), m)           # −K1 trailing half-quad
+    m = _mat2_mul(_quad_transfer_2x2(0.0, half_gap), m)         # half inter-section gap
+    m = _mat2_mul(_quad_transfer_2x2(0.0, l_drift), m)          # RF section as a drift
+    return 0.5 * (m[0] + m[3])
+
+
+def _solve_doublet_k1(mu_deg, l_q, l_drift, k1_max):
+    """Geometric K1 [1/m²] of a ± doublet giving per-cell phase advance ``mu_deg`` (bisection on
+    ``cos μ = ½·Tr``). ``½·Tr`` is monotone-decreasing from +1 at K1=0 down through the target as
+    K1 rises, so a simple bracket [≈0, k1_max] converges. If the target μ is unreachable within
+    ``k1_max`` (a too-weak short cell — e.g. gap 2 at high μ), returns ``k1_max`` (the strongest
+    stable focusing the cell supports), which the caller energy-scales as usual."""
+    target = math.cos(math.radians(mu_deg))
+    lo, hi = 1e-4, k1_max
+    if _doublet_cell_half_trace(hi, l_q, l_drift) > target:
+        return hi                      # cell can't reach this μ within k1_max → use the ceiling
+    for _ in range(200):               # ~2e-60 bracket; pure-math, no scipy dependency
+        mid = 0.5 * (lo + hi)
+        if _doublet_cell_half_trace(mid, l_q, l_drift) > target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def fodo_quad_gradients(*, phase_adv_deg=50.0, k1_max=14.0, mc2_mev=0.510998950,
+                        ke_in_mev=25.0):
+    """Energy-scaled FODO **doublet** base gradients [T/m] (PLACEHOLDER optics).
+
+    Returns a length-``N_SECTIONS`` (7) list of signed LEAD-POLE base gradients ``g_i`` [T/m],
+    one per **placed gap** (``quad2``…``quad7``, i.e. one after every section except the last);
+    the 7th entry (Q8, after the final section 8) is **never placed** and is fixed at ``0.0`` so
+    the shape matches the ``[0.0]*N_SECTIONS`` default and no downstream length asymmetry /
+    IndexError can occur (plan R7). ``build_impact`` places each gap as an **H/V doublet**: a
+    ``+g_i`` half-quad (L=L_q/2) immediately followed by a ``−g_i`` half-quad (L=L_q/2). The
+    sign alternation gap-to-gap (``(-1)**i``) is baked into ``g_i`` here (the lead-pole sign).
+
+    These are **NOT** measured quad strengths — the A→T (current→field) calibration is
+    undocumented for every quad (``details.md`` line 178). They are derived from accelerator
+    optics: a constant per-cell phase-advance FODO of ± doublets, energy-scaled by the local
+    beam momentum (Bρ). Caveats stated on every QUADS_ON output: the inter-doublet "drift" is
+    really a multi-metre accelerating RF section, so the realized μ is **nominal** (the lattice
+    is non-periodic and the beam accelerates through it) — boundedness of σ_x AND σ_y is the
+    acceptance, not a measured μ/cell.
+
+    **Why a doublet, not a single thick quad.** A single-sign thick quad per gap focuses one
+    plane and DEFOCUSES the other over the 1.6–2.8 m half-cell; the defocused plane diverges and
+    scrapes the real bore, so transmission came out WORSE than no-focusing (49–58 % vs the 78.5 %
+    baseline) at every μ (verified). An H/V doublet (± pair) net-focuses BOTH planes — for a
+    symmetric ± doublet the cell's ``|½·Tr|`` is identical in the two planes, so both get the
+    same phase advance. That plane symmetry is the whole point of going to the doublet.
+
+    **Recipe (exact thick-lens cell matrix — the thin-lens (K1·l)²·d doublet formula is NOT used,
+    it is unreliable here because the half-quad phase √K1·(L_q/2) ≈ 0.46 rad (~27°) is not small):**
+
+        cell_i   = drift(gap/2) · (+K1 half-quad, L_q/2) · (−K1 half-quad, L_q/2) · drift(gap/2)
+                   · drift(L_section(i+1))                  (RF section as a field-free drift)
+        K1_i     : solve  cos μ = ½·Tr(cell_i)             [1/m²]  (per-gap, bisection; both planes)
+        Bρ_i     = √(KE·(KE + 2·mc²)) / c                  [T·m]   (per-section EXIT energy)
+        g_i      = (-1)**i · K1_i · Bρ_i                   [T/m]   (energy-scaling enters via Bρ)
+
+    **μ defaults to 50°.** The uniform design μ is bounded by the WEAKEST cell (gap 2 — the short
+    2.94 m CEA-2 section — tops out near 67°), so 50° is reachable by every gap and sits mid-band
+    (0–180° stable). A μ sweep (45/50/55°, doublet) showed the result is robust: exit ⟨KE⟩ stays
+    ≈308–310 MeV (gate 2 PASS) and transmission clusters at 77.6–78.2 % with a bounded oscillating
+    σ_x/σ_y (max RMS ≈4.4 mm, well inside the 9.9 mm exit bore) — 50° gives the best transmission.
+    The ~78 % ceiling is set by the injected sec-1 beam expanding before the first quad (after
+    section 2) plus the added quad-location apertures, NOT by the focusing strength. ``k1_max``
+    caps the bisection bracket; a cell that cannot reach the target μ within it falls back to
+    ``k1_max`` (strongest stable focusing it supports). μ and ``k1_max`` are documented design
+    knobs, **not** reverse-fit to a transmission number.
+
+    ``ke_in_mev`` defaults to the ≈25 MeV nominal for standalone calls; the sim passes the
+    **measured** sec-1 handoff ⟨KE⟩ so the Bρ energy-scaling tracks the actual beam.
+    """
+    c = 299792458.0                       # speed of light [m/s]
+    mc2_ev = mc2_mev * 1e6                 # electron rest energy [eV]
+
+    grads = []
+    ke_ev = ke_in_mev * 1e6               # running cumulative KE at section EXITs [eV]
+    for i in range(N_SECTIONS - 1):       # 6 placed gaps (Q2…Q7); Q8 appended as 0.0 below
+        # Per-section EXIT energy: KE_in + Σ_{j≤i} ΔE_target,j (deterministic from the table).
+        ke_ev += section_de_target(i) * 1e6
+        # Magnetic rigidity Bρ = p/e. With energies in eV, p[eV/c] = √(KE·(KE+2mc²)); dividing by
+        # c (m/s) converts eV/c → SI momentum/charge in T·m (the eV cancels e, leaving J·s/(C·m)).
+        b_rho = math.sqrt(ke_ev * (ke_ev + 2.0 * mc2_ev)) / c
+        l_q = section_quad_length_m(i)                  # this gap's real (full) quad length [m]
+        l_drift = SECTIONS[i + 1]["length_m"]           # following RF section, treated as a drift
+        k1 = _solve_doublet_k1(phase_adv_deg, l_q, l_drift, k1_max)   # [1/m²], both planes
+        grads.append(((-1) ** i) * k1 * b_rho)          # signed lead-pole base gradient g_i [T/m]
+    grads.append(0.0)                     # Q8 (after the last section) is never placed
+    return grads
+
+
 def total_rf_length_m():
     """Σ active TW structure length over sections 2–8 [m]."""
     return sum(s["length_m"] for s in SECTIONS)
@@ -334,7 +461,14 @@ def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
     # `scales` (calibrated by the sim); the raw value isn't used in lattice assembly.
     base_phase = PHASE_DEG if phase_deg is None else phase_deg
     gap = DRIFT_M if drift_m is None else drift_m
-    quad_k = quad_k or [0.0] * N_SECTIONS
+    # Quad gradients [T/m]. Use `is None` (NOT `quad_k or …`): an explicit all-zero override
+    # must NOT be silently discarded by `or`. If unset and quads are on, fall back to the derived
+    # energy-scaled FODO gradients; otherwise zeros (quads-OFF headline ⇒ optically a drift).
+    if quad_k is None:
+        quad_k = fodo_quad_gradients() if quads_on else [0.0] * N_SECTIONS
+    assert len(quad_k) >= N_SECTIONS - 1, (
+        f"quad_k needs ≥{N_SECTIONS - 1} entries (one per placed quad, Q2..Q7); "
+        f"got {len(quad_k)}")
     # Bore aperture follows the quads: ON for the exploratory QUADS_ON FODO study (real focusing
     # keeps the beam off the bore, so the scrape is meaningful), OFF for the quads-OFF headline
     # (a bore scrape with zero focusing over 36 m is a no-optics artifact). BORE_APERTURE_ON
@@ -361,17 +495,52 @@ def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
             # its own length; the total inter-section optical length is gap + quad_L.
             qL = section_quad_length_m(i)
             half = gap / 2.0
+            # NEW quad/drift bore aperture, gated on `quads_on` (NOT `bore_aperture_on`): the
+            # quad sits downstream of the section EXIT taper, so it uses the section EXIT radius
+            # `[1]` (the solrf body already takes the ENTRANCE radius `[0]` — entrance-on-body /
+            # exit-on-quad is the real tapered bore, not an inconsistency). Gating on `quads_on`
+            # (not the already-True `bore_aperture_on`) keeps the quads-OFF headline byte-identical:
+            # `radius` stays 0.0 there, so no new scrape plane is added and the published 78.5%
+            # is unchanged. (Impact-T ignores drift `radius`, so the drift change is forward-looking;
+            # the quad `radius>0` is the load-bearing real loss aperture on the focused path.)
+            r_exit = section_bore_radii(i)[1] if quads_on else 0.0
             lattice.append({"type": "drift", "name": f"drift{i + 2}a",
-                            "L": half, "zedge": z, "radius": 0.0})
+                            "L": half, "zedge": z, "radius": r_exit})
             z += half
-            lattice.append({
-                "type": "quadrupole", "name": f"quad{i + 2}", "L": qL, "zedge": z,
-                "b1_gradient": (quad_k[i] if quads_on else 0.0),
-                "file_id": 0,                       # 0 ⇒ hard-edge (no Enge fringe field)
-                "radius": 0.0})
-            z += qL
+            if quads_on:
+                # H/V DOUBLET: a single thick quad of one sign focuses one plane but DEFOCUSES the
+                # other over the multi-metre half-cell (→ that plane scrapes, transmission worse than
+                # no-focus). Split the tabulated quad into two opposite-sign halves (qL/2 each, back-
+                # to-back): the +g/−g pair nets focusing in BOTH planes (1/f_net ∝ (K1·l)²·d). The
+                # lead-pole sign is `quad_k[i]` (already alternating gap-to-gap via the helper's
+                # (-1)**i), and the trailing half is its negation. Halves sum to qL, so the lattice
+                # length and downstream zedges are unchanged vs. the single-quad placement.
+                g_lead = quad_k[i]
+                qhalf = qL / 2.0
+                lattice.append({
+                    "type": "quadrupole", "name": f"quad{i + 2}a", "L": qhalf, "zedge": z,
+                    "b1_gradient": g_lead,
+                    "file_id": 0,                   # 0 ⇒ hard-edge (no Enge fringe field)
+                    "radius": r_exit})
+                z += qhalf
+                lattice.append({
+                    "type": "quadrupole", "name": f"quad{i + 2}b", "L": qhalf, "zedge": z,
+                    "b1_gradient": -g_lead,
+                    "file_id": 0,
+                    "radius": r_exit})
+                z += qhalf
+            else:
+                # Quads-OFF headline: keep the SINGLE zero-strength quad (byte-identical lattice —
+                # do NOT split, so the exact element list / transmission is preserved). A zero-K1
+                # quad is optically a drift of its own length.
+                lattice.append({
+                    "type": "quadrupole", "name": f"quad{i + 2}", "L": qL, "zedge": z,
+                    "b1_gradient": 0.0,
+                    "file_id": 0,                   # 0 ⇒ hard-edge (no Enge fringe field)
+                    "radius": r_exit})
+                z += qL
             lattice.append({"type": "drift", "name": f"drift{i + 2}b",
-                            "L": half, "zedge": z, "radius": 0.0})
+                            "L": half, "zedge": z, "radius": r_exit})
             z += half
     total_len = z
 

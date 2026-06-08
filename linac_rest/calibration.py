@@ -337,7 +337,9 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
          achieved ≈308 MeV — 307.97 survivors through the real bore / 309.2 full-beam).
       3. σ_KE absolute (NOT conserved — grows ~3.9× from second-order crest curvature) and
          relative (still shrinks, ⟨KE⟩ grows faster). Diagnostic only.
-      4. normalized emittance εn,x / εn,y in vs out (near-conserved, quads OFF). Diagnostic.
+      4. normalized emittance εn,x / εn,y in vs out — diagnostic. NOTE: quads-OFF εn is NOT
+         conserved; the recorded vs-z εn sawtooths ~2.4× — a fort.10N norm_emit artifact at
+         bore/section crossings (σ_x stays smooth across the jumps ⇒ not physical growth).
       5. beam reached final zedge: I.stat("mean_z")[-1] ≈ Σ lattice length (catches Ntstep
          truncation, which falsely reports finished=True).
       6. min captured KE ⇒ β > 0.999 (justifies the rigid-crest no-slip assumption).
@@ -375,6 +377,22 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     ke_min_mev = (P_out["energy"].min() / 1e6) - ELECTRON_REST_MEV
     beta_min = _beta_from_ke_mev(ke_min_mev)
 
+    # Envelope-in-bore soft gate (NEW, T6): does the transverse RMS envelope stay inside the
+    # real tapered bore along the whole line? σ_x/σ_y are RMS, not the beam edge, so we test a
+    # BEAM_EDGE_SIGMA=3σ multiple (a meaningful edge-vs-bore proxy) against the NARROWEST bore
+    # radius (entrance + exit of every section). This is the meaningful check that the FODO
+    # actually CONTAINS the beam (vs. a few core particles squeaking through). It is print-only /
+    # soft — K1 is the guessed-strength placeholder FODO (A→T undocumented), so it must never
+    # gate the energy headline. NOT a "FAIL-when-quads-OFF" liveness test: the quads-OFF beam
+    # transmits ~78.5% with adiabatic damping, so its RMS σ may stay under the bore even while
+    # distribution tails scrape — this gate can legitimately PASS quads-OFF (liveness is shown by
+    # the figure: bounded oscillation quads-ON vs. monotonic RMS rise quads-OFF).
+    BEAM_EDGE_SIGMA = 3.0
+    sx = I.stat("sigma_x")
+    sy = I.stat("sigma_y")
+    max_env_m = BEAM_EDGE_SIGMA * float(max(sx.max(), sy.max())) if len(sx) else float("nan")
+    min_bore_m = min(min(L.section_bore_radii(i)) for i in range(L.N_SECTIONS))
+
     # Transmission from the macroparticle COUNT, NOT charge. Count-based is the authoritative
     # measure (it's what sim.main() records); a charge ratio would only equal it because main()
     # re-imposes q_out = q_core·(n_out/n_in) before calling this — a hidden ordering dependency.
@@ -403,6 +421,9 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     gates["beta_min"] = beta_min
     gates["beta_min_ok"] = beta_min > 0.999
     gates["transmission"] = transmission
+    gates["max_envelope_m"] = max_env_m
+    gates["min_bore_m"] = min_bore_m
+    gates["envelope_in_bore"] = (max_env_m < min_bore_m) if max_env_m == max_env_m else None
 
     def mark(ok):
         return "PASS" if ok else "FAIL" if ok is not None else "n/a "
@@ -414,13 +435,17 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     print(f"[ -- ] 3. σ_KE  in {sig_ke_in:.2f} → out {sig_ke_out:.2f} MeV; "
           f"rel spread {gates['rel_spread_in']*100:.1f}% → {gates['rel_spread_out']*100:.1f}%")
     print(f"[ -- ] 4. εn growth  x {gates['emit_x_growth']*100:+.1f}%  "
-          f"y {gates['emit_y_growth']*100:+.1f}%  (quads OFF ⇒ ~conserved)")
+          f"y {gates['emit_y_growth']*100:+.1f}%  (diagnostic; the quads-OFF ~2.4× is a fort.10N "
+          f"εn artifact at bore/section crossings, σ_x smooth ⇒ not physical)")
     print(f"[{mark(gates['mean_z_ok'])}] 5. beam reached z = {mean_z_reached:.2f} m "
           f"(Σ lattice {z_expected:.2f} m — catches Ntstep truncation)")
     print(f"[{mark(gates['beta_min_ok'])}] 6. min captured KE {ke_min_mev:.1f} MeV ⇒ "
           f"β_min = {beta_min:.5f} (>0.999 ⇒ no-slip OK)")
     print(f"[ -- ] 7. transmission {transmission*100:.1f}% "
           f"(meaningful only with aperture scraping; else ~100% tautology)")
+    print(f"[{mark(gates['envelope_in_bore'])}] 8. envelope-in-bore: 3σ_max = "
+          f"{max_env_m*1e3:.2f} mm vs min bore {min_bore_m*1e3:.2f} mm "
+          f"(soft — does the FODO contain the RMS envelope?)")
 
     # Hard gates the team locked as must-pass (concrete asserts for T6 to verify the run).
     if require_gates:

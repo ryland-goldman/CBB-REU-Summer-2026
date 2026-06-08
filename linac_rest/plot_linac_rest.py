@@ -11,13 +11,17 @@ linac_rest/results/:
                             to ≈308 MeV at 11 MW (307.97 survivors).
   2. energy_spread.png    — σ_KE and the relative spread σ_KE/⟨KE⟩ vs ⟨z⟩ (the relative
                             spread adiabatically shrinks as ⟨KE⟩ grows).
-  3. emittance.png        — normalized emittance εn,x / εn,y vs ⟨z⟩ (quads OFF ⇒ near-
-                            conserved; flags numerical growth). The headline beam.
+  3. emittance.png        — normalized emittance εn,x / εn,y vs ⟨z⟩ (quads OFF: εn rises ~2.4×,
+                            a fort.10N norm_emit diagnostic artifact at bore/section crossings —
+                            σ_x stays smooth across the jumps ⇒ NOT physical growth, NOT conserved).
   4. section_gains.png     — per-section achieved vs target ΔE bar chart (from the
                             calibration table) — the §5 gate-1 visual.
-  5. fodo_optics.png       — EXPLORATORY (labeled "placeholder optics — not predictive"):
-                            σ_x vs ⟨z⟩; only meaningful with QUADS_ON. Always written so
-                            the figure set is stable; titled to flag the quad state.
+  5. fodo_optics.png       — transverse envelope σ_x AND σ_y vs ⟨z⟩, titled by quad state.
+                            QUADS_ON ⇒ the derived energy-scaled FODO's bounded, out-of-phase
+                            oscillating σ_x/σ_y (both planes contained, no blow-up — the H/V
+                            doublet's win; placeholder optics — guessed K1, A→T undocumented,
+                            nominal μ); quads OFF ⇒ placeholder, NOT predictive. Always written
+                            so the figure set is stable.
 
 Run with:
     conda run -n CBB python -c "import linac_rest; linac_rest.plot()"
@@ -57,7 +61,7 @@ def _norm_emit(x, ux, w):
 
 
 def _read_slices(diag):
-    """Return per-dump beam moments sorted by ⟨z⟩: list of dicts (z, ke, dke, enx, eny, q)."""
+    """Return per-dump beam moments sorted by ⟨z⟩: list of dicts (z, ke, dke, enx, eny, sx, sy, q)."""
     ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
     rows = []
     for it in ts.iterations:
@@ -72,7 +76,7 @@ def _read_slices(diag):
         rows.append(dict(
             z=zm, ke=km, dke=dk,
             enx=_norm_emit(x, ux, w), eny=_norm_emit(y, uy, w),
-            sx=_wstat(x, w)[1], q=float(w.sum()),
+            sx=_wstat(x, w)[1], sy=_wstat(y, w)[1], q=float(w.sum()),
         ))
     rows.sort(key=lambda r: r["z"])
     return rows
@@ -105,6 +109,9 @@ def main():
         enx = np.array(svz["norm_emit_x"])
         eny = np.array(svz["norm_emit_y"])
         sx = np.array(svz["sigma_x_m"])
+        # sigma_y is recorded alongside sigma_x; fall back to sx for legacy summaries that
+        # predate the σ_y stat (so old diags still plot, just without the plane-asymmetry curve).
+        sy = np.array(svz.get("sigma_y_m", svz["sigma_x_m"]))
     else:
         rows = _read_slices(diag)
         if not rows:
@@ -113,6 +120,7 @@ def main():
             return
         z, ke, dke = _arr(rows, "z"), _arr(rows, "ke"), _arr(rows, "dke")
         enx, eny, sx = _arr(rows, "enx"), _arr(rows, "eny"), _arr(rows, "sx")
+        sy = _arr(rows, "sy")
 
     # 1) energy gain vs z
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
@@ -147,13 +155,25 @@ def main():
     fig.savefig(os.path.join(RESULTS, "energy_spread.png"), dpi=130)
     plt.close(fig)
 
-    # 3) normalized emittance vs z (headline, quads OFF ⇒ ~conserved)
+    quads_on = summ.get("quads_on", False)
+
+    # 3) normalized emittance vs z. NOTE: quads-OFF εn is NOT conserved — the recorded εn,x/y rise
+    #    ~2.4× over the line, a fort.10N norm_emit diagnostic artifact at bore/section crossings
+    #    (σ_x stays smooth across the εn jumps ⇒ not physical growth). Quads-ON adds real chromatic
+    #    growth on top of the same artifact, so its εn figure conflates the two.
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
     ax.plot(z, enx * 1e6, "-", color="C5", label="ε_n,x")
     ax.plot(z, eny * 1e6, "-", color="C6", label="ε_n,y")
     ax.set_xlabel("⟨z⟩ [m]")
     ax.set_ylabel("normalized emittance [mm·mrad]")
-    ax.set_title("linac_rest: normalized emittance (quads OFF ⇒ RF + drift only)")
+    # quads ON: off-energy particles get different K1·(1/Bρ) focusing ⇒ real chromatic εn growth
+    # (tens of % expected, NOT a failure — only a runaway is), on top of the same fort.10N artifact.
+    # quads OFF: the ~2.4× εn rise is that diagnostic artifact (σ_x smooth ⇒ not physical), not growth.
+    ax.set_title("linac_rest: normalized emittance\n"
+                 + ("QUADS ON — chromatic growth (energy-dependent focusing) + fort.10N εn artifact"
+                    if quads_on
+                    else "quads OFF — εn rises ~2.4×: a fort.10N diagnostic artifact, not physical"),
+                 fontsize=9)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.savefig(os.path.join(RESULTS, "emittance.png"), dpi=130)
@@ -180,15 +200,26 @@ def main():
     fig.savefig(os.path.join(RESULTS, "section_gains.png"), dpi=130)
     plt.close(fig)
 
-    # 5) exploratory FODO optics (σ_x vs z) — labeled placeholder
+    # 5) FODO optics (σ_x AND σ_y vs z). Both curves are needed for the containment argument: each
+    #    gap is an H/V doublet (two opposite-sign qL/2 halves) that net-focuses BOTH planes, so x and
+    #    y stay bounded and oscillate out of phase (FODO beating) — unobservable without both curves.
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
-    ax.plot(z, sx * 1e3, "-", color="C7")
+    ax.plot(z, sx * 1e3, "-", color="C7", label="σ_x")
+    ax.plot(z, sy * 1e3, "-", color="C8", label="σ_y")
     ax.set_xlabel("⟨z⟩ [m]")
-    ax.set_ylabel("σ_x [mm]")
-    quads_on = summ.get("quads_on", False)
-    ax.set_title("linac_rest: transverse envelope σ_x  "
-                 + ("(QUADS ON — exploratory)" if quads_on
-                    else "(quads OFF — placeholder optics, NOT predictive)"))
+    ax.set_ylabel("transverse RMS size [mm]")
+    # QUADS ON ⇒ derived energy-scaled FODO: both planes bounded/oscillating (placeholder optics,
+    # see title); QUADS OFF ⇒ no focusing, monotonic divergence (placeholder, NOT predictive).
+    # μ is read from the summary (quad_phase_adv_deg) so the title can't drift from the helper default.
+    mu_deg = summ.get("quad_phase_adv_deg", 50.0)
+    # Two-line title so the placeholder-optics caveat stays legible (a single long line was
+    # clipped off the right edge of the figure).
+    ax.set_title("linac_rest: transverse envelope σ_x / σ_y\n"
+                 + (f"QUADS ON — energy-scaled H/V-doublet FODO (μ={mu_deg:g}°), both planes "
+                    "contained · placeholder optics, A→T calib missing" if quads_on
+                    else "quads OFF — placeholder optics, NOT predictive"),
+                 fontsize=9)
+    ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.savefig(os.path.join(RESULTS, "fodo_optics.png"), dpi=130)
     plt.close(fig)
