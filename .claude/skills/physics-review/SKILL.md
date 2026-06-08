@@ -43,7 +43,7 @@ Create an agent team and spawn these teammates. Give each a spawn prompt naming 
 | Emission & space-charge physicist | `emission` | cathode — SCL diode, Child–Langmuir current, PPC/flux injection, space-charge at low energy |
 | RF & bunching physicist | `rf` | prebuncher velocity bunching (power/phase, ~1 mm bunch) + linac TW section energy gain (~37 MeV), RF field-map scaling/summing |
 | Beam-optics & transport physicist | `optics` | electrostatics (~148 keV), solenoid focusing, emittance/envelope, **inter-stage handoff contract** (charge renorm, openPMD beam I/O) |
-| WarpX / PIC expert | `warpx` | geometry binding (2D vs RZ), MLMG/Poisson solver convergence, CFL & step counts, ≈3:1 cell-aspect requirement, thetaMode openPMD axis order, external-field load conventions, `LoadAppliedField` ordering |
+| PIC expert | `pic` | `WarpX` and `Impact-T`: geometry binding (2D vs RZ), MLMG/Poisson solver convergence, CFL & step counts, ≈3:1 cell-aspect requirement, thetaMode openPMD axis order, external-field load conventions, `LoadAppliedField` ordering |
 | Python / scientific-software engineer | `pyeng` | bugs, unit/constant correctness, dead code, API/`config()` consistency, performance knobs, doc drift vs `CLAUDE.md`/READMEs |
 
 Add a numerical-methods, diagnostics, or other specialists only if scope clearly warrants it.

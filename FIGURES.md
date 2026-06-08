@@ -43,6 +43,7 @@ per-dump moment table per stage, and renders four figures into the **repo-root `
 the whole-chain view. Called automatically at the end of `pipeline/run_pipeline.py`.
 
 ### `chain_evolution.png` — beam moments vs lab ⟨z⟩
+![Chain Evolution](results/chain_evolution.png)
 3×2 panels across cathode→gun→injector→linac vs lab ⟨z⟩: ⟨KE⟩ (±σ band, log-y), ε_n,x, σ_x,
 σ_z (log-y), within-stage charge fraction, and I_peak. **Caveats baked into the figure:** the
 **cathode→gun ε_n,x step is a 2D→RZ definitional discontinuity** (the cathode is 2D x–z, slab
@@ -51,85 +52,23 @@ not physical growth. The σ_x / capture caveat that the lab-frame ES self-field 
 transverse SC by ~γ²≈1.7× (a conservative lower bound) is noted on the σ_x panel.
 
 ### `emittance_budget.png` — ε_n,x entry vs exit per stage
+![Emittance Budget](results/emittance_budget.png)
 A waterfall of transverse normalized emittance at each stage's entry vs exit — which stage degrades
 beam quality. The cathode→gun bar carries the 2D→RZ definitional footnote.
 
 ### `transmission_waterfall.png` — the two-loss charge chain
+![Transmission Waterfall](results/transmission_waterfall.png)
 gun exit → injector exit (@2.03 m handoff) → **passes iris** (9.547 mm, ~32%) → **captured** (~25 MeV, ~7%).
 The bore-scrape and the RF-capture losses are **separate bars** — the separation that motivates the
 upstream solenoids. Starts at gun exit (physical ~1 nC renorm); the cathode's raw macroparticle
 weight is excluded (not a physical charge). Capture is vs the **true injected charge**.
 
 ### `chain_scorecard.png` — per-stage entry/exit table
+![Chain Scorecard](results/chain_scorecard.png)
 Per-stage entry/exit ⟨KE⟩, σ_KE, ε_n,x, σ_x, σ_z, charge, and the end-to-end capture (vs true
 injected). σ_KE is **charge-conditional** (a single-snapshot value), and the capture is the
 γ²-conservative lower bound. Also printed to stdout/log. (Longitudinal ε_n,z, where reported, is
 the z–(γβ_z) emittance in mm — NOT mm·mrad.)
-
-### Chapter-10 (PARMELA) comparison — `tan_fig10p*_<case>.png` + `tan_comparison_<case>.{md,csv}`
-
-`pipeline/plot_chapter10.py` reproduces the qualitative KE-vs-RF-phase views of Cheng-Yang Tan's
-dissertation Chapter 10 (Tan Fig 10.2–10.5) from the **existing** default diags (no pipeline re-run).
-Each figure is 2 rows sharing x: top = KE-vs-φ scatter, bottom = **peak-normalized** charge-vs-φ
-histogram (Tan's ~16 nC vs the repo's ~0.8 nC ⇒ shapes compare, not absolute pC). The φ axis is each
-particle's **arrival time** at the bunch centroid plane, `t = −(z − z_ref)/v_z` (head = φ<0); a
-`v_z ≤ 1e-3·c` guard drops the pathological low-/negative-`v_z` tail. φ uses **214.18 MHz** at the gun
-/ injector planes and **2856 MHz** after Sec1. A gun `corr(φ,KE) < 0` assertion gates the sign; the
-@2856/@214 σ_z columns share one σ_t so their ratio is **by construction 13.334** (internal check,
-NOT Tan's 13.52 spatial-σ_z ratio) — so the two Δ-vs-Tan σ_z columns are the **same measurement** at
-two frequencies, not independent.
-
-**Headline finding.** The WarpX/Impact-T rebuild reproduces Tan's **mean energies** along the injector
-chain (gun → handoff → Sec1 exit, all within tolerance at cond i) but does **not** reproduce his
-longitudinal **bunching**: the rebuild's gun emission window produces a ~14 ps bunch (~270× shorter than
-Tan's 3.7 ns base), so the prebunchers **over-rotate / debunch** it rather than compressing — leaving σ_z
-far wider and capture far lower than Tan at *every* operating point. This is the LinacSim
-**input-reconciliation gap** (the gun bunch length), **not** a tracking error.
-
-Two operating-point **cases**, each writing its own `<case>`-tagged figures + table:
-- **`_repo_default`** — the repo's 8 kW / 10 kW two-cavity point (Preb1 −70°, Preb2 −45°). **QUALITATIVE
-  comparison only — NOT Tan cond (i);** Tan's Table 10.2 numbers appear as a labeled reference column
-  with deltas, not a target.
-- **`_cond_i`** — the physics-correct **Tan condition (i)** (Preb1 50 kV @ phase-null, Preb2 150 kV @
-  crest; achieved V_gap 50.0/150.0 kV). Requires an injector + linac_sec1 re-run into `*/diags/cond_i`
-  (run `python pipeline/_run_cond_i.py`, then `python pipeline/plot_chapter10.py cond_i`).
-  **The numeric comparison to Table 10.2 applies to the ⟨E⟩ (mean-energy) rows ONLY** — energies match
-  (gun 0.146, prePreb2 0.141, preSec1 0.281, postSec1 26.3 MeV vs Tan 0.150/0.139/0.253/27.2). The
-  **σ_z, σ_E, and capture rows are input-window-limited and NOT comparable**: the repo gun is a DC
-  single-snapshot emitter with no 3.7 ns emission window, so σ_z does not tighten to Tan's and capture
-  is iris-limited (the 150 kV crest blows the beam up radially into the un-rematched lens telescope —
-  tune-sensitive, not fundamental). The location-D σ_z@2856 Δ is **blanked** (the captured core spans
-  >2 RF periods at 2856 MHz, so its raw σ_z@2856 is an unwrapped multi-bucket extent, not a
-  single-bucket bunch length comparable to Tan's 11.1°).
-
-(Embeds below show the `_cond_i` case — Tan condition (i), where the ⟨E⟩ rows compare numerically;
-the `_repo_default` twins are the same four figures at the qualitative default point.)
-
-`tan_fig10p2_at_gun_<case>.png` (Tan 10.2, gun exit): sine-like falling KE(φ), high-KE on φ<0.
-
-![Tan 10.2 at gun (cond i)](results/tan_fig10p2_at_gun_cond_i.png)
-
-`tan_fig10p3_before_preb2_<case>.png` (Tan 10.3, Preb2 **entrance** = Z_GAP_CENTER_2 − MAP_HALF_Z ≈
-1.166 m, pre-kick — NOT the gap center, which would inflate ⟨E⟩): monotonic S-curve.
-
-![Tan 10.3 before Preb2 (cond i)](results/tan_fig10p3_before_preb2_cond_i.png)
-
-`tan_fig10p4_before_sec1_<case>.png` (Tan 10.4, ~handoff plane, **pre-iris** full population): a
-falling band that bends toward a left-opening parabola when the operating point bunches.
-
-![Tan 10.4 before Sec1 (cond i)](results/tan_fig10p4_before_sec1_cond_i.png)
-
-`tan_fig10p5_after_sec1_<case>.png` (Tan 10.5, Sec1 exit, **captured core** KE ≥ 12 MeV, φ@2856):
-steeply falling KE(φ) with a narrow core spike. Caption notes Sec1 POWER_MW=11 → peak |Ez| 14.89 MV/m,
-on-crest-average ≈ 11.5 MV/m (≈ Tan cond-i's 11 MV/m section field).
-
-![Tan 10.5 after Sec1 (cond i)](results/tan_fig10p5_after_sec1_cond_i.png)
-
-- `tan_comparison_<case>.md` / `.csv` — per-location table (⟨E⟩, σ_E, σ_z@214/@2856, capture) with a
-  parallel Tan-published row and a Δ column. Capture is reported vs `q_injected_C` (honest pre-iris
-  denominator) with the iris transmission (`q_in_bore`/`q_injected`) called out **separately** — the
-  repo capture is far below Tan's 89.4/96.8 **by construction** (γ² self-field + real iris + denominator
-  mismatch), annotated, not "fixed". Location C capture = "n/a (pre-iris)".
 
 ---
 
