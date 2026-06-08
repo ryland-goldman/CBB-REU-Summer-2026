@@ -163,7 +163,8 @@ def _find_crest_phase(Ic, index, gname, P_entrance, s1, probe_scale,
 
 
 def calibrate_sections(I, P_in, power_mw=None, scale_range=(5e6, 90e6),
-                       rtol=2e-3, probe_scale=2.0e7, np_calib=400, verbose=True):
+                       rtol=2e-3, probe_scale=2.0e7, np_calib=400, verbose=True,
+                       bar=None):
     """Calibrate each section to its energy-gain target ΔE_target(P_op), ON CREST.
 
     Per section i (lab order), sequential. To be IMMUNE to cross-section state bleed (a reused
@@ -192,7 +193,16 @@ def calibrate_sections(I, P_in, power_mw=None, scale_range=(5e6, 90e6),
     Returns a list of dicts (index, name, scale, crest_phase_deg, entrance_ke_mev, target_de_mev,
     achieved_de_mev, err_frac) and leaves ``I`` with every section's calibrated scale AND crest
     phase applied (ready for the full ``I.run()``).
+
+    ``bar`` (optional tqdm) ticks once per section so the calibration phase shows progress like
+    the WarpX stages; per-section summary lines route through ``bar.write`` so they don't scramble
+    the bar. When ``bar`` is None the lines just ``print`` (standalone / direct call).
     """
+    def _emit(msg):
+        if bar is not None:
+            bar.write(msg)
+        else:
+            print(msg)
     p = L.POWER_MW if power_mw is None else power_mw
     from impact.lattice import ele_bounds
     results = []
@@ -297,13 +307,16 @@ def calibrate_sections(I, P_in, power_mw=None, scale_range=(5e6, 90e6),
         }
         results.append(rec)
         if verbose:
-            print(f"  sec {i + 2} {rec['name']:<6}  KE_in={ke_entrance_mev:7.2f} MeV  "
+            _emit(f"  sec {i + 2} {rec['name']:<6}  KE_in={ke_entrance_mev:7.2f} MeV  "
                   f"crest={crest_phase:6.1f}°  scale={S_fit:.4e}  ΔE target={de_target_mev:6.2f}  "
                   f"achieved={achieved_de_mev:6.2f} MeV  ({err_frac * 100:+.2f}%)")
+        if bar is not None:
+            bar.set_postfix_str(f"sec {i + 2}, {ke_entrance_mev + achieved_de_mev:.0f} MeV")
+            bar.update(1)
 
     if verbose:
         worst = max(abs(r["err_frac"]) for r in results)
-        print(f"  calibration worst |error| = {worst * 100:.2f}%  (gate: ±3%)")
+        _emit(f"  calibration worst |error| = {worst * 100:.2f}%  (gate: ±3%)")
     return results
 
 

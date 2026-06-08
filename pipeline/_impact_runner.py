@@ -4,6 +4,11 @@
 (`config`/`run`/`plot`/`_params`/`_warn_unknown_params`) but runs **entirely
 in-process** — `build.main()`, `sim.main()`, `plot.main()` are plain function
 calls, NOT a `_launch_sim` subprocess with a `run_step`/`afterstep` tqdm bar.
+Impact-T has no per-step Python callback to drive a bar from, so `sim.main()`
+uses the `terminal_progress` helper here (a calibrate bar ticked per section, a
+final-run bar driven by a fort.18 watcher); `_run_step` exposes the saved
+terminal fd as `_TERMINAL_FD` so those bars survive the sim-phase stdout
+redirect, mirroring `run_step`'s saved-fd trick.
 
 Why no subprocess (unlike every WarpX stage): the WarpX stages each spawn a
 fresh interpreter because pywarpx binds globally to one geometry (2D/RZ/3D) at
@@ -31,6 +36,7 @@ modules (imported here) AND AST-introspect the sim module's top-level names
 section-table constant from spuriously warning).
 """
 
+import contextlib
 import importlib
 import logging
 import os
@@ -39,8 +45,45 @@ import time
 
 from pipeline._runner import (
     _prepare_environment, setup_logging, _module_top_level_names,
-    _cl, log, _BOLD, _GREEN, _YELLOW, _RESET,
+    _cl, log, _BOLD, _GREEN, _YELLOW, _RESET, _TTY,
 )
+
+# A dup of the real terminal's fd 1, set by `_run_step` for the duration of the
+# redirected sim phase (where fd 1/2 point at the capture file). `terminal_progress`
+# reads it so a tqdm bar reaches the terminal even while the exe's stdout is captured
+# — the same saved-fd trick `pipeline._runner.run_step` uses for the WarpX bar. None
+# outside a redirected step (e.g. a direct `python -m linac_rest.linac_rest_sim`), in
+# which case the bar falls back to fd 1.
+_TERMINAL_FD = None
+
+
+@contextlib.contextmanager
+def terminal_progress(total=None, desc="", unit="it"):
+    """A tqdm bar that reaches the real terminal even while the sim phase has fd 1/2
+    redirected to the capture file (see `_run_step(redirect=True)` / `_TERMINAL_FD`).
+
+    Used by the Impact-T `linac_rest` stage to show progress (calibration sections,
+    final-run z) the way the WarpX stages' `run_step` bar does — they install an
+    `afterstep` callback, but Impact-T is an opaque external exe, so the bars here are
+    driven by the calibration loop (per section) and a fort.18 watcher (final run).
+    Disabled on a non-TTY (matches `run_step`). Closes its own fd on exit.
+    """
+    from tqdm import tqdm as _tqdm
+    fd = _TERMINAL_FD if _TERMINAL_FD is not None else 1
+    bar_fd = os.dup(fd)
+    bar_file = os.fdopen(bar_fd, "w", buffering=1, closefd=False)
+    bar = _tqdm(total=total, desc=desc, unit=unit, ncols=88, leave=True,
+                file=bar_file, disable=not _TTY)
+    try:
+        yield bar
+    finally:
+        if bar.total and bar.n < bar.total:
+            bar.n = bar.total
+            bar.refresh()
+        bar.close()
+        try: bar_file.flush()
+        except Exception: pass
+        os.close(bar_fd)
 
 
 class ImpactStage:
@@ -160,6 +203,7 @@ class ImpactStage:
         t0 = time.time()
         ok, err = True, None
 
+        global _TERMINAL_FD
         saved_out = saved_err = cap_fd = None
         cap_path = None
         if redirect:
@@ -168,6 +212,9 @@ class ImpactStage:
                 saved_out, saved_err = os.dup(1), os.dup(2)
                 os.dup2(cap_fd, 1)
                 os.dup2(cap_fd, 2)
+                # Expose the saved terminal fd so `terminal_progress` bars (calibration,
+                # final-run watcher) inside func() still reach the real terminal.
+                _TERMINAL_FD = saved_out
             except Exception:
                 # If the capture can't be set up, fall back to running un-redirected
                 # rather than failing the whole stage. Restore fd 1/2 from any saved
@@ -187,6 +234,7 @@ class ImpactStage:
                     try: os.unlink(cap_path)
                     except Exception: pass
                 cap_fd = saved_out = saved_err = cap_path = None
+                _TERMINAL_FD = None
         try:
             func()
         except Exception as e:
@@ -194,6 +242,7 @@ class ImpactStage:
             log.exception(f"{title} raised {type(e).__name__}: {e}")
         finally:
             if redirect:
+                _TERMINAL_FD = None     # the bars are done; saved_out is about to close
                 try: sys.stdout.flush()
                 except Exception: pass
                 try: sys.stderr.flush()
