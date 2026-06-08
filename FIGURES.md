@@ -329,11 +329,14 @@ from the ~25 MeV captured core to ≈308 MeV at 11 MW (each section calibrated t
 ΔE_target = ΔE_table·√(P/15)). The expected exit energy (measured ⟨KE⟩_in + Σ ΔE_target) is
 marked.
 
-### `energy_spread.png` — absolute σ_KE conserved, relative shrinks
+### `energy_spread.png` — absolute σ_KE grows (~3.9×), relative shrinks
 ![linac_rest: σ_KE and relative spread vs z](linac_rest/results/energy_spread.png)
 
-**Top:** absolute σ_KE vs ⟨z⟩ (first-order conserved on-crest). **Bottom:** relative spread
-σ_KE/⟨KE⟩, which adiabatically shrinks as ⟨KE⟩ grows (≈32 % at injection → ≈2.6 % at exit).
+**Top:** absolute σ_KE vs ⟨z⟩ — **NOT** conserved; it grows ~3.9× (5.42 → 21.21 MeV) from the
+second-order crest curvature accumulated over the seven on-crest sections (a finite-phase-length
+bunch sits on an energy maximum). **Bottom:** relative spread σ_KE/⟨KE⟩ still shrinks
+(≈20.0 % at injection → ≈6.9 % at exit) because ⟨KE⟩ grows faster (~11.4×) than σ_KE. See
+`linac_rest/README.md` §5 gate 3 / `calibration.py`.
 
 ### `emittance.png` — normalized emittance (headline, quads OFF)
 ![linac_rest: ε_n,x / ε_n,y vs z](linac_rest/results/emittance.png)

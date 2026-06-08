@@ -43,8 +43,10 @@ standing-wave maps (G. A. Loew et al., SLAC-PUB-2295):
 those are already embedded in the per-section ΔE table, so encoding them in the field
 profile would double-count.
 
-**Key field-reuse fact:** the rfdata Fourier reconstruction uses the period stored *inside*
-the file (a single ~0.105 m 3-cell block) as its wavelength — NOT the lattice element `L`.
+**Key field-reuse fact:** the rfdata Fourier reconstruction uses the fundamental period stored
+*inside* the file (~0.105 m, the 3-cell block) as its wavelength — NOT the lattice element `L`.
+(The body maps `rfdata5`/`rfdata6` store ~2.94 m of fitted Fourier data, but the field is
+*periodic* at that ~0.105 m wavelength, so it tiles over any element length.)
 The element `L` only sets the active z-range `[zedge, zedge+L]` that Impact-T integrates the
 periodic field over, so a longer section is simply *more cells of the same per-cell field*.
 That is why "rescale length" just means setting the body element `L` per section; the field

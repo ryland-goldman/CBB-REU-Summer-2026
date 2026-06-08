@@ -170,7 +170,15 @@ class ImpactStage:
                 os.dup2(cap_fd, 2)
             except Exception:
                 # If the capture can't be set up, fall back to running un-redirected
-                # rather than failing the whole stage.
+                # rather than failing the whole stage. Restore fd 1/2 from any saved
+                # duplicates FIRST — a partial dup2 (fd 1 redirected, fd 2 raised) would
+                # otherwise leave fd 1 dangling on the about-to-be-closed temp file.
+                if saved_out is not None:
+                    try: os.dup2(saved_out, 1)
+                    except Exception: pass
+                if saved_err is not None:
+                    try: os.dup2(saved_err, 2)
+                    except Exception: pass
                 for fd in (cap_fd, saved_out, saved_err):
                     if fd is not None:
                         try: os.close(fd)

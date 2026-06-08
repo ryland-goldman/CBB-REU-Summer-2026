@@ -137,7 +137,7 @@ def main():
                                  sharex=True)
     a1.plot(z, dke, "-o", ms=3, color="C5")
     a1.set_ylabel("σ_KE [MeV]")
-    a1.set_title("linac_rest: energy spread (absolute ~conserved, relative shrinks)")
+    a1.set_title("linac_rest: energy spread (absolute grows ~3.9×, relative shrinks)")
     a1.grid(alpha=0.3)
     rel = np.where(ke > 0, dke / ke * 100.0, np.nan)
     a2.plot(z, rel, "-o", ms=3, color="C6")

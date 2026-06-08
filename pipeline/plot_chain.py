@@ -456,10 +456,12 @@ def main():
         with open(LINAC_REST_INJ_SUMMARY) as fh:
             rest_inj = json.load(fh)
     _apply_linac_z0(linac_inj)   # linac diagnostics are linac-local; shift to lab frame
-    tables = {st["name"]: build_moment_table(st) for st in STAGES}
-    # linac_rest (Impact-T) is also local-frame; shift to lab using its recorded inject z
-    # (fallback derives the offset from the just-built linac table), then rebuild its rows
-    # so they carry the lab offset.
+    # Build every stage EXCEPT linac_rest first; linac_rest (Impact-T) is local-frame and
+    # needs its lab z0 resolved before its rows are built, so build it once below (not twice).
+    tables = {st["name"]: build_moment_table(st)
+              for st in STAGES if st["name"] != "linac_rest"}
+    # linac_rest: resolve the lab offset from its recorded inject z (fallback derives it from
+    # the just-built linac table), then build its rows ONCE so they carry the lab offset.
     _apply_linac_rest_z0(rest_inj, tables)
     rest_stage = next(st for st in STAGES if st["name"] == "linac_rest")
     tables["linac_rest"] = build_moment_table(rest_stage)

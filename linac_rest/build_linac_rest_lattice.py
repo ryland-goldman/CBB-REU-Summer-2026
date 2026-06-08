@@ -396,8 +396,8 @@ def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
     h["Bfreq"] = RF_FREQ_HZ
     h["Bmass"] = 0.51099895e6
     h["Bcharge"] = -1.0
-    # Flagdist/Nemission: a non-cathode coasting beam (initial_particles set by the sim).
-    h["Flagimg"] = 0
+    # (Flagimg already 0 above — no image charge; the sim sets a non-cathode coasting beam
+    #  via initial_particles, so no Flagdist/Nemission cathode-emission settings are needed.)
 
     I.configure()
     return I, total_len

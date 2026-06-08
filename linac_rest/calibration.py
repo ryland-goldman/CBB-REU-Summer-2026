@@ -362,9 +362,13 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     ke_min_mev = (P_out["energy"].min() / 1e6) - ELECTRON_REST_MEV
     beta_min = _beta_from_ke_mev(ke_min_mev)
 
-    q_in = P_in["charge"]
-    q_out = P_out["charge"]
-    transmission = q_out / q_in if q_in else 0.0
+    # Transmission from the macroparticle COUNT, NOT charge. Count-based is the authoritative
+    # measure (it's what sim.main() records); a charge ratio would only equal it because main()
+    # re-imposes q_out = q_core·(n_out/n_in) before calling this — a hidden ordering dependency.
+    # Computing from counts here keeps the gate correct regardless of when charge is re-imposed.
+    n_in = P_in.n_particle
+    n_out = P_out.n_particle
+    transmission = (n_out / n_in) if n_in else 0.0
 
     gates = {}
     gates["calib_within_3pct"] = (

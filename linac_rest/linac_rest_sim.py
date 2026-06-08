@@ -28,8 +28,10 @@ Handoff OUT (Impact-T → openPMD for plot_chain + summary):
     WarpX openPMD layout (species ``"electrons"``, ``ux=γβ``, ``w``=count) into
     ``diags/main/particles/`` so ``plot_chain``/``_beam_summary``/``build_moment_table`` read
     it with the same ``get_particle([...], species="electrons")`` call as every WarpX stage;
-  * a handful of along-z slices (from Impact-T's output) are dumped as a series so the
-    cross-stage vs-z panels have points;
+  * Impact-T's only particle dumps (with write_beam off) are the initial and final beams,
+    so a 2-iteration series (injected core + ≈308 MeV exit) is written for plot_chain; the
+    per-section vs-z evolution lives in ``injection_summary.json`` ``stat_vs_z`` (I.stat), not
+    in particle slices;
   * ``injection_summary.json`` records ``q_injected_C`` (the captured-core charge read from
     sec-1, so ``_beam_summary`` reports ~100% within-stage and the chain capture narrative
     stays coherent) and ``z_inject_lab_m`` (the lab-z the beam was injected at — Impact-T
@@ -81,7 +83,6 @@ Nxyz = 16                        # SC mesh per axis (unused — SC off; power of
 DRIFT_M = None                   # inter-section drift override [m] (None ⇒ build default 0.4)
 QUADS_ON = False                 # headline: quads OFF (K1 = 0). True ⇒ exploratory FODO.
 QUAD_K = None                    # per-section quad b1_gradient [T/m] (exploratory; None ⇒ zeros)
-N_DIAGS = 12                     # number of along-z openPMD slices written for the vs-z panels
 RNG_SEED = 0
 REQUIRE_GATES = True             # T6: assert the hard §5 gates so a bad run fails loudly
 
