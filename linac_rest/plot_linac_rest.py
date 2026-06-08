@@ -11,8 +11,9 @@ linac_rest/results/:
                             to ≈308 MeV at 11 MW (307.97 survivors).
   2. energy_spread.png    — σ_KE and the relative spread σ_KE/⟨KE⟩ vs ⟨z⟩ (the relative
                             spread adiabatically shrinks as ⟨KE⟩ grows).
-  3. emittance.png        — normalized emittance εn,x / εn,y vs ⟨z⟩ (quads OFF ⇒ near-
-                            conserved; flags numerical growth). The headline beam.
+  3. emittance.png        — normalized emittance εn,x / εn,y vs ⟨z⟩ (quads OFF: εn rises ~2.4×,
+                            a fort.10N norm_emit diagnostic artifact at bore/section crossings —
+                            σ_x stays smooth across the jumps ⇒ NOT physical growth, NOT conserved).
   4. section_gains.png     — per-section achieved vs target ΔE bar chart (from the
                             calibration table) — the §5 gate-1 visual.
   5. fodo_optics.png       — transverse envelope σ_x AND σ_y vs ⟨z⟩, titled by quad state.
@@ -156,17 +157,23 @@ def main():
 
     quads_on = summ.get("quads_on", False)
 
-    # 3) normalized emittance vs z (headline quads OFF ⇒ ~conserved; quads ON ⇒ chromatic growth)
+    # 3) normalized emittance vs z. NOTE: quads-OFF εn is NOT conserved — the recorded εn,x/y rise
+    #    ~2.4× over the line, a fort.10N norm_emit diagnostic artifact at bore/section crossings
+    #    (σ_x stays smooth across the εn jumps ⇒ not physical growth). Quads-ON adds real chromatic
+    #    growth on top of the same artifact, so its εn figure conflates the two.
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
     ax.plot(z, enx * 1e6, "-", color="C5", label="ε_n,x")
     ax.plot(z, eny * 1e6, "-", color="C6", label="ε_n,y")
     ax.set_xlabel("⟨z⟩ [m]")
     ax.set_ylabel("normalized emittance [mm·mrad]")
-    # quads ON: off-energy particles get different K1·(1/Bρ) focusing ⇒ chromatic εn growth
-    # (tens of % expected, NOT a failure — only a runaway is); quads OFF: RF + drift only.
-    ax.set_title("linac_rest: normalized emittance  "
-                 + ("(QUADS ON — chromatic growth from energy-dependent focusing)" if quads_on
-                    else "(quads OFF ⇒ RF + drift only)"))
+    # quads ON: off-energy particles get different K1·(1/Bρ) focusing ⇒ real chromatic εn growth
+    # (tens of % expected, NOT a failure — only a runaway is), on top of the same fort.10N artifact.
+    # quads OFF: the ~2.4× εn rise is that diagnostic artifact (σ_x smooth ⇒ not physical), not growth.
+    ax.set_title("linac_rest: normalized emittance\n"
+                 + ("QUADS ON — chromatic growth (energy-dependent focusing) + fort.10N εn artifact"
+                    if quads_on
+                    else "quads OFF — εn rises ~2.4×: a fort.10N diagnostic artifact, not physical"),
+                 fontsize=9)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.savefig(os.path.join(RESULTS, "emittance.png"), dpi=130)
@@ -205,10 +212,13 @@ def main():
     # see title); QUADS OFF ⇒ no focusing, monotonic divergence (placeholder, NOT predictive).
     # μ is read from the summary (quad_phase_adv_deg) so the title can't drift from the helper default.
     mu_deg = summ.get("quad_phase_adv_deg", 50.0)
-    ax.set_title("linac_rest: transverse envelope σ_x / σ_y  "
-                 + (f"(QUADS ON — derived energy-scaled FODO, nominal μ={mu_deg:g}°; "
-                    "H/V doublet (±g qL/2 halves), both planes contained; A→T calib missing)" if quads_on
-                    else "(quads OFF — placeholder optics, NOT predictive)"))
+    # Two-line title so the placeholder-optics caveat stays legible (a single long line was
+    # clipped off the right edge of the figure).
+    ax.set_title("linac_rest: transverse envelope σ_x / σ_y\n"
+                 + (f"QUADS ON — energy-scaled H/V-doublet FODO (μ={mu_deg:g}°), both planes "
+                    "contained · placeholder optics, A→T calib missing" if quads_on
+                    else "quads OFF — placeholder optics, NOT predictive"),
+                 fontsize=9)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.savefig(os.path.join(RESULTS, "fodo_optics.png"), dpi=130)

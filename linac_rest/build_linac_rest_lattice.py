@@ -229,7 +229,7 @@ def fodo_quad_gradients(*, phase_adv_deg=50.0, k1_max=14.0, mc2_mev=0.510998950,
     same phase advance. That plane symmetry is the whole point of going to the doublet.
 
     **Recipe (exact thick-lens cell matrix — the thin-lens (K1·l)²·d doublet formula is NOT used,
-    it is unreliable here because K1·L_q/2 ≈ 0.7–1.4, i.e. the half-quads are not thin):**
+    it is unreliable here because the half-quad phase √K1·(L_q/2) ≈ 0.46 rad (~27°) is not small):**
 
         cell_i   = drift(gap/2) · (+K1 half-quad, L_q/2) · (−K1 half-quad, L_q/2) · drift(gap/2)
                    · drift(L_section(i+1))                  (RF section as a field-free drift)
@@ -238,7 +238,7 @@ def fodo_quad_gradients(*, phase_adv_deg=50.0, k1_max=14.0, mc2_mev=0.510998950,
         g_i      = (-1)**i · K1_i · Bρ_i                   [T/m]   (energy-scaling enters via Bρ)
 
     **μ defaults to 50°.** The uniform design μ is bounded by the WEAKEST cell (gap 2 — the short
-    2.94 m CEA-2 section — tops out near 56°), so 50° is reachable by every gap and sits mid-band
+    2.94 m CEA-2 section — tops out near 67°), so 50° is reachable by every gap and sits mid-band
     (0–180° stable). A μ sweep (45/50/55°, doublet) showed the result is robust: exit ⟨KE⟩ stays
     ≈308–310 MeV (gate 2 PASS) and transmission clusters at 77.6–78.2 % with a bounded oscillating
     σ_x/σ_y (max RMS ≈4.4 mm, well inside the 9.9 mm exit bore) — 50° gives the best transmission.

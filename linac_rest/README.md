@@ -138,13 +138,13 @@ true value is higher). The robust deliverable is the energy gain, not the transm
     scrape — that was the over-pinched first attempt, 49–58 % transmission). The lead-pole sign
     alternates gap-to-gap.
   - K1 is solved from the **exact thick-lens cell matrix** (`_solve_doublet_k1`), NOT a thin-lens
-    formula — the half-quads are not thin (K1·L_q/2 ≈ 0.7–1.4). The cell is
+    formula — the half-quad phase `√K1·(L_q/2) ≈ 0.46 rad (~27°)` is not small. The cell is
     `drift(gap/2)·(+K1 half-quad, L_q/2)·(−K1 half-quad, L_q/2)·drift(gap/2)·drift(L_section(i+1))`
     with the following **RF section treated as a field-free drift**; per gap, K1_i solves
     `cos μ = ½·Tr(cell_i)` by bisection (the symmetric ± doublet gives the same `½·Tr` in both
     planes ⇒ both get μ), then `g_i = (-1)**i · K1_i · Bρ_i` [T/m]. `k1_max` (=14) caps the bracket;
     a cell that can't reach μ within it falls back to `k1_max`. μ=50° is reachable by every gap
-    (the weakest, gap 2 / short CEA-2, tops out near 56°) and sits mid-band (0–180° stable).
+    (the weakest, gap 2 / short CEA-2, tops out near 67°) and sits mid-band (0–180° stable).
 
   Returns **length-`N_SECTIONS` (7)**: the first 6 are the placed quads (`quad2…quad7`, one after
   every section except the last, each placed as an `a`/`b` doublet); the **7th (Q8, after the final
@@ -246,7 +246,9 @@ from a full-bunch full-scan calibration); `ImpactTexe` is serial.
    at 282 MeV total gain). The **relative** spread still shrinks (20.0% → 6.9%) only because ⟨KE⟩
    grows faster (27 → ~308 MeV, ~11.4×) than σ_KE. This affects spread only — calibration uses
    ⟨KE⟩, so the energies/scales are unaffected;
-4. normalized emittance εn,x/εn,y in vs out (quads OFF ⇒ ~conserved) — diagnostic;
+4. normalized emittance εn,x/εn,y in vs out — diagnostic. NOTE: quads-OFF εn is **not**
+   conserved; the recorded vs-z εn sawtooths ~2.4× — a fort.10N `norm_emit` artifact at
+   bore/section crossings (σ_x stays smooth across the jumps ⇒ not physical growth);
 5. beam reached the final zedge (`I.stat("mean_z")[-1] ≈ Σ L`) — hard, catches Ntstep
    truncation (which falsely reports `finished=True`);
 6. min captured KE ⇒ β > 0.999 — hard, justifies no-slip;

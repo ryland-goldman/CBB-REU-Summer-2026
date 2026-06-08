@@ -337,7 +337,9 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
          achieved ≈308 MeV — 307.97 survivors through the real bore / 309.2 full-beam).
       3. σ_KE absolute (NOT conserved — grows ~3.9× from second-order crest curvature) and
          relative (still shrinks, ⟨KE⟩ grows faster). Diagnostic only.
-      4. normalized emittance εn,x / εn,y in vs out (near-conserved, quads OFF). Diagnostic.
+      4. normalized emittance εn,x / εn,y in vs out — diagnostic. NOTE: quads-OFF εn is NOT
+         conserved; the recorded vs-z εn sawtooths ~2.4× — a fort.10N norm_emit artifact at
+         bore/section crossings (σ_x stays smooth across the jumps ⇒ not physical growth).
       5. beam reached final zedge: I.stat("mean_z")[-1] ≈ Σ lattice length (catches Ntstep
          truncation, which falsely reports finished=True).
       6. min captured KE ⇒ β > 0.999 (justifies the rigid-crest no-slip assumption).
@@ -433,7 +435,8 @@ def validate_run(I, P_in, power_mw=None, calib=None, require_gates=False):
     print(f"[ -- ] 3. σ_KE  in {sig_ke_in:.2f} → out {sig_ke_out:.2f} MeV; "
           f"rel spread {gates['rel_spread_in']*100:.1f}% → {gates['rel_spread_out']*100:.1f}%")
     print(f"[ -- ] 4. εn growth  x {gates['emit_x_growth']*100:+.1f}%  "
-          f"y {gates['emit_y_growth']*100:+.1f}%  (quads OFF ⇒ ~conserved)")
+          f"y {gates['emit_y_growth']*100:+.1f}%  (diagnostic; the quads-OFF ~2.4× is a fort.10N "
+          f"εn artifact at bore/section crossings, σ_x smooth ⇒ not physical)")
     print(f"[{mark(gates['mean_z_ok'])}] 5. beam reached z = {mean_z_reached:.2f} m "
           f"(Σ lattice {z_expected:.2f} m — catches Ntstep truncation)")
     print(f"[{mark(gates['beta_min_ok'])}] 6. min captured KE {ke_min_mev:.1f} MeV ⇒ "

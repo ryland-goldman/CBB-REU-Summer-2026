@@ -1,5 +1,12 @@
 # linac_rest — Implement the Quads (FODO Focusing) Plan
 
+> **⚠️ SUPERSEDED IN IMPLEMENTATION.** This is the pre-revision design. The single-quad,
+> thin-lens, μ=72° approach below was found unable to focus both transverse planes and was
+> **replaced by a thick-lens H/V doublet at μ=50°** during implementation. The gradient table
+> here (~0.1–0.35 T/m) is NOT the as-built value (shipped ~1–2.7 T/m). For the as-built recipe
+> see `linac_rest/README.md` → *Space charge & quads* and `fodo_quad_gradients`/`_solve_doublet_k1`
+> in `linac_rest/build_linac_rest_lattice.py`. Kept as a historical record of the planning phase.
+
 ## Goal & scope
 
 Turn the currently-inert quadrupoles (present at real tabulated lengths but `b1_gradient = 0`) into a working FODO focusing lattice that actually contains the beam through Cornell linac sections 2–8. The headline run **stays quads-OFF** (energy result ≈308 MeV is the robust, quad-independent deliverable; transmission ≈78.5% remains the no-focusing LOWER BOUND). `QUADS_ON=True` becomes a real, contained-beam **exploratory** path: per-quad `b1_gradient` values are derived from accelerator optics (constant-phase-advance FODO design, scaled by local beam momentum) — NOT from measured quad current, since the A→T (current→field) calibration is undocumented (`details.md`, A→T-unknown / "correct order of magnitude" note ≈ line 188–194). Every QUADS_ON output stays labeled "placeholder optics — guessed-strength FODO, A→T undocumented." The deliverable is a focused, bounded σ_x(z) / σ_y(z) envelope and a higher transmission against the **real tapered bore** (the box `XYRAD_M` is never widened — un-gameable-transmission ruling).
