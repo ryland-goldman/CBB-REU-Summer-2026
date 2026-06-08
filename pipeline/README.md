@@ -68,6 +68,14 @@ python pipeline/run_pipeline.py
   run length (`MAX_STEPS`, `CFL`, `TRANSIT_MARGIN`, `AVG_SPEED_FRAC`), Poisson solve
   (`REQUIRED_PRECISION`, `MAX_ITERS`), macroparticles (`PPC` for the cathode, `MAX_PART` downsample
   for gun/injector), and diagnostic dumps (`N_DIAGS`, `DIAG_PERIOD`).
+- **Space charge (beam self-field) per stage:** every segment carries its own `SPACE_CHARGE`
+  flag (a `config()`-overridable module constant). The four WarpX stages (`cathode`, `gun`,
+  `injector`, `linac_sec1`) default `SPACE_CHARGE=True` (self-field on); setting it `False` passes
+  `warpx_do_not_deposit` so the beam deposits no charge and only the applied/boundary fields act —
+  a no-self-field diagnostic run. `linac_rest` (Impact-T) defaults `SPACE_CHARGE=False` (the
+  physics-neutral SC-off deck the ≈308 MeV energy headline is built on); `True` sets Impact-T
+  `Bcurr = q_injected·Bfreq` to drive the SC mesh. Toggle per stage in `run_pipeline.py`, e.g.
+  `gun.config(SPACE_CHARGE=False)` or `linac_rest.config(SPACE_CHARGE=True)`.
 - **OMP threads:** set the `OMP_THREADS` environment variable (default 1 — keep this pipeline
   single-threaded). The grids are small and the MLMG solve is memory-bandwidth-bound, so threads
   add fork/join + barrier overhead with no gain; only raise `OMP_THREADS` for the much larger
@@ -93,6 +101,26 @@ figures land in the repo-root `results/` (from `pipeline.plot_chain`): `chain_ev
 `emittance_budget.png`, `transmission_waterfall.png`, and `chain_scorecard.png`. All are
 git-ignored; commit with `git add -f results/*.png`. `plot_chain` reads each stage's existing
 openPMD series and works even if only some stages have run.
+
+## Interactive beam explorer (`pipeline/beam_gui.py`)
+
+A **separate** GUI (modelled on [GPT_tools](https://github.com/AdamCBartnik/GPT_tools)'
+`gpt_plot_gui.py`) for manually investigating beam properties from the dumps `run_pipeline.py`
+produces. Run the pipeline first, then launch it standalone:
+
+```
+conda activate CBB
+python pipeline/beam_gui.py
+```
+
+It reads each stage's existing openPMD series (nothing is re-simulated), loads every dump into a
+`pmd_beamphysics.ParticleGroup`, and offers three GPT-style modes: **Trends** (a beam statistic —
+emittance, σ, ⟨KE⟩, charge, … — vs lab ⟨z⟩ across a stage's dumps), **1D Distribution** (weighted
+histogram of one coordinate on one dump), and **2D Distribution** (phase space as hist2d or
+scatter). A screen slider walks the dumps by ⟨z⟩, a live readout shows the selected dump's beam
+stats, and postprocessing toggles (drop zero-weight, radial cut, longitudinal slice) preview cuts.
+Note: WarpX dumps are time snapshots (all particles share one `t`, so bunch length is reported as
+σ_z, not GPT's σ_t).
 
 ## Cross-stage figures (`pipeline/plot_chain.py`)
 

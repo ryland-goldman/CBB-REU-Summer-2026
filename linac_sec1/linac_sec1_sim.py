@@ -83,6 +83,9 @@ PHASE_DEG = 0.0                  # injection RF phase offset [deg] (= phi_sec1_o
 # ── Performance / domain knobs ────────────────────────────────────────────────
 CFL = 0.5                        # dt = CFL · Δz / v_inject
 REQUIRED_PRECISION = 1e-4        # MLMG relative tolerance (space charge is a small perturbation)
+SPACE_CHARGE = True              # beam self-field (space charge) on/off. False →
+                                 # warpx_do_not_deposit: only the applied RF maps act
+                                 # (at ~25 MeV the self-field is already a small perturbation).
 MAX_ITERS = 200                  # MLMG iteration cap
 MAX_STEPS = 0                    # 0 → auto-derive from transit; >0 → fixed
 TRANSIT_MARGIN = 1.0             # transit already targets Z_END short of the wall
@@ -275,7 +278,8 @@ def main():
         particle_type="electron", name="electrons",
         initial_distribution=picmi.ParticleListDistribution(
             x=bunch["x"], y=bunch["y"], z=bunch["z"],
-            ux=bunch["ux"], uy=bunch["uy"], uz=bunch["uz"], weight=bunch["w"]))
+            ux=bunch["ux"], uy=bunch["uy"], uz=bunch["uz"], weight=bunch["w"]),
+        warpx_do_not_deposit=not SPACE_CHARGE)   # SPACE_CHARGE=False → no beam self-field
 
     # ── Time step / duration ──────────────────────────────────────────────────
     # dt is sized at the (slowest) injection velocity. The beam accelerates to β→1,

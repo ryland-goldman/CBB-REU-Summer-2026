@@ -72,6 +72,17 @@ linac_sec1.config(POWER_MW=11.0)                      # sec1_input_power = 11 MW
 # low-energy un-captured tail so the injected beam has β > 0.999 (rigid-crest no-slip).
 linac_rest.config(POWER_MW=11.0)                      # one power convention across the linac
 
+# ── Space charge (beam self-field) per stage. Each segment carries its own SPACE_CHARGE
+#    flag (default True for the four WarpX stages = on; linac_rest defaults False = the SC-off
+#    energy headline). Toggle a stage off for a no-self-field diagnostic run. WarpX stages use
+#    warpx_do_not_deposit (beam deposits no charge ⇒ only applied/boundary fields act); linac_rest
+#    sets Impact-T Bcurr = q_injected·Bfreq when on. Uncomment to override:
+# cathode.config(SPACE_CHARGE=True)
+# gun.config(SPACE_CHARGE=True)
+# injector.config(SPACE_CHARGE=True)
+# linac_sec1.config(SPACE_CHARGE=True)
+# linac_rest.config(SPACE_CHARGE=True)   # turn ON Impact-T space charge (headline is OFF)
+
 # ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
 #    reason the injector NZ must stay at 1664: see pipeline/README.md § Configuration. ──
 # Balanced profile: ACTIVE (~1.7×, ~5 min). Comment these 3 lines for the baseline.

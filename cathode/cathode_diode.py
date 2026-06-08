@@ -73,6 +73,11 @@ MAX_STEPS = 2000                     # ~4× the gap-fill time → reaches steady
 # Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
 REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
 MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
+SPACE_CHARGE = True                  # beam self-field (space charge) on/off. False →
+                                     # warpx_do_not_deposit: the beam deposits no charge,
+                                     # so the Poisson solve sees only the diode plate
+                                     # potentials (no self-repulsion). Diagnostic only —
+                                     # the physical diode is space-charge-limited.
 PPC = 10                             # macroparticles per cell (PseudoRandomLayout)
 CFL = 0.4                            # dt = CFL · dz / v_final
 DIAG_PERIOD = None                   # None → dense-early union slice (keeps figs 3,4);
@@ -138,6 +143,7 @@ def main():
         particle_type="electron",
         name="electrons",
         initial_distribution=emission,
+        warpx_do_not_deposit=not SPACE_CHARGE,   # SPACE_CHARGE=False → no beam self-field
     )
 
     # ── Time step / duration ────────────────────────────────────────────────────

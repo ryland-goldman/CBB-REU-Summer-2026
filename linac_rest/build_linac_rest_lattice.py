@@ -439,7 +439,7 @@ def _load_vendored_fieldmaps():
 
 def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
                  dt=None, ntstep=None, nxyz=None, scales=None, quads_on=False,
-                 quad_k=None, verbose=False):
+                 quad_k=None, bcurr=None, verbose=False):
     """Assemble the chained 7-section Impact-T deck and return a configured `Impact`.
 
     The sections are placed at increasing `zedge` with a `drift` of `drift_m` after every
@@ -549,7 +549,7 @@ def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
 
     h = I.header
     h["Npcol"], h["Nprow"] = 1, 1
-    h["Bcurr"] = 0.0                                 # space charge OFF
+    h["Bcurr"] = 0.0 if bcurr is None else bcurr     # 0 ⇒ space charge OFF; >0 ⇒ SC current [A]
     h["Flagimg"] = 0                                 # no image charge (no cathode)
     h["Dt"] = DECK_DT if dt is None else dt
     h["Ntstep"] = DECK_NTSTEP if ntstep is None else ntstep

@@ -87,7 +87,11 @@ Np_calib = 400                   # decimated bunch for per-section calibration (
                                  # ~240 calibration tracks run ~10× faster); 0 ⇒ calibrate on full Np
 Ntstep = 200000                  # Impact-T step cap (sized for ~36 m at Dt≈2e-12; mean_z asserted)
 Dt = 2.0e-12                     # time step [s]
-Nxyz = 16                        # SC mesh per axis (unused — SC off; power of 2)
+Nxyz = 16                        # SC mesh per axis (power of 2; used only when SPACE_CHARGE)
+SPACE_CHARGE = False             # beam self-field (space charge) on/off. False (headline) →
+                                 # Bcurr=0 (the physics-neutral SC-off deck the energy headline is
+                                 # built on). True → Bcurr = q_injected·Bfreq drives Impact-T's
+                                 # SC mesh (≈308 MeV exit is relativistic ⇒ SC is a small effect).
 DRIFT_M = None                   # inter-section drift override [m] (None ⇒ build default 0.4)
 QUADS_ON = False                 # headline: quads OFF (K1 = 0). True ⇒ exploratory FODO.
 QUAD_K = None                    # per-section quad b1_gradient [T/m] (exploratory; None ⇒ zeros)
@@ -293,15 +297,18 @@ def main():
     # Np_calib bunch neither focused nor bore-scraped mid-fit, so no particle leaves the mean and
     # the fit is clean and IDENTICAL to today's headline. Quads (+ the new quad bore radius) appear
     # only on the fresh final-run deck below. Built unconditionally with quads_on=False, quad_k=None.
+    # Space-charge current: Impact-T derives the per-bunch charge as Bcurr/Bfreq, so the
+    # average current that represents the captured core is q_injected·Bfreq. 0 ⇒ SC off (headline).
+    bcurr = abs(P_in.charge) * L.RF_FREQ_HZ if SPACE_CHARGE else 0.0
     I_cal, total_len = L.build_impact(
         power_mw=POWER_MW, phase_deg=PHASE_DEG, drift_m=DRIFT_M,
         np_particles=P_in.n_particle, dt=Dt, ntstep=Ntstep, nxyz=Nxyz,
-        quads_on=False, quad_k=None)
+        quads_on=False, quad_k=None, bcurr=bcurr)
     I_cal.initial_particles = P_in
     I_cal.configure()
     print(f"Deck: {L.N_SECTIONS} TW sections, Σ {total_len:.2f} m, P={POWER_MW:g} MW, "
-          f"on-crest θ₀={PHASE_DEG:g}°, SC off, quads {'ON' if QUADS_ON else 'OFF (K1=0)'} "
-          f"→ {outdir}/", flush=True)
+          f"on-crest θ₀={PHASE_DEG:g}°, SC {'on (Bcurr=%.4g A)' % bcurr if SPACE_CHARGE else 'off'}, "
+          f"quads {'ON' if QUADS_ON else 'OFF (K1=0)'} → {outdir}/", flush=True)
 
     # ── Per-section scale calibration (Task 5) — on the quads-OFF deck ─────────
     print("Calibrating per-section field scale to ΔE_target (on-crest, scale-only)…",
@@ -325,7 +332,7 @@ def main():
         I, total_len = L.build_impact(
             power_mw=POWER_MW, phase_deg=PHASE_DEG, drift_m=DRIFT_M,
             np_particles=P_in.n_particle, dt=Dt, ntstep=Ntstep, nxyz=Nxyz,
-            quads_on=True, quad_k=quad_k, scales=calibrated_scales)
+            quads_on=True, quad_k=quad_k, scales=calibrated_scales, bcurr=bcurr)
         # Re-apply the calibration onto the fresh deck VIA THE CONTROLGROUP, exactly as
         # calibrate_sections writes the live deck — NOT just the build-time `scales=` element values.
         # Adding the rf_field_scale ControlGroup (absolute=True, group value defaults 0) and then
