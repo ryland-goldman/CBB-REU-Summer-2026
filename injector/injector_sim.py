@@ -173,6 +173,9 @@ PHASE = "crest"                  # faithful default: crest base + GUI phi_off
 # (fewer steps) and MAX_ITERS/REQUIRED_PRECISION (cheaper solve).
 REQUIRED_PRECISION = 1e-4        # MLMG relative tolerance (relaxed for the long-thin box)
 MAX_ITERS = 500                  # MLMG iteration cap
+SPACE_CHARGE = True              # beam self-field (space charge) on/off. False →
+                                 # warpx_do_not_deposit: the beam deposits no charge, so
+                                 # only the applied prebuncher/solenoid maps act.
 MAX_STEPS = 0                    # 0 → auto-derive from transit; >0 → fixed
 TRANSIT_MARGIN = 0.98            # stop just before the bunch centre reaches the exit (lands a dump ~2.03 m)
 N_DIAGS = 60                     # number of openPMD dumps over the run
@@ -425,6 +428,7 @@ def main():
             x=bunch["x"], y=bunch["y"], z=bunch["z"],
             ux=bunch["ux"], uy=bunch["uy"], uz=bunch["uz"], weight=bunch["w"],
         ),
+        warpx_do_not_deposit=not SPACE_CHARGE,   # SPACE_CHARGE=False → no beam self-field
     )
 
     # ── Time step / duration ──────────────────────────────────────────────────

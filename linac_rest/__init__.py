@@ -14,7 +14,8 @@ the pipeline's repo-root chdir + fd-limit raise + shared log.
 
 No field maps: sections 2–8 have no GPT/CST maps, so the field shape reuses the
 shipped lume-impact `rfdata4–7` traveling-wave template (shape only), rescaled per
-section to the calibrated gradient. Space charge is OFF (γ>49 at entry). Quads are
+section to the calibrated gradient. Space charge is OFF by default (γ>49 at entry;
+`SPACE_CHARGE=True` opts into an exploratory single-bunch Impact-T SC run). Quads are
 present at real lengths but OFF (K1=0) for the headline beam — the A→T calibration
 is undocumented, so the FODO line is a separate, clearly-labeled exploratory figure.
 

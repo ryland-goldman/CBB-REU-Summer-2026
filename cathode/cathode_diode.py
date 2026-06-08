@@ -73,6 +73,19 @@ MAX_STEPS = 2000                     # ~4× the gap-fill time → reaches steady
 # Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
 REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
 MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
+SPACE_CHARGE = True                  # beam self-field (space charge) on/off. KEEP TRUE — unlike the
+                                     # downstream stages (where SC is a correction on an applied-field
+                                     # beam), space charge is the SOLE current-limiting mechanism of
+                                     # THIS stage. False → warpx_do_not_deposit zeros the beam ρ, so
+                                     # there is no virtual cathode, no field suppression at the cathode
+                                     # surface, and NO Child–Langmuir limiting: the diode then passes
+                                     # the full 2×J_CL over-injection unreflected (≈double the physical
+                                     # current) and the validation figures (child_langmuir.png,
+                                     # current_saturation.png, rho_z_time.png — the latter two read the
+                                     # now-zeroed ρ/j) are invalid. So SPACE_CHARGE=False is NOT a
+                                     # meaningful cathode operating point — it removes the very effect
+                                     # the stage exists to demonstrate (provided only for parity with
+                                     # the other stages' toggle / a forces-off sanity check).
 PPC = 10                             # macroparticles per cell (PseudoRandomLayout)
 CFL = 0.4                            # dt = CFL · dz / v_final
 DIAG_PERIOD = None                   # None → dense-early union slice (keeps figs 3,4);
@@ -134,10 +147,17 @@ def main():
         directed_velocity=[0.0, 0.0, 0.0],          # emitted ~at rest, field-accelerated
         gaussian_flux_momentum_distribution=True,   # half-Maxwellian normal to surface
     )
+    if not SPACE_CHARGE:
+        print("WARNING: cathode SPACE_CHARGE=False — beam self-field deposition is OFF, so the "
+              "space-charge-limited (Child–Langmuir) mechanism is disabled. The diode will pass the "
+              "full 2×J_CL over-injection unlimited (~2× the physical current) and the validation "
+              "figures (child_langmuir / current_saturation / rho_z_time) are NOT valid. This is a "
+              "forces-off diagnostic only, not a meaningful cathode operating point.", flush=True)
     electrons = picmi.Species(
         particle_type="electron",
         name="electrons",
         initial_distribution=emission,
+        warpx_do_not_deposit=not SPACE_CHARGE,   # SPACE_CHARGE=False → no beam self-field
     )
 
     # ── Time step / duration ────────────────────────────────────────────────────

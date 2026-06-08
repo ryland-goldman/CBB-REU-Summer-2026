@@ -31,7 +31,12 @@ before `cathode.run()`. Keys must match the module-level constants at the top of
 **Performance knobs** (also `config()`-overridable module constants; defaults reproduce
 the original run): `REQUIRED_PRECISION` (1e-5, MLMG tolerance), `MAX_ITERS` (None →
 PICMI default), `PPC` (10, macroparticles/cell), `CFL` (0.4, `dt = CFL·dz/v_final`),
-`DIAG_PERIOD` (None), and the grid `nx, nz`. The cathode is only ~7% of pipeline runtime;
+`DIAG_PERIOD` (None), and the grid `nx, nz`. There is also a `SPACE_CHARGE` flag (default `True`):
+**keep it `True`** — `False` passes `warpx_do_not_deposit`, which disables the space-charge-limited
+(Child–Langmuir) mechanism this stage exists to demonstrate, so the diode passes the full 2×J_CL
+over-injection (~double the physical current) and the validation figures become invalid. It is a
+forces-off sanity check only, not a meaningful cathode operating point (the run prints a warning).
+The cathode is only ~7% of pipeline runtime;
 **leave `DIAG_PERIOD=None`** — `current_saturation.png` and `rho_z_time.png` iterate every
 field dump over the 0–0.15 ns turn-on window and need the default dense-early union slice
 (`0:470:5, 470:MAX_STEPS:80`). An integer `DIAG_PERIOD` applies one uniform period to both

@@ -28,7 +28,8 @@ convention for the whole linac. The @15 MW column in ``details.md`` corresponds 
 this beam, so the faithfulness gate is the measured ⟨KE⟩_in (from the read-in sec-1 exit dump)
 plus Σ ΔE_target,i(P_op), computed from actuals (see linac_rest/README.md and plan §4).
 
-Frequency 2856 MHz (S-band), on-crest (θ₀ = 0), space charge off, quads OFF (K1 = 0) for the
+Frequency 2856 MHz (S-band), on-crest (θ₀ = 0), space charge off by default (the sim's
+`SPACE_CHARGE=True` opts into an exploratory SC run via `bcurr`), quads OFF (K1 = 0) for the
 headline beam (the A→T quad calibrations are undocumented — details.md line 178).
 """
 
@@ -345,10 +346,11 @@ LINE_PHASE_OFFSET = {"entrance": 0.0, "body_1": 30.0, "body_2": 90.0, "exit": 0.
 # smoke run accelerates), but the headline run overwrites it via autophase_and_scale.
 PLACEHOLDER_SCALE = 11.5e6
 
-# Impact-T deck header knobs (overridable by the sim via config()). SC is OFF (Bcurr=0,
-# Npcol=Nprow=1, Flagimg=0); the SC mesh (Nx/Ny/Nz) is unused but must be a valid power of 2.
+# Impact-T deck header knobs (overridable by the sim via config()). SC is OFF by default (Bcurr=0,
+# Npcol=Nprow=1, Flagimg=0); the SC mesh (Nx/Ny/Nz) is unused at Bcurr=0 but must be a valid power
+# of 2 (and is the active SC grid when the sim passes bcurr>0 via SPACE_CHARGE=True).
 DECK_NP = 4000               # default macroparticle count (sim overrides via Np)
-DECK_NXYZ = 16               # SC mesh per axis (unused with SC off; power of 2)
+DECK_NXYZ = 16               # SC mesh per axis (unused at Bcurr=0; active under SPACE_CHARGE; power of 2)
 DECK_DT = 2.0e-12            # time step [s] (template value; sim may override)
 DECK_NTSTEP = 80000          # step cap (sized for ~33 m at Dt=2e-12; sim asserts mean_z reached)
 # Transverse computational-domain half-width Xrad=Yrad [m] — the Impact-T grid bound; particles
@@ -357,8 +359,8 @@ DECK_NTSTEP = 80000          # step cap (sized for ~33 m at Dt=2e-12; sim assert
 # be meaningless (no real pipe is that wide). The quads-OFF headline reports the HONEST count-
 # based transmission through this box as a no-focusing artifact (the real machine's FODO quads
 # keep the beam in, so the true transmission is higher) — the headline DELIVERABLE is the energy
-# (≈308 MeV) and per-section calibration, not the transmission. Physics-neutral: SC off (Bcurr=0)
-# ⇒ the box has no field-solve effect, pure containment. lume-impact's 0.015 m default is the
+# (≈308 MeV) and per-section calibration, not the transmission. Physics-neutral at the headline:
+# SC off (Bcurr=0) ⇒ the box has no field-solve effect, pure containment. lume-impact's 0.015 m default is the
 # bore scale; 0.02 m here is a hair above the widest section bore radius (14.7 mm).
 XYRAD_M = 0.02               # 20 mm domain half-width (beam-pipe scale; honest no-focusing loss)
 
@@ -439,7 +441,7 @@ def _load_vendored_fieldmaps():
 
 def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
                  dt=None, ntstep=None, nxyz=None, scales=None, quads_on=False,
-                 quad_k=None, verbose=False):
+                 quad_k=None, bcurr=None, verbose=False):
     """Assemble the chained 7-section Impact-T deck and return a configured `Impact`.
 
     The sections are placed at increasing `zedge` with a `drift` of `drift_m` after every
@@ -549,7 +551,7 @@ def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
 
     h = I.header
     h["Npcol"], h["Nprow"] = 1, 1
-    h["Bcurr"] = 0.0                                 # space charge OFF
+    h["Bcurr"] = 0.0 if bcurr is None else bcurr     # 0 ⇒ space charge OFF; >0 ⇒ SC current [A]
     h["Flagimg"] = 0                                 # no image charge (no cathode)
     h["Dt"] = DECK_DT if dt is None else dt
     h["Ntstep"] = DECK_NTSTEP if ntstep is None else ntstep

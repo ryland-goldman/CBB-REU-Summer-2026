@@ -321,7 +321,7 @@ The rest of the straight electron line to CHESS: seven S-band traveling-wave sec
 on-crest to ≈308 MeV at the faithful 11 MW point (307.97 MeV survivors through the real bore;
 309.2 MeV full-beam — the bore scrapes lower-energy off-axis particles). Field shape reuses the
 lume-impact `rfdata4–7` TW template (shape only); all per-section physics is in the calibrated
-scale. Space charge OFF (γ > 49); quads present at real lengths but OFF (K1 = 0) for the
+scale. Space charge OFF by default (γ > 49); quads present at real lengths but OFF (K1 = 0) for the
 headline. The vs-z panels come from Impact-T's continuous `I.stat(...)` arrays. See
 `linac_rest/README.md`.
 

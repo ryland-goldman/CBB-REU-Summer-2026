@@ -69,6 +69,9 @@ DIAG_DIR = "gun/diags"
 # Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
 # Runtime ≈ nz² (per-step cost ∝ cells, and dz=ZMAX/nz ⇒ fewer derived steps as nz drops).
 REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
+SPACE_CHARGE = True                  # beam self-field (space charge) on/off. False →
+                                     # warpx_do_not_deposit: the beam deposits no charge,
+                                     # so only the applied gun field acts (no self-repulsion).
 MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
 CFL = 0.4                            # dt = CFL · dz / v_exit
 TRANSIT_MARGIN = 1.15                # run length = TRANSIT_MARGIN × gun-transit time
@@ -193,6 +196,7 @@ def main():
             ux=bunch["ux"], uy=bunch["uy"], uz=bunch["uz"],
             weight=bunch["w"],
         ),
+        warpx_do_not_deposit=not SPACE_CHARGE,   # SPACE_CHARGE=False → no beam self-field
     )
 
     # ── Time step / duration ──────────────────────────────────────────────────

@@ -35,7 +35,11 @@ original run): `REQUIRED_PRECISION` (1e-5) and `MAX_ITERS` (None) for the MLMG s
 `CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and `AVG_SPEED_FRAC` (0.6) for
 the auto-derived run length, or `MAX_STEPS` (>0) to fix it; `N_DIAGS` (40) for the openPMD
 dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (reweighted,
-charge-preserving); and the grid `nr, nz`. Runtime ≈ `nz²` (per-step cost ∝ cells, and
+charge-preserving); the grid `nr, nz`; and `SPACE_CHARGE` (default `True`). Setting
+`SPACE_CHARGE=False` passes `warpx_do_not_deposit` (beam self-field off, only the applied gun field
+acts) — but note the self-field is *dominant* here at 146 keV (it "dwarfs the gun field," ~17% of
+charge is already lost to it), so SC-off is a large physics change, not a mild diagnostic. Runtime ≈
+`nz²` (per-step cost ∝ cells, and
 `dz = ZMAX/nz` ⇒ fewer steps as `nz` drops), so halving `nz` ≈ 4× faster. This holds because the
 gun's cells are near-isotropic (`dz/dr ≈ 1.3`) so the MLMG solve stays well-conditioned as `nz`
 drops — **unlike the injector's long-thin box**, where coarsening `NZ` slows the solve instead

@@ -187,6 +187,11 @@ when the envelope happens to be monotone.
   ≤8 mm, landing a snapshot within ~1 mm of the plane (picmi exposes only a uniform `period`;
   a true z-station / multi-interval diagnostic isn't available in this build — two same-name
   diagnostics trip "Diagnostic attributes not consistent" and `warpx_intervals` is rejected).
+- **`SPACE_CHARGE`** (`config()`-overridable, default `True`): `False` passes
+  `warpx_do_not_deposit` (beam self-field off, only the applied prebuncher/solenoid maps act). This
+  is a diagnostic-only mode — the velocity bunching, two-cavity phasing, and transverse focusing are
+  coupled *through* the self-field, so the ~1 mm bunch is set with SC on; the faithful default is
+  `True`.
 
 ## Capture / handoff result (the headline, with caveats)
 
