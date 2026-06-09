@@ -63,7 +63,11 @@ from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 # section-1) GUI defaults.
 cathode.config(V_anode=60.0)                          # Vpulse = 60 V
 gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)    # total_charge = -1e-9 (1 nC)
-injector.config(PREB1_KW=200, PREB2_KW=200, PHASE="crest")  # preb1=preb2=200 kW; crest base + GUI phi_off
+# Tan diss. Ch. 2 (The Injector): Preb 1 driven at phase NULL (zero-crossing —
+# earlier electrons slowed, later sped up → velocity bunching), Preb 2 at phase CREST.
+# In the crest-referenced convention (base=π, kick ∝ −cos(base+φ_off)): null = φ_off −90°,
+# crest = φ_off 0°. Power at the faithful LinacSim 8 kW / 10 kW point (prebuncher{1,2}_input_power).
+injector.config(PREB1_KW=8, PREB2_KW=10, PREB1_PHI_OFF=-90, PREB2_PHI_OFF=0, PHASE="crest")
 # Sol 0 (40 A) and Lens 0A/0E live on the injector now (I_SOL0/I_LENS0A/I_LENS0E, faithful
 # defaults in injector_sim) — the linac no longer has a solenoid, only RF power + phase.
 linac_sec1.config(POWER_MW=11.0)                      # sec1_input_power = 11 MW (PHASE_DEG=0 default)

@@ -143,6 +143,7 @@ class StageData:
         self.screens = None          # filled by build_screen_list(); list of (it, mean_z)
         self._pg_cache = {}          # iteration -> ParticleGroup
         self._trend_cache = {}       # trend-label -> (z[N], {key: vals[N]})
+        self._range_cache = {}       # var key -> (lo, hi) raw-unit data range over ALL screens
 
     # ── screen (dump) index, ordered by ⟨z⟩ (stage-local for linac_sec1/linac_rest) ──
     def build_screen_list(self, progress=None):
@@ -217,6 +218,41 @@ class StageData:
         result = (np.array(zs), {k: np.array(v) for k, v in series.items()})
         self._trend_cache[label] = result
         return result
+
+    # ── global data range of one variable across every screen (cached) ───────
+    def var_range(self, key, progress=None):
+        """Return (lo, hi) of `key` in raw ParticleGroup units across ALL screens.
+
+        Used to lock a plot's axis to a fixed window so an animation's scaling does
+        not jump frame-to-frame. Zero/negative-weight macroparticles are ignored.
+        """
+        if key in self._range_cache:
+            return self._range_cache[key]
+        self.build_screen_list(progress)
+        lo, hi = np.inf, -np.inf
+        n = len(self.screens)
+        for i, (it, _zmean) in enumerate(self.screens):
+            P = self.particle_group(it)
+            try:
+                v = P[key]
+            except Exception:
+                v = None
+            if v is not None and len(v):
+                m = P.weight > 0
+                v = v[m] if m.any() else v
+                if len(v):
+                    lo = min(lo, float(np.min(v)))
+                    hi = max(hi, float(np.max(v)))
+            if progress:
+                progress(i + 1, n)
+        if not np.isfinite(lo):
+            lo, hi = 0.0, 1.0
+        self._range_cache[key] = (lo, hi)
+        return self._range_cache[key]
+
+    def cached_range(self, key):
+        """The already-computed (lo, hi) for `key`, or None if var_range hasn't run yet."""
+        return self._range_cache.get(key)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -315,6 +351,21 @@ class BeamGUI:
         self.screen_label = ttk.Label(self.screen_frame, text="—")
         self.screen_label.pack(anchor=tk.W)
 
+        # Play/pause animation through the screens (1D / 2D modes). The animation
+        # advances the screen slider on a `root.after` timer; the slider's own
+        # callback (_on_screen_slide) does the redraw, so playback reuses the
+        # normal per-screen plotting path. `loop` wraps back to the first screen.
+        pf = ttk.Frame(self.screen_frame)
+        pf.pack(fill=tk.X, pady=(4, 0))
+        self._playing = False
+        self.play_btn = ttk.Button(pf, text="▶ Play", width=8, command=self._toggle_play)
+        self.play_btn.pack(side=tk.LEFT)
+        self.loop_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(pf, text="loop", variable=self.loop_var).pack(side=tk.LEFT)
+        ttk.Label(pf, text="ms").pack(side=tk.RIGHT)
+        self.play_delay = tk.IntVar(value=200)
+        ttk.Entry(pf, textvariable=self.play_delay, width=6).pack(side=tk.RIGHT)
+
         ttk.Separator(left, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
 
         # Variable / option controls (rebuilt per mode in _refresh_controls)
@@ -377,7 +428,7 @@ class BeamGUI:
             ttk.Label(f, text=label, width=16).pack(side=tk.LEFT)
             v = tk.StringVar(value=default_label)
             ttk.OptionMenu(f, v, default_label, *labels,
-                           command=lambda _: self.replot()).pack(side=tk.LEFT)
+                           command=lambda _: self._on_var_change()).pack(side=tk.LEFT)
             return v
 
         if mode == "Trends":
@@ -404,9 +455,68 @@ class BeamGUI:
             ttk.Label(f, text="Bins", width=16).pack(side=tk.LEFT)
             self.nbins_var = tk.IntVar(value=120)
             ttk.Entry(f, textvariable=self.nbins_var, width=8).pack(side=tk.LEFT)
-            self.equal_var = tk.BooleanVar(value=False)
-            ttk.Checkbutton(self.ctl, text="Equal axis scale", variable=self.equal_var,
-                            command=self.replot).pack(anchor=tk.W)
+            self.fixaxes_var = tk.BooleanVar(value=False)
+            ttk.Checkbutton(self.ctl, text="Fixed axis range (steady animation)",
+                            variable=self.fixaxes_var,
+                            command=self._on_fixaxes).pack(anchor=tk.W)
+
+    # ── fixed-axis-range machinery (lock the 2D window across animation frames) ─
+    def _fixaxes_on(self):
+        return (self.mode_var.get() == "2D Distribution"
+                and getattr(self, "fixaxes_var", None) is not None
+                and self.fixaxes_var.get())
+
+    def _needed_range_keys(self):
+        """The variable keys whose global range the fixed-axis 2D plot needs."""
+        return [self._key_by_label[self.x_var.get()],
+                self._key_by_label[self.y_var.get()]]
+
+    def _on_var_change(self):
+        # Changing the plotted variable changes which ranges the locked window needs,
+        # so recompute them (off-thread) before redrawing; otherwise just redraw.
+        if self._fixaxes_on():
+            self._compute_ranges_async()
+        else:
+            self.replot()
+
+    def _on_fixaxes(self):
+        if self.fixaxes_var.get():
+            self._compute_ranges_async()   # precompute the global window, then draw
+        else:
+            self.replot()                  # back to per-frame autoscale
+
+    def _compute_ranges_async(self):
+        """Compute the global data range of the current 2D axes over every screen.
+
+        Done once off-thread (it loads every dump) and cached on the StageData, so
+        playback only reads the cache and the axes stay put frame-to-frame.
+        """
+        d = self._data()
+        keys = list(dict.fromkeys(self._needed_range_keys()))
+
+        def work():
+            for k in keys:
+                d.var_range(k, progress=lambda i, n, _k=k: setattr(
+                    self, "_progress_text", f"axis range {VARS[_k][0]}: {i}/{n}…"))
+            return d
+        self._run_async(work, lambda _d: self.replot())
+
+    def _apply_fixed_range(self, d, kx, sx, ky, sy):
+        rx, ry = d.cached_range(kx), d.cached_range(ky)
+        if rx is not None:
+            self.ax.set_xlim(*self._pad(rx[0] * sx, rx[1] * sx))
+        if ry is not None:
+            self.ax.set_ylim(*self._pad(ry[0] * sy, ry[1] * sy))
+
+    @staticmethod
+    def _pad(lo, hi, frac=0.05):
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            return lo, hi
+        if hi <= lo:
+            d = abs(lo) * 0.05 or 1.0
+            return lo - d, hi + d
+        m = (hi - lo) * frac
+        return lo - m, hi + m
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _stage(self):
@@ -424,6 +534,7 @@ class BeamGUI:
 
     # ── events ───────────────────────────────────────────────────────────────
     def _on_stage_change(self):
+        self._stop_play()
         self._refresh_controls()
         # Resolve the StageData on the MAIN thread (it reads the Tk stage_var and is cheap —
         # just opens the series). Only the heavy screen indexing (reading z/w over ~hundreds
@@ -432,10 +543,12 @@ class BeamGUI:
         self._run_async(lambda: self._load_screens(d), self._screens_ready)
 
     def _on_mode_change(self):
+        self._stop_play()
         self._refresh_controls()
         is_screen_mode = self.mode_var.get() != "Trends"
         state = tk.NORMAL if is_screen_mode else tk.DISABLED
         self.screen_scale.config(state=state)
+        self.play_btn.config(state=state)
         self.replot()
 
     def _on_screen_slide(self, _val):
@@ -448,6 +561,54 @@ class BeamGUI:
         self.screen_label.config(text=f"#{i}   ⟨z⟩ = {zmean * 1e3:.2f} mm")
         if not self._busy:
             self.replot()
+
+    # ── animation: step the screen slider on a timer ─────────────────────────
+    def _toggle_play(self):
+        if self._playing:
+            self._stop_play()
+        else:
+            self._start_play()
+
+    def _start_play(self):
+        if self.mode_var.get() == "Trends":
+            return                       # no per-screen frames to animate
+        d = self._data()
+        if not d.screens:
+            return
+        self._playing = True
+        self.play_btn.config(text="⏸ Pause")
+        self._play_tick()
+
+    def _stop_play(self):
+        self._playing = False
+        if hasattr(self, "_play_job") and self._play_job is not None:
+            try:
+                self.root.after_cancel(self._play_job)
+            except Exception:
+                pass
+            self._play_job = None
+        if hasattr(self, "play_btn"):
+            self.play_btn.config(text="▶ Play")
+
+    def _play_tick(self):
+        if not self._playing:
+            return
+        d = self._data()
+        n = len(d.screens) if d.screens else 0
+        if n == 0:
+            self._stop_play()
+            return
+        i = int(float(self.screen_scale.get())) + 1
+        if i >= n:
+            if self.loop_var.get():
+                i = 0
+            else:
+                self._stop_play()
+                return
+        # Setting the slider fires _on_screen_slide, which updates the label and redraws.
+        self.screen_scale.set(i)
+        delay = max(20, int(self.play_delay.get()))
+        self._play_job = self.root.after(delay, self._play_tick)
 
     # ── async machinery (worker thread + main-thread queue drain) ────────────
     def _run_async(self, work, done):
@@ -509,7 +670,11 @@ class BeamGUI:
         # Default to the last screen (stage exit) — usually the most interesting.
         self.screen_scale.set(n - 1)
         self._on_screen_slide(n - 1)
-        self.replot()
+        # A new stage has its own per-dump ranges, so recompute the locked window.
+        if self._fixaxes_on():
+            self._compute_ranges_async()
+        else:
+            self.replot()
 
     # ── the plot ─────────────────────────────────────────────────────────────
     def replot(self, *_):
@@ -618,8 +783,8 @@ class BeamGUI:
             sc = self.ax.scatter(xv[order], yv[order], c=P.weight[order] * 1e9,
                                  s=4, cmap="viridis")
             self.cbar = self.fig.colorbar(sc, ax=self.ax, label="charge [nC]")
-        if self.equal_var.get():
-            self.ax.set_aspect("equal", adjustable="datalim")
+        if self._fixaxes_on():
+            self._apply_fixed_range(self._data(), kx, sx, ky, sy)
         self.ax.set_xlabel(lx)
         self.ax.set_ylabel(ly)
         self.ax.set_title(f"{self._data().name}: {ly} vs {lx}")

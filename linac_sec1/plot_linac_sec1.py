@@ -232,7 +232,12 @@ def main():
     q_cap_pC = rec["q"][-1] * Q_E * 1e12
     q_inj_pC = rec["q0"] * Q_E * 1e12
     fig, ax = plt.subplots(figsize=(7.8, 4.8), constrained_layout=True)
-    cnt, edges, _ = ax.hist(ke, bins=60, weights=w * Q_E * 1e12, color="C3", alpha=0.85)
+    # Bin count must track the captured macroparticle count, not a fixed 60: the captured
+    # core is only a few thousand (often a few hundred) macroparticles over a ~2 MeV spread,
+    # so a fixed 60 bins leaves empty bins between filled ones and renders as a spiky "comb"
+    # rather than a spectrum. Use the √N rule, clamped to a sane range.
+    nbins = int(np.clip(round(np.sqrt(ke.size)), 12, 60))
+    cnt, edges, _ = ax.hist(ke, bins=nbins, weights=w * Q_E * 1e12, color="C3", alpha=0.85)
     ax.axvline(km, color="k", ls="--", label=f"⟨KE⟩ = {km:.1f} ± {sk:.1f} MeV")
     ax.set_xlabel("KE  [MeV]"); ax.set_ylabel("charge per bin  [pC]")
     ax.set_title(f"Exit energy spectrum — captured {q_cap_pC:.1f} pC "

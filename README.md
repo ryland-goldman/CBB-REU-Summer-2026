@@ -34,6 +34,24 @@ pip install -r requirements.txt
 warpx openpmd-api`); the rest come from `requirements.txt`. See
 [`requirements.txt`](requirements.txt) for the pinned versions.
 
+### Running GPT (remote wrapper)
+
+The pipeline itself does **not** invoke the GPT executable — it reads the committed `.gdf` field
+maps in [`fieldmaps/`](fieldmaps/) via `easygdf`. GPT is only needed to *regenerate* a field map
+or run a standalone GPT deck, and the `gpt` binary is **not installed locally**. Instead, use the
+`gpt_remote` wrapper at `/usr/local/bin/gpt_remote`, which transparently runs GPT on a remote host:
+
+```bash
+gpt_remote -o out.gdf input.in        # same CLI as gpt; runs remotely
+```
+
+It mirrors the current working directory to `rjg343@ssh.rylandgoldman.com` over SSH (relative
+paths to input decks and field maps "just work"), runs the real `gpt` there with your exact
+arguments, streams its output back live, and syncs any produced files (e.g. `out.gdf`) back into
+the local directory. It propagates GPT's exit code, and fails gracefully (clear message, exit
+`69`) if the host is unreachable. Override the target with `GPT_REMOTE=user@host`, the remote
+binary path with `GPT_REMOTE_BIN`, and the connect timeout with `GPT_SSH_TIMEOUT` (seconds).
+
 ## Run the full chain
 
 The end-to-end driver runs every stage in order with live progress bars and a final-beam summary:

@@ -6,6 +6,8 @@ The first chapter of this manual describes the GPT kernel in detail. The second 
 
 Customizing GPT is the subject of a separate manual, the GPT Programmer's Reference. This markdown-based manual was automatically generated from a PDF version and may have issues with transcription. If there are formatting errors, please see [UserManual.pdf](UserManual.pdf).
 
+> **Running GPT in this repo:** the `gpt` executable is **not installed locally**. To run a GPT deck (e.g. to regenerate a `fieldmaps/*.gdf` map), use the `gpt_remote` wrapper (`/usr/local/bin/gpt_remote`), which mirrors the working directory to a remote host over SSH, runs the real `gpt` there with your exact arguments, and syncs results back. It is a drop-in for the `gpt` CLI: `gpt_remote -o out.gdf input.in`. See the root [`README.md`](../../README.md) ("Running GPT (remote wrapper)") for details and the `GPT_REMOTE` / `GPT_REMOTE_BIN` / `GPT_SSH_TIMEOUT` overrides.
+
 ---
 
 ## Preface
