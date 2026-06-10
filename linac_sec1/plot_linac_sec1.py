@@ -89,7 +89,7 @@ def beam_track(diag):
         km, _ = wstat(ke, w)
         rec["z"].append(zm); rec["ke"].append(km); rec["kemax"].append(ke.max())
         rec["beta"].append(np.average(uz / g, weights=w))
-        rec["sigx"].append(np.sqrt(np.average(x**2, weights=w)))
+        rec["sigx"].append(wstat(x, w)[1])        # centered weighted RMS (matches plot_chain)
         rec["q"].append(w.sum())
         snaps[it] = (z, ke, w)
     for k in rec:
@@ -183,6 +183,8 @@ def main():
     # well past where the RF bucket forms.
     zmeans = {it: np.average(snaps[it][0], weights=snaps[it][2]) for it in its}
     mid = min(its, key=lambda it: abs(zmeans[it] - (Z_STRUCT + 0.2)))
+    if mid == its[0] and len(its) > 1:            # coarse early cadence: keep mid ≠ injection
+        mid = its[1]
     picks = [its[0], mid, its[-1]]
     fig, axs = plt.subplots(1, 3, figsize=(13, 4.2), constrained_layout=True, squeeze=False)
     for ax, it in zip(axs[0], picks):
