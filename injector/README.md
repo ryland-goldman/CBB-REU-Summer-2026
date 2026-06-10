@@ -183,7 +183,8 @@ when the envelope happens to be monotone.
   the linac's NZ=1664 is not the rationale (the linac reaches 2.8:1 via NR=16/dr=0.75 mm). The
   injector run is convergence-bound, so its cost over the 2.10 m box is >2× the old 1.30 m
   prebuncher (~60 s vs ~24 s).
-- **Handoff diagnostic:** the dump cadence (`period`) is sized so the spacing near 2.03 m is
+- **Handoff diagnostic:** the dump cadence (`period`) is sized from the post-Preb-2 speed —
+  the speed *at* the handoff plane, downstream of both cavities — so the spacing near 2.03 m is
   ≤8 mm, landing a snapshot within ~1 mm of the plane (picmi exposes only a uniform `period`;
   a true z-station / multi-interval diagnostic isn't available in this build — two same-name
   diagnostics trip "Diagnostic attributes not consistent" and `warpx_intervals` is rejected).

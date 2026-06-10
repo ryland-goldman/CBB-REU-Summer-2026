@@ -461,7 +461,7 @@ def main():
         v_after2 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after2 / MC2_KEV) ** 2)
     else:
         ke_after2, v_after2 = ke_after1, v_after1
-    v_after = v_after1                                  # used by period_handoff cadence below
+    v_after = v_after2          # speed AT the 2.03 m handoff (post-Preb-2); cadence-only below
     transit = ((Z_GAP_CENTER_1 - Z_INJECT) / v_beam
                + (Z_GAP_CENTER_2 - Z_GAP_CENTER_1) / v_after1
                + (ZMAX - Z_GAP_CENTER_2) / v_after2)
@@ -476,8 +476,9 @@ def main():
     # The dump cadence (period) must be fine enough that one snapshot lands within a
     # few mm of the z≈2.03 m handoff plane — the linac selector picks the snapshot
     # nearest ⟨z⟩=Z_HANDOFF, so a coarse cadence that straddles the plane by tens of mm
-    # would hand off an off-plane beam. The bunch advances v_after·dt ≈ 1.2 mm/step near
-    # the handoff, so we size `period` to keep the handoff-region spacing ≤ HANDOFF_DZ
+    # would hand off an off-plane beam. The bunch advances v_after·dt ≈ 1.3 mm/step near
+    # the handoff (v_after = the post-Preb-2 speed — the handoff plane is downstream of
+    # both cavities), so we size `period` to keep the handoff-region spacing ≤ HANDOFF_DZ
     # (≈8 mm), then take the finer of that and the N_DIAGS cadence. (picmi exposes only a
     # single uniform `period`; a true z-station / multi-interval diagnostic isn't
     # available through this picmi build — two same-name ParticleDiagnostics trip the
