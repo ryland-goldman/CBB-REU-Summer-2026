@@ -302,10 +302,14 @@ def main():
     b1.set_xlabel("x  [mm]")
     b1.set_ylabel(r"$p_x$  [keV/$c$]")
     b1.set_title("Transverse phase space at the cathode")
-    # Report the normalized emittance — the beam quality handed to the gun.
+    # Report the normalized emittance — the beam quality handed to the gun. The
+    # slab value here; the gun's RZ remap (uniform disc) receives ×√(3/4) of it.
     b1.text(0.03, 0.97,
             rf"$\varepsilon_{{n,x}} = {emit_n_mm_mrad:.3f}$ mm·mrad"
-            "\n" rf"$\sqrt{{\langle x^2\rangle}} = {np.sqrt(x2)*1e3:.2f}$ mm",
+            "\n" rf"$\sqrt{{\langle x^2\rangle}} = {np.sqrt(x2)*1e3:.2f}$ mm"
+            "\n" rf"gun receives disc value $\times\sqrt{{3/4}}"
+            rf" \approx {emit_n_mm_mrad*np.sqrt(0.75):.2f}$ mm·mrad"
+            "\n(full-gap snapshot; drift correlation negligible)",
             transform=b1.transAxes, va="top", ha="left", fontsize=9,
             bbox=dict(boxstyle="round", fc="white", alpha=0.85))
 

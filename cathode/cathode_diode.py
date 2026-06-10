@@ -171,8 +171,8 @@ def main():
     if os.path.isdir(DIAG_DIR):
         shutil.rmtree(DIAG_DIR)
 
-    # Sample densely through the gap-fill transient (≤ 0.07 ns ≈ step 470, since
-    # dt ≈ 1.49e-13 s) and sparsely once the diode reaches steady state.  WarpX's
+    # Sample densely through the gap-fill transient (≤ 0.13 ns ≈ step 470, since
+    # dt ≈ 2.7e-13 s) and sparsely once the diode reaches steady state.  WarpX's
     # interval syntax unions the slices: every 5 steps to 470, then every 80.
     # DIAG_PERIOD=None keeps the dense-early union slice (figs 3/4 need it); an int
     # override applies one uniform period (the field-diag period must be a string).
