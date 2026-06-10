@@ -32,7 +32,7 @@ outputs/
 checkpoint*/
 
 # WarpX / PICMI
-warpx_used_inputs
+warpx_used_inputs*
 warpx_metadata.txt
 *.ptc
 *.plt
