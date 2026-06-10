@@ -30,6 +30,8 @@ from matplotlib.colors import LogNorm
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
+from pipeline.beam_metrics import rms_emit   # shared normalized-rms-emittance helper
+
 MC2 = 0.51099895e3           # electron rest energy [keV]
 GUN_FIELD = "gun/gun_field/gun_E.h5"
 GUN_VOLTAGE = 150.0e3        # [V]; module-level so gun.config(GUN_VOLTAGE=...) is reflected
@@ -79,8 +81,8 @@ def main():
     t_ns, zmean, ke_mean, ke_max, n_live = [], [], [], [], []
     sig_r, emit_nx = [], []           # for beam_envelope.png (filled in the same loop)
     for i, it in enumerate(iters):
-        z, x, ux, uy, uz = ts.get_particle(
-            ["z", "x", "ux", "uy", "uz"], species="electrons", iteration=it)
+        z, x, ux, uy, uz, w = ts.get_particle(
+            ["z", "x", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
         n_live.append(len(z))
         t_ns.append(ts.t[i] * 1e9)
         if len(z) == 0:
@@ -91,16 +93,19 @@ def main():
         zmean.append(z.mean() * 1e3)
         ke_mean.append(ke.mean()); ke_max.append(ke.max())
         # ── Envelope diagnostics (one transverse plane; RZ ⇒ x and y are equivalent) ──
-        # Per-plane RMS size σ_x = sqrt(⟨x²⟩), reported in mm. This is the SINGLE-PLANE RMS
-        # (the convention paired with εn,x below and used by plot_chain / linac), NOT the
-        # radial RMS: for an axisymmetric beam √⟨r²⟩ = √2·σ_x, so do not label this σ_r.
-        sig_r.append(np.sqrt(np.mean(x**2)) * 1e3)
+        # Per-plane RMS size σ_x = sqrt(⟨(x−⟨x⟩)²⟩), reported in mm — weighted and
+        # mean-centered, matching pipeline/plot_chain.py so the two figures agree on the
+        # same dump. This is the SINGLE-PLANE RMS (the convention paired with εn,x below
+        # and used by plot_chain / linac), NOT the radial RMS: for an axisymmetric beam
+        # √⟨r²⟩ = √2·σ_x, so do not label this σ_r.
+        xm = np.average(x, weights=w)
+        sig_r.append(np.sqrt(np.average((x - xm) ** 2, weights=w)) * 1e3)
         # Normalized transverse emittance εn,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²): a phase-space
         # area that is invariant under linear (and acceleration) forces; growth ⇒ nonlinear
         # space-charge / field aberrations. ux is the normalized momentum γβx, so x[m]·ux
-        # gives [m·rad]; ×1e6 → mm·mrad.
-        e2 = np.mean(x**2) * np.mean(ux**2) - np.mean(x * ux)**2
-        emit_nx.append(np.sqrt(max(e2, 0.0)) * 1e6)
+        # gives [m·rad]; ×1e6 → mm·mrad. Computed via the shared weighted, mean-centered
+        # helper (same as plot_chain).
+        emit_nx.append(rms_emit(x, ux, w) * 1e6)
 
     t_ns = np.array(t_ns); zmean = np.array(zmean)
     ke_mean = np.array(ke_mean); ke_max = np.array(ke_max)

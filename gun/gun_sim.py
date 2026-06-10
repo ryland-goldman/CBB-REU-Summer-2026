@@ -121,13 +121,15 @@ def load_cathode_bunch():
     # with r=|x| and unchanged weight yields areal density n(r) ∝ 1/r — a spurious
     # on-axis charge cusp that gives a radially-flat (nonlinear) self-field and
     # corrupts the σ_r, φ-well, and emittance this stage is meant to deliver.
-    # Importance-resample (with replacement) with probability ∝ r, so dN/dr → r·dN/dr
-    # and the areal density matches the cathode's true radial profile (a flat-top
-    # emitting strip → a uniform-density disc). Drawing from the actual particles
-    # keeps weights uniform (no weight-variance, so downstream RMS/emittance stay
+    # Importance-resample (with replacement) with probability ∝ r·w (charge-correct;
+    # ≡ ∝ r for the cathode's uniform weights), so dN/dr → r·dN/dr and the areal
+    # density matches the cathode's true radial profile (a flat-top emitting strip
+    # → a uniform-density disc). Drawing from the actual particles keeps weights
+    # uniform (no weight-variance, so downstream RMS/emittance stay
     # unweighted-valid) and preserves the cathode-edge position–momentum correlations.
     if r.max() > 0.0:
-        sel = rng.choice(r.size, r.size, replace=True, p=r / r.sum())
+        rw = r * w
+        sel = rng.choice(r.size, r.size, replace=True, p=rw / rw.sum())
         xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
 
     theta = rng.uniform(0.0, 2.0 * np.pi, size=r.size)

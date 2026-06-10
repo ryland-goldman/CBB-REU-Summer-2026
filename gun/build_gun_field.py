@@ -53,6 +53,11 @@ def load_gun_map(path):
     z = np.unique(Z)
     nr, nz = r.size, z.size
     assert nr * nz == R.size, "field map is not a complete rectangular grid"
+    # gun_sim.py (RMAX/ZMAX, grid) and plot_gun.py assume the map starts at the
+    # axis and the cathode plane; a swapped-in map with a nonzero native origin
+    # would otherwise be silently mis-placed.
+    assert r[0] == 0.0 and z[0] == 0.0, (
+        f"gun field map origin (r[0]={r[0]}, z[0]={z[0]}) must be (0, 0)")
 
     # R fastest, Z slowest  ->  reshape to (nz, nr), then transpose to (nr, nz).
     Er = Er.reshape(nz, nr).T.copy()
@@ -90,7 +95,7 @@ def main():
     E.geometry_parameters = "m=0;imag=+"
     E.axis_labels = ["r", "z"]
     E.grid_spacing = [dr, dz]
-    E.grid_global_offset = [0.0, 0.0]
+    E.grid_global_offset = [float(r[0]), float(z[0])]   # native origin (asserted (0, 0))
     E.grid_unit_SI = 1.0
     # Electric field  [V/m] = kg·m·s⁻³·A⁻¹
     E.unit_dimension = {

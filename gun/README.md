@@ -17,11 +17,12 @@ conda activate CBB
 python -c "import gun; gun.run()"   # build field map + sim + plots in one call
 ```
 
-or, equivalently, the individual scripts:
+or, equivalently, the individual scripts (module form — `gun_sim.py` and `plot_gun.py`
+import `pipeline.*`, which is only on `sys.path` when launched from the repo root):
 ```bash
-python gun/build_gun_field.py   # CESR_gun.gdf  ->  gun_field/gun_E.h5 (openPMD)
-python gun/gun_sim.py           # RZ WarpX run  ->  diags/{fields,particles}/
-python gun/plot_gun.py          # figures       ->  results/*.png
+python -m gun.build_gun_field   # CESR_gun.gdf  ->  gun_field/gun_E.h5 (openPMD)
+python -m gun.gun_sim           # RZ WarpX run  ->  diags/{fields,particles}/
+python -m gun.plot_gun          # figures       ->  results/*.png
 ```
 
 To override the gun voltage or bunch charge: `gun.config(GUN_VOLTAGE=150e3,
@@ -33,7 +34,10 @@ BUNCH_CHARGE=1.0e-9)` before `gun.run()`. Keys must match the module-level const
 **Performance knobs** (`config()`-overridable module constants; defaults reproduce the
 original run): `REQUIRED_PRECISION` (1e-5) and `MAX_ITERS` (None) for the MLMG solve;
 `CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and `AVG_SPEED_FRAC` (0.6) for
-the auto-derived run length, or `MAX_STEPS` (>0) to fix it; `N_DIAGS` (40) for the openPMD
+the auto-derived run length, or `MAX_STEPS` (>0) to fix it (`AVG_SPEED_FRAC=0.6` is
+hand-tuned for the 150 kV point — `v_exit` is recomputed from `GUN_VOLTAGE`, but the
+average-speed fraction is not, so re-check it if `GUN_VOLTAGE` is changed substantially
+via `config()`); `N_DIAGS` (40) for the openPMD
 dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (reweighted,
 charge-preserving); the grid `nr, nz`; and `SPACE_CHARGE` (default `True`). Setting
 `SPACE_CHARGE=False` passes `warpx_do_not_deposit` (beam self-field off, only the applied gun field
@@ -93,9 +97,12 @@ bunch charge. We:
    accordingly. Crucially, the revolution carries a **2πr Jacobian**: a slab uniform in `x`
    has a flat `dN/dr`, which—revolved naively with `r = |x|` and unchanged weight—would give
    areal density `n(r) ∝ 1/r`, a spurious on-axis charge cusp. We therefore
-   **importance-resample by `r`** (draw particles with probability ∝ `r`, with replacement),
-   so `dN/dr → r·dN/dr` and `n(r)` matches the cathode's true radial profile (a flat-top
-   emitting strip → a uniform-density disc). This keeps the macroparticle weights uniform.
+   **importance-resample by `r`** (draw particles with probability ∝ `r·w`, with
+   replacement — ≡ ∝ `r` for the cathode's uniform weights), so `dN/dr → r·dN/dr` and
+   `n(r)` matches the cathode's true radial profile (a flat-top emitting strip → a
+   uniform-density disc). This keeps the macroparticle weights uniform. Because the draw
+   is with replacement, macroparticles are duplicated and the effective independent
+   sample count is below the drawn count — relevant if `MAX_PART` is set small.
 3. **Renormalize** the total weight to a physical gun bunch charge `BUNCH_CHARGE = 1 nC`
    (the CESR gun is grid-pulse gated; 1 nC matches the original LinacSim `gpt_master.in`
    `total_charge = -1e-9`).
