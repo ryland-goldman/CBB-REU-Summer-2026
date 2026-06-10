@@ -413,8 +413,9 @@ def main():
                              require_gates=REQUIRE_GATES)
 
     # ── Handoff OUT: openPMD + summary ────────────────────────────────────────
-    # The true end-to-end denominator (cathode-injected) lives in the upstream summaries;
-    # record sec-1's captured charge for the chain capture narrative.
+    # The true end-to-end denominator is the injector→linac handoff charge (linac_sec1's
+    # q_injected_C — NOT a cathode quantity; the gun renormalizes the cathode weight to 1 nC);
+    # record it here for the chain capture narrative.
     sec1_true_injected = None
     if os.path.exists(LINAC_SEC1_SUMMARY):
         try:

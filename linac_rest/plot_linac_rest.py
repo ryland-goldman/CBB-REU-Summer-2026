@@ -16,12 +16,13 @@ linac_rest/results/:
                             σ_x stays smooth across the jumps ⇒ NOT physical growth, NOT conserved).
   4. section_gains.png     — per-section achieved vs target ΔE bar chart (from the
                             calibration table) — the §5 gate-1 visual.
-  5. fodo_optics.png       — transverse envelope σ_x AND σ_y vs ⟨z⟩, titled by quad state.
-                            QUADS_ON ⇒ the derived energy-scaled FODO's bounded, out-of-phase
-                            oscillating σ_x/σ_y (both planes contained, no blow-up — the H/V
-                            doublet's win; placeholder optics — guessed K1, A→T undocumented,
-                            nominal μ); quads OFF ⇒ placeholder, NOT predictive. Always written
-                            so the figure set is stable.
+  5. fodo_optics.png       — transverse envelope σ_x AND σ_y vs ⟨z⟩, titled (and filenamed)
+                            by quad state: quads OFF writes fodo_optics.png (placeholder, NOT
+                            predictive); QUADS_ON writes fodo_optics_quadson.png — the derived
+                            energy-scaled FODO's bounded, out-of-phase oscillating σ_x/σ_y
+                            (both planes contained, no blow-up — the H/V doublet's win;
+                            placeholder optics — guessed K1, A→T undocumented, nominal μ) —
+                            so a quads-ON run never clobbers the committed quads-OFF figure.
 
 Run with:
     conda run -n CBB python -c "import linac_rest; linac_rest.plot()"
@@ -221,7 +222,10 @@ def main():
                  fontsize=9)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
-    fig.savefig(os.path.join(RESULTS, "fodo_optics.png"), dpi=130)
+    # Separate filenames per quad state so a QUADS_ON run never clobbers the
+    # committed quads-OFF headline figure (and actually produces the quadson file).
+    fodo_name = "fodo_optics_quadson.png" if quads_on else "fodo_optics.png"
+    fig.savefig(os.path.join(RESULTS, fodo_name), dpi=130)
     plt.close(fig)
 
     print(f"plot_linac_rest: wrote 5 figures to {RESULTS}/ "

@@ -111,7 +111,11 @@ capture. The core charge actually tracked is recorded separately (`q_core_inject
 `core_charge_frac_of_sec1_exit`). The dominant real loss is the upstream sec-1 capture; the
 within-stage `q_out/q_injected` additionally includes the **quads-OFF transverse-divergence loss**
 (see *Space charge & quads*), which is a no-focusing model artifact — NOT real-machine loss — so
-the **end-to-end capture ≈ 4.78 %** of the true-injected (cathode) charge is a **lower bound**, not
+the **end-to-end capture ≈ 4.78 %** of the true-injected charge at the **injector→linac handoff**
+(`linac_sec1`'s recorded `q_injected_C`, ~0.75 nC at z ≈ 2.03 m — NOT a cathode quantity; the gun
+renormalizes the cathode's non-physical DC macroparticle weight to a 1 nC bunch, so no cathode
+charge enters the denominator; the 4.78 % is quoted from the recorded run summaries, not computed
+by `plot_chain`) is a **lower bound**, not
 a prediction of the real linac's sections-2–8 transmission (the real FODO contains the beam, so the
 true value is higher). The robust deliverable is the energy gain, not the transmission.
 
@@ -201,7 +205,9 @@ true value is higher). The robust deliverable is the energy gain, not the transm
   quads-OFF monotonic rise. The longitudinal headline is preserved (exit ⟨KE⟩ ≈ **309.0 MeV**, gates
   1/2/5/6 PASS; chromatic εn growth as expected, not a runaway). The soft `envelope_in_bore` 3σ is
   ~13 mm (vs ~19 mm no-focus / ~25 mm an over-pinched single-sign quad) — much improved, the win is
-  the **bounded** envelope visible in `fodo_optics.png`, not the 3σ < narrowest-bore threshold.
+  the **bounded** envelope visible in `fodo_optics_quadson.png` (the quads-ON run writes that
+  filename; the quads-OFF headline `fodo_optics.png` is never overwritten), not the 3σ <
+  narrowest-bore threshold.
 - **Transmission lands ≈ the quads-OFF baseline (~78.2 %, 1775/2271), NOT above it.** This is expected
   and is **not** a regression of the focusing, for two structural reasons: (1) the doublet halves now
   carry the real **exit-bore `radius` aperture** that the no-quad baseline lacks — extra scrape planes
@@ -272,7 +278,8 @@ from a full-bunch full-scan calibration); `ImpactTexe` is serial.
    **RMS σ itself stays well inside** the bore quads-ON (≤ 4.4 mm vs 9.9 mm), so the FAIL is the
    conservative 3σ edge, not the beam hitting the pipe. It is therefore **not** a "FAIL-when-OFF /
    PASS-when-ON" liveness test — the meaningful improvement is the much smaller 3σ and the **bounded,
-   oscillating** σ_x/σ_y with quads ON (vs the OFF monotonic rise), seen in `fodo_optics.png`.
+   oscillating** σ_x/σ_y with quads ON (vs the OFF monotonic rise), seen in `fodo_optics_quadson.png`
+   (quads-OFF runs write `fodo_optics.png`).
 
 ## Gotchas (Impact-T / lume-impact)
 
