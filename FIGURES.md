@@ -14,6 +14,7 @@ python -c "import cathode; cathode.plot()"        # → cathode/results/
 python -c "import gun; gun.plot()"                # → gun/results/
 python -c "import injector; injector.plot()"      # → injector/results/ (diags/main + any P* scan)
 python -c "import linac_sec1; linac_sec1.plot()"  # → linac_sec1/results/
+python -c "import linac_rest; linac_rest.plot()"  # → linac_rest/results/
 python -c "import pipeline; pipeline.plot_chain()"  # → results/ (cross-stage)
 ```
 
@@ -30,8 +31,8 @@ facade is just the preferred entry point.) The repo-root `results/` is git-ignor
 The chain is order-dependent — each stage accelerates/transports the previous stage's beam:
 
 ```
-cathode  ─►  gun  ─►  injector  ─►  linac_sec1
-(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)
+cathode  ─►  gun  ─►  injector  ─►  linac_sec1  ─►  linac_rest
+(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)  (sections 2–8, ~308 MeV)
 ```
 
 ---
@@ -45,7 +46,10 @@ the whole-chain view. Called automatically at the end of `pipeline/run_pipeline.
 ### `chain_evolution.png` — beam moments vs lab ⟨z⟩
 ![Chain Evolution](results/chain_evolution.png)
 3×2 panels across cathode→gun→injector→linac vs lab ⟨z⟩: ⟨KE⟩ (±σ band, log-y), ε_n,x, σ_x,
-σ_z (log-y), within-stage charge fraction, and I_peak. **Caveats baked into the figure:** the
+σ_z (log-y), within-stage charge fraction, and I_peak. The σ_z and I_peak panels **exclude
+`linac_rest`** (Impact-T writes only two particle dumps — injected core + exit — so its trace
+would be a meaningless 2-point line across the ~30 m span; its endpoint values stay on the
+KE/ε/σ_x/charge panels). **Caveats baked into the figure:** the
 **cathode→gun ε_n,x step is a 2D→RZ definitional discontinuity** (the cathode is 2D x–z, slab
 x-emittance ⟨x²⟩=R²/3; the gun's disc resample gives ⟨x²⟩=R²/4 ⇒ ε_n,x ×√(3/4)≈0.87) — annotated,
 not physical growth. The σ_x / capture caveat that the lab-frame ES self-field overestimates
@@ -54,14 +58,19 @@ transverse SC by ~γ²≈1.7× (a conservative lower bound) is noted on the σ_x
 ### `emittance_budget.png` — ε_n,x entry vs exit per stage
 ![Emittance Budget](results/emittance_budget.png)
 A waterfall of transverse normalized emittance at each stage's entry vs exit — which stage degrades
-beam quality. The cathode→gun bar carries the 2D→RZ definitional footnote.
+beam quality. The cathode→gun bar carries the 2D→RZ definitional footnote; a further footnote line
+notes the injector-exit bar is the **un-collimated** 2.03 m handoff beam (no iris mask), ~13 % above
+the iris-survivor beam `linac_sec1` actually receives (≈375 vs ≈326 mm·mrad).
 
 ### `transmission_waterfall.png` — the two-loss charge chain
 ![Transmission Waterfall](results/transmission_waterfall.png)
 gun exit → injector exit (@2.03 m handoff) → **passes iris** (9.547 mm, ~32%) → **captured** (~25 MeV, ~7%).
 The bore-scrape and the RF-capture losses are **separate bars** — the separation that motivates the
 upstream solenoids. Starts at gun exit (physical ~1 nC renorm); the cathode's raw macroparticle
-weight is excluded (not a physical charge). Capture is vs the **true injected charge**.
+weight is excluded (not a physical charge). The injector-exit bar reads the linac's **recorded**
+handoff charge (`q_injected_C` from `linac_sec1`'s `injection_summary.json`; the 2.03 m dump is
+the fallback for old runs without the sidecar), so it shares one source with the iris/captured
+bars. Capture is vs the **true injected charge**.
 
 ### `chain_scorecard.png` — per-stage entry/exit table
 ![Chain Scorecard](results/chain_scorecard.png)
@@ -186,8 +195,8 @@ injector.
 ![per-plane RMS size σ_x and normalized emittance vs ⟨z⟩](gun/results/beam_envelope.png)
 
 The near-cathode focusing that `beam_rz.png` shows only as three snapshots, quantified along the
-gun. **Blue:** the per-plane RMS size `σ_x = √⟨x²⟩` (the per-plane RMS the plot axis is labelled
-with) contracts from ≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode
+gun. **Blue:** the per-plane RMS size `σ_x = √⟨(x−⟨x⟩)²⟩` (weighted, mean-centered — the same
+convention as `plot_chain`, so the two figures agree on the same dump) contracts from ≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode
 emission is focused by the radial gun field (the full-radial `√⟨r²⟩ = √2·σ_x` is ≈ 5.7 → 4.1 mm).
 **Red (twin axis):**
 the normalized transverse emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²)` grows as space charge and
@@ -358,7 +367,9 @@ gate-1 visual (±3 % per section). Read from the calibration table in `injection
 ### `fodo_optics.png` — transverse envelope σ_x / σ_y
 ![linac_rest: σ_x / σ_y vs z (FODO envelope)](linac_rest/results/fodo_optics.png)
 
-σ_x **and** σ_y vs ⟨z⟩, titled with the quad state. With quads OFF (default) this is
+σ_x **and** σ_y vs ⟨z⟩, titled (and **filenamed**) by the quad state — the plot script writes
+`fodo_optics.png` for quads OFF and `fodo_optics_quadson.png` for `QUADS_ON`, so a quads-ON run
+never overwrites this quads-OFF headline figure. With quads OFF (default) this is
 **placeholder optics — NOT predictive** (the beam diverges, no focusing). With `QUADS_ON` it
 shows the **derived energy-scaled FODO**'s **contained, bounded, out-of-phase oscillating**
 σ_x/σ_y envelope — both transverse planes held to ≈ 0.6–4.4 mm RMS over the full 36 m (no
@@ -370,7 +381,7 @@ and the inter-quad multi-metre RF section is treated as a thin-lens drift (so μ
 realized). The deliverable is the **bounded envelope**, NOT transmission — transmission lands ≈ the
 quads-OFF baseline (~78.2 %), never a "> 78.5 %" or predictive-transmission claim. The committed
 `fodo_optics.png` is the **quads-OFF** state (the headline default the pipeline produces); the
-`QUADS_ON` proof is staged separately as `fodo_optics_quadson.png` (below).
+`QUADS_ON` proof is written to `fodo_optics_quadson.png` (below).
 
 ### `fodo_optics_quadson.png` — QUADS_ON proof: contained both-plane envelope
 ![linac_rest: σ_x / σ_y vs z (QUADS_ON H/V-doublet FODO)](linac_rest/results/fodo_optics_quadson.png)
@@ -379,7 +390,8 @@ The single committed **`QUADS_ON`** artifact, demonstrating the working focusing
 (quads OFF) cannot show: the μ = 50° **H/V-doublet** FODO holds **both** transverse planes bounded
 and out of phase (σ_x ≈ 0.6–4.4 mm, σ_y ≈ 0.7–3.9 mm over the full 36 m, oscillating — no blow-up),
 while the longitudinal headline is preserved (exit ⟨KE⟩ ≈ 309 MeV, gates 1/2/5/6 PASS). Generated by
-a one-off `linac_rest.config(QUADS_ON=True); linac_rest.run()` and force-added (the default pipeline
-stays quads OFF). **Exploratory** — placeholder optics (guessed-K1 magnitude, A→T undocumented,
+a one-off `linac_rest.config(QUADS_ON=True); linac_rest.run()` — the plot script writes this file
+directly when quads are ON (the quads-OFF `fodo_optics.png` is untouched) — and force-added (the
+default pipeline stays quads OFF). **Exploratory** — placeholder optics (guessed-K1 magnitude, A→T undocumented,
 nominal μ); the deliverable is the contained σ_x/σ_y envelope, NOT a transmission claim
 (transmission ≈ the quads-OFF baseline, ~78.2 %).

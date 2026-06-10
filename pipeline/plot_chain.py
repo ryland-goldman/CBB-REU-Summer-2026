@@ -41,6 +41,7 @@ PHYSICS / UNITS NOTES (reviewer-flagged):
 
 import os
 import json
+import textwrap
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -231,7 +232,12 @@ def render_chain_evolution(tables):
         a_ke.fill_between(z, np.maximum(ke - dke, 1e-3), ke + dke, color=col, alpha=0.18)
         a_ex.plot(z, _arr(rows, "emit_nx"), "-", color=col, label=nm)
         a_sx.plot(z, _arr(rows, "sig_x") * 1e3, "-", color=col, label=nm)
-        a_sz.plot(z, np.maximum(_arr(rows, "sig_z") * 1e3, 1e-3), "-", color=col, label=nm)
+        # σ_z + I_peak: EXCLUDE linac_rest. Impact-T writes only TWO particle dumps
+        # (injected core, z-zeroed via drift_to_t, + exit), so these evolution traces
+        # would be a meaningless 2-point straight line across the ~30 m sections-2–8
+        # span. Its endpoint values stay on the KE/ε/σ_x/charge panels.
+        if nm != "linac_rest":
+            a_sz.plot(z, np.maximum(_arr(rows, "sig_z") * 1e3, 1e-3), "-", color=col, label=nm)
         # within-stage charge fraction + I_peak: EXCLUDE the cathode. The cathode is an
         # emitter (q grows over time → a within-stage "transmission" rises >1, misleading)
         # and its 2D-slab pre-renorm I_peak is ~10 kA (non-physical), which on a linear axis
@@ -239,7 +245,8 @@ def render_chain_evolution(tables):
         if nm != "cathode":
             q = _arr(rows, "q")
             a_q.plot(z, q / q[0] if q[0] > 0 else q, "-", color=col, label=nm)
-            a_ip.plot(z, _arr(rows, "i_peak"), "-", color=col, label=nm)
+            if nm != "linac_rest":
+                a_ip.plot(z, _arr(rows, "i_peak"), "-", color=col, label=nm)
 
     a_ke.set_yscale("log"); a_ke.set_ylabel("⟨KE⟩  [keV]  (±σ band)")
     a_ke.set_title("Mean kinetic energy"); a_ke.legend(fontsize=8)
@@ -254,11 +261,13 @@ def render_chain_evolution(tables):
     a_sx.set_ylabel("σ_x  [mm]"); a_sx.set_title("Transverse size (per-plane RMS)")
     a_sx.annotate("σ_x conservative:\nES omits 1/γ² pinch (~γ²≈1.7×)",
                   xy=(0.50, 0.92), xycoords="axes fraction", fontsize=7, color="0.3")
-    a_sz.set_yscale("log"); a_sz.set_ylabel("σ_z  [mm]"); a_sz.set_title("Bunch length")
+    a_sz.set_yscale("log"); a_sz.set_ylabel("σ_z  [mm]")
+    a_sz.set_title("Bunch length (linac_rest excluded: only 2 Impact-T dumps)")
     a_q.set_ylabel("q(z) / q(stage entry)")
     a_q.set_title("Within-stage charge fraction (gun→linac; cathode emitter excluded; q resets each handoff)")
     a_ip.set_ylabel("I_peak  [A]")
-    a_ip.set_title("Peak current (gun→linac; cathode 2D-slab I_peak non-physical, excluded)")
+    a_ip.set_title("Peak current (gun→linac; cathode 2D-slab I_peak non-physical and "
+                   "2-dump linac_rest excluded)")
     for ax in (a_ke, a_ex, a_sx, a_sz, a_q, a_ip):
         ax.set_xlabel("lab ⟨z⟩  [mm]"); ax.grid(alpha=0.25)
 
@@ -294,15 +303,22 @@ def render_emittance_budget(tables):
     ax.set_ylabel(r"$\varepsilon_{n,x}$  [mm·mrad]")
     ax.set_title("Transverse emittance budget: entry vs exit per stage")
     ax.legend()
-    ax.annotate("Footnotes: (1) the cathode→gun jump is a 2D→RZ DEFINITIONAL change: the slab "
-                "x-emittance (uniform x∈[−R,R], ⟨x²⟩=R²/3) becomes the gun's projected RZ "
-                "emittance after the r-importance resample builds a uniform DISC (⟨x²⟩=R²/4), so "
-                "ε_n,x drops ×√(3/4)≈0.87 (~2.3→~2.0 mm·mrad) — a geometry correction (the disc is "
-                "more physical), NOT physical growth. (2) the injector ε_n growth is space-charge + "
-                "solenoid-aberration dominated over the 2 m low-energy drift; the γ²≈1.7× ES "
-                "transverse-SC overestimate makes it an UPPER bound (real growth is somewhat less — "
-                "opposite sense to the capture lower bound).",
-                xy=(0.0, -0.17), xycoords="axes fraction", fontsize=7, color="0.3")
+    # Wrap to the figure width — a single long line makes constrained_layout collapse the
+    # axes ("axes sizes collapsed to zero") and the text run off-canvas.
+    footnote = (
+        "Footnotes: (1) the cathode→gun jump is a 2D→RZ DEFINITIONAL change: the slab "
+        "x-emittance (uniform x∈[−R,R], ⟨x²⟩=R²/3) becomes the gun's projected RZ "
+        "emittance after the r-importance resample builds a uniform DISC (⟨x²⟩=R²/4), so "
+        "ε_n,x drops ×√(3/4)≈0.87 (~2.3→~2.0 mm·mrad) — a geometry correction (the disc is "
+        "more physical), NOT physical growth. (2) the injector ε_n growth is space-charge + "
+        "solenoid-aberration dominated over the 2 m low-energy drift; the γ²≈1.7× ES "
+        "transverse-SC overestimate makes it an UPPER bound (real growth is somewhat less — "
+        "opposite sense to the capture lower bound). (3) the injector-exit bar is the "
+        "UN-collimated 2.03 m handoff beam (no iris mask), ~13% above the iris-survivor "
+        "beam linac_sec1 actually receives (≈375 vs ≈326 mm·mrad).")
+    ax.annotate(textwrap.fill(footnote, width=150),
+                xy=(0.0, -0.12), xycoords="axes fraction", va="top",
+                fontsize=7, color="0.3")
     os.makedirs(RESULTS, exist_ok=True)
     path = f"{RESULTS}/emittance_budget.png"
     fig.savefig(path, dpi=140); plt.close(fig)
@@ -324,16 +340,26 @@ def render_transmission_waterfall(tables, linac_inj):
     macroparticle weight, pre-renorm) is NOT a physical charge and is excluded — plotting it
     would dwarf the physical ≤1 nC bars on one axis; it's noted in the caption instead.
 
-    The 'injector exit' bar uses the dump at the 2.03 m HANDOFF plane (via _exit_row), NOT
-    the largest-⟨z⟩ dump (which is partially drained through the 2.10 m absorbing exit and
-    under-counts what the linac actually ingests)."""
+    The 'injector exit' bar uses the linac's recorded handoff charge (q_injected_C) when
+    the sidecar exists; the fallback is the dump at the 2.03 m HANDOFF plane (via
+    _exit_row), NOT the largest-⟨z⟩ dump (which is partially drained through the 2.10 m
+    absorbing exit and under-counts what the linac actually ingests)."""
     bars, vals = [], []
     gun = tables.get("gun") or []
     inj = tables.get("injector") or []
     if gun:
         bars.append("gun exit\n(renorm ~1 nC)"); vals.append(_exit_row("gun", gun)["q"] * 1e9)
     if inj:
-        bars.append("injector exit\n(@2.03m handoff)"); vals.append(_exit_row("injector", inj)["q"] * 1e9)
+        # Prefer the linac's RECORDED handoff charge (q_injected_C from load_injector_bunch)
+        # so this bar and the iris/injected bars share one source: plot_chain's own
+        # nearest-2.03m _exit_row selector differs from the reader's (population-gated
+        # nearest-z) and can pick a different dump. Recompute only for old runs without
+        # the sidecar.
+        bars.append("injector exit\n(@2.03m handoff)")
+        if linac_inj and "q_injected_C" in linac_inj:
+            vals.append(linac_inj["q_injected_C"] * 1e9)
+        else:
+            vals.append(_exit_row("injector", inj)["q"] * 1e9)
     # The two distinct downstream losses, anchored on the linac's recorded true-injected
     # breakdown (q_injected_C at the handoff, q_in_domain_C = the multi-plane survivors of the
     # 9.547 mm iris/pipe) and the captured charge from the last linac dump. Use q_in_domain_C
@@ -356,15 +382,21 @@ def render_transmission_waterfall(tables, linac_inj):
         qinj = linac_inj["q_injected_C"] * 1e9
         ax.axhline(qinj, color="0.6", ls="--", lw=0.8)
         ax.annotate(f"true injected at handoff = {qinj:.3f} nC (capture denominator)",
-                    xy=(0.02, qinj), fontsize=7, color="0.3", va="bottom")
+                    xy=(len(bars) - 0.55, qinj), fontsize=7, color="0.3",
+                    va="bottom", ha="right")
     ax.set_xticks(range(len(bars))); ax.set_xticklabels(bars, fontsize=8)
     ax.set_ylabel("charge  [nC]")
     ax.set_title("End-to-end charge / transmission waterfall\n"
                  "(from gun exit; bore-scrape and capture are SEPARATE losses)")
-    ax.annotate("Starts at gun exit (physical ~1 nC renorm); cathode dump weight (~82 nC, "
-                "pre-renorm, not physical) excluded. 'injector exit' is the 2.03 m handoff dump. "
-                "Capture vs TRUE injected; γ²≈1.7× ES self-field overestimate ⇒ a conservative LOWER bound.",
-                xy=(0.0, -0.18), xycoords="axes fraction", fontsize=7, color="0.3")
+    # Wrapped for constrained_layout — see the emittance-budget footnote note.
+    footnote = (
+        "Starts at gun exit (physical ~1 nC renorm); cathode dump weight (~82 nC, "
+        "pre-renorm, not physical) excluded. 'injector exit' is the recorded 2.03 m "
+        "handoff charge (q_injected_C; dump fallback). "
+        "Capture vs TRUE injected; γ²≈1.7× ES self-field overestimate ⇒ a conservative LOWER bound.")
+    ax.annotate(textwrap.fill(footnote, width=165),
+                xy=(0.0, -0.13), xycoords="axes fraction", va="top",
+                fontsize=7, color="0.3")
     os.makedirs(RESULTS, exist_ok=True)
     path = f"{RESULTS}/transmission_waterfall.png"
     fig.savefig(path, dpi=140); plt.close(fig)

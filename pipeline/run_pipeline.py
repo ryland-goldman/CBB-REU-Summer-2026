@@ -115,8 +115,9 @@ def _beam_summary(diag, label, unit="keV"):
     """Report the final bunch from the last snapshot of `diag` (console + log).
 
     `unit` selects the kinetic-energy scale ("keV" for the injector exit, "MeV"
-    for the linac exit). Also reports the captured-charge fraction (last/first
-    snapshot) when both are available.
+    for the linac exit). Also reports the charge fraction when a denominator is
+    available: "captured" against the sidecar's true injected charge, or
+    "transmitted" against the first snapshot (within-stage fallback).
     """
     try:
         import numpy as np
@@ -128,12 +129,15 @@ def _beam_summary(diag, label, unit="keV"):
         # the first-dump charge already hides the injection loss). Fall back to the first dump
         # for stages without a sidecar (e.g. the injector exit).
         q0 = None
+        q0_label = "captured"
         summ_path = os.path.join(diag, "injection_summary.json")
         if os.path.isfile(summ_path):
             import json
             with open(summ_path) as fh:
                 q0 = json.load(fh)["q_injected_C"] / 1.602176634e-19
         elif its:
+            # First-dump fallback: a within-stage transmission, not a capture fraction.
+            q0_label = "transmitted"
             _, _, _, _, w0 = ts.get_particle(
                 ["z", "ux", "uy", "uz", "w"], species="electrons", iteration=its[0])
             q0 = w0.sum()
@@ -153,7 +157,7 @@ def _beam_summary(diag, label, unit="keV"):
         sz = np.sqrt(np.average((z - zm) ** 2, weights=w))
         km = np.average(ke, weights=w)
         dk = np.sqrt(np.average((ke - km) ** 2, weights=w))
-        cap = f"   captured {w.sum()/q0*100:.0f}%" if q0 else ""
+        cap = f"   {q0_label} {w.sum()/q0*100:.0f}%" if q0 else ""
         _cl(f"\n{_BOLD}Final beam{_RESET} ({label}, {len(z)} macroparticles):")
         _cl(f"      ⟨z⟩ = {zm*1e3:.0f} mm   σ_z = {sz*1e3:.3f} mm   "
             f"⟨KE⟩ = {km:.1f} {unit}   σ_KE = {dk:.2f} {unit}   "
@@ -176,7 +180,7 @@ def main():
     cathode.run()
     gun.run()
     injector.run()
-    linac_sec1.run()            # SLAC Section 1: ~26 MeV captured at 11 MW (~18% of true injected; γ² lower bound)
+    linac_sec1.run()            # SLAC Section 1: ~26 MeV captured at 11 MW (~7% of true injected; γ² lower bound)
     linac_rest.run()            # Sections 2–8 (Impact-T): captured core → ≈307 MeV at 11 MW
 
     _beam_summary(injector.resolve_outdir(), "injector exit", "keV")

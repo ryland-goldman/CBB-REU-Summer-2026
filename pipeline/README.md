@@ -8,11 +8,13 @@ cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
 gun.run()          # build gun field map + RZ acceleration (~146 keV) + plots
 injector.run()     # build injector fields (2 cavities + 3 solenoids) + RZ run + plots
 linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~25 MeV captured) + plots
+linac_rest.run()   # sections 2–8 (Impact-T): captured core → ≈308 MeV at 11 MW + plots
 pipeline.plot_chain.main()   # cross-stage figures into the repo-root results/
 ```
 
-Each `run()` reads the previous stage's openPMD output, runs the WarpX sim, and (by default)
-generates that stage's figures. After the four stages, `run_pipeline.main()` calls
+Each `run()` reads the previous stage's openPMD output, runs the sim (WarpX subprocess for the
+first four; in-process Impact-T for `linac_rest`), and (by default)
+generates that stage's figures. After the five stages, `run_pipeline.main()` calls
 `pipeline.plot_chain.main()` for the cross-stage figures (also exposed as `pipeline.plot_chain()`).
 
 Each downstream stage reads the previous stage's openPMD output, so the order is fixed. The
@@ -36,7 +38,7 @@ python pipeline/run_pipeline.py
 
 ## Configuration
 
-`run_pipeline.py` is four `.run()` calls plus a `config()` header. To change behaviour, either:
+`run_pipeline.py` is five `.run()` calls plus a `config()` header. To change behaviour, either:
 
 - **Comment out** the stages you don't want to re-run (each downstream stage still reads the
   previous stage's saved openPMD output from disk).
@@ -96,9 +98,10 @@ python pipeline/run_pipeline.py
 ## Output
 
 **Terminal:** a live tqdm progress bar per simulation step, the key prints from each component
-(beam energy, bunch charge, field magnitudes, …), per-stage timing, two final-beam summaries
-(⟨z⟩, σ_z, ⟨KE⟩, σ_KE, charge) — one read from the injector exit (in keV) and one from the
-linac_sec1 exit (in MeV, with the captured-charge fraction vs the true injected charge) — and the
+(beam energy, bunch charge, field magnitudes, …), per-stage timing, three final-beam summaries
+(⟨z⟩, σ_z, ⟨KE⟩, σ_KE, charge) — the injector exit (in keV, with a within-stage "transmitted"
+fraction vs its first dump — no sidecar there), and the linac_sec1 and linac_rest exits (in MeV,
+each with the "captured" fraction vs its sidecar's recorded true injected charge) — and the
 cross-stage scorecard table (per-stage entry/exit moments) from `plot_chain`.
 
 **Log file** (`pipeline/logs/pipeline_<timestamp>.log`, path printed at start/end): the same
@@ -107,9 +110,10 @@ lines, per-stage durations and `ok=true/false`, and DEBUG-level WarpX output (th
 progress bar replaces on the terminal; MLMG per-iteration convergence spam is dropped). ANSI
 colours are written only to an interactive terminal, so the log stays plain text.
 
-Per-stage figures land in `{cathode,gun,injector,linac_sec1}/results/`. The **cross-stage**
+Per-stage figures land in `{cathode,gun,injector,linac_sec1,linac_rest}/results/`. The **cross-stage**
 figures land in the repo-root `results/` (from `pipeline.plot_chain`): `chain_evolution.png`
-(3×2 panels of ⟨KE⟩, ε_n,x, σ_x, σ_z, charge fraction, I_peak vs lab ⟨z⟩),
+(3×2 panels of ⟨KE⟩, ε_n,x, σ_x, σ_z, charge fraction, I_peak vs lab ⟨z⟩; the σ_z and I_peak
+panels exclude the 2-dump `linac_rest`),
 `emittance_budget.png`, `transmission_waterfall.png`, and `chain_scorecard.png`. All are
 git-ignored; commit with `git add -f results/*.png`. `plot_chain` reads each stage's existing
 openPMD series and works even if only some stages have run.
@@ -143,7 +147,9 @@ position is affected).
 `pipeline.plot_chain()` (a thin wrapper for `pipeline.plot_chain.main()`) builds ONE per-dump
 moment table per stage and renders four figures — all views of that table. It is in-process
 (no pywarpx) and reads `cathode/diags/particles`, `gun/diags/particles`,
-`injector/diags/main/particles`, `linac_sec1/diags/main/particles`. Notes: the cathode is 2D
+`injector/diags/main/particles`, `linac_sec1/diags/main/particles`, and
+`linac_rest/diags/main/particles` (lab-z offset from its recorded `z_inject_lab_m`; only two
+Impact-T dumps, so the σ_z/I_peak evolution panels exclude it). Notes: the cathode is 2D
 (x–z; only x/ux requested) so its ε_n,x is the slab x-emittance — the cathode→gun ε_n step is a
 2D→RZ **definitional** discontinuity, annotated as such. Longitudinal ε_n,z is the z–(γβ_z)
 emittance in mm (NOT mm·mrad). Capture is reported vs the TRUE injected charge

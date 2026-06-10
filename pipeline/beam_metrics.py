@@ -19,9 +19,9 @@ def rms_emit(q, uq, w):
     z–(γβ_z) plane (→ mm·dimensionless, NOT mm·mrad — the longitudinal plane is not an
     angle, so it gets no mrad factor).
 
-    All moments are charge-weighted by ``w``. (Note: this differs from the older inline
-    gun emittance, which used unweighted np.mean — see gun/plot_gun.py; the weighted form
-    is correct for the downsampled+reweighted snapshots.)
+    All moments are charge-weighted by ``w``. This is the shared convention — gun/plot_gun.py
+    and pipeline/plot_chain.py both call it, so the stage and cross-stage figures agree on the
+    same dump (the weighted form is correct for the downsampled+reweighted snapshots).
     """
     w = np.asarray(w, dtype=float)
     sw = w.sum()
