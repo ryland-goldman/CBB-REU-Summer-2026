@@ -59,8 +59,8 @@ transverse SC by ~γ²≈1.7× (a conservative lower bound) is noted on the σ_x
 ![Emittance Budget](results/emittance_budget.png)
 A waterfall of transverse normalized emittance at each stage's entry vs exit — which stage degrades
 beam quality. The cathode→gun bar carries the 2D→RZ definitional footnote; a further footnote line
-notes the injector-exit bar is the **un-collimated** 2.03 m handoff beam (no iris mask), ~13 % above
-the iris-survivor beam `linac_sec1` actually receives (≈375 vs ≈326 mm·mrad).
+notes the injector-exit bar is the **un-collimated** 2.03 m handoff beam (no iris mask); the
+iris-survivor beam `linac_sec1` actually receives is ~13 % lower (≈326 vs ≈375 mm·mrad).
 
 ### `transmission_waterfall.png` — the two-loss charge chain
 ![Transmission Waterfall](results/transmission_waterfall.png)

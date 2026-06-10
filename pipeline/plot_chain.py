@@ -314,8 +314,8 @@ def render_emittance_budget(tables):
         "solenoid-aberration dominated over the 2 m low-energy drift; the γ²≈1.7× ES "
         "transverse-SC overestimate makes it an UPPER bound (real growth is somewhat less — "
         "opposite sense to the capture lower bound). (3) the injector-exit bar is the "
-        "UN-collimated 2.03 m handoff beam (no iris mask), ~13% above the iris-survivor "
-        "beam linac_sec1 actually receives (≈375 vs ≈326 mm·mrad).")
+        "UN-collimated 2.03 m handoff beam (no iris mask); the iris-survivor beam "
+        "linac_sec1 actually receives is ~13% lower (≈326 vs ≈375 mm·mrad).")
     ax.annotate(textwrap.fill(footnote, width=150),
                 xy=(0.0, -0.12), xycoords="axes fraction", va="top",
                 fontsize=7, color="0.3")
