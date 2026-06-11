@@ -1,0 +1,1134 @@
+from pprint import pprint
+import warnings
+
+import numpy as np
+import h5py
+import yaml
+import copy
+import os
+
+from lume.base import Base
+from lume.tools import full_path
+
+
+from . import archive
+
+from .beam import Beam
+
+
+from concurrent.futures import ProcessPoolExecutor
+
+from .dist import get_dist
+from .dist import random_generator
+
+from .parsing import convert_input_quantities
+from .parsing import convert_quantities_to_user_input
+from .parsing import expand_input_filepaths
+from .parsing import update_quantity
+from .parsing import is_quantizable
+from .parsing import parse_quantity
+
+from .physical_constants import is_quantity
+from .physical_constants import PHYSICAL_CONSTANTS
+from .physical_constants import unit_registry
+
+from beamphysics import ParticleGroup, ParticleStatus, pmd_init
+from beamphysics.particles import join_particle_groups
+
+from .tools import get_nested_dict
+from .tools import is_key_in_nested_dict
+from .tools import set_nested_dict
+from .tools import StopWatch
+from .tools import update_nested_dict
+from .tools import vprint
+
+
+from .transforms import set_avg
+from .transforms import set_avg_and_std
+from .transforms import transform
+
+ALLOWED_CATHODE_DISTS = ["p_dist", "KE_dist", "p_polar_angle_dist"]
+
+
+def single_allowed_cathode_dist_set(params):
+    if len(set(ALLOWED_CATHODE_DISTS).intersection(set(params.keys()))) == 1:
+        return True
+    else:
+        return False
+
+
+class Generator(Base):
+    """
+    This class defines the main run engine object for distgen and is responsible for
+    1. Parsing the input data dictionary passed from a Reader object
+    2. Check the input for internal consistency
+    3. Collect the parameters for distributions requested in the params dictionary
+    4. Form a the Beam object and populated the particle phase space coordinates
+    """
+
+    def __init__(self, *args, **kwargs):
+        """
+        The class initialization takes in a verbose level for controlling text output to the user
+        """
+        super().__init__(*args, **kwargs)
+
+        # This will be set by
+        self._input = None  # The parsed and most up-to-date configuration of input for the generator
+
+        # This will be set with .beam()
+        self.rands = None
+
+        # This will be set with .run()
+        self.particles = None
+
+        if self.input_file:
+            self.parse_input(self.input_file)
+            self.configure()
+
+    def parse_input(self, input):
+        """
+        Parse the input structure passed from a Reader object.
+        The structure is then converted to an easier form for use in populating the Beam object.
+
+        YAML or JSON is accepted if params is a filename (str)
+
+        Relative paths for input 'file' keys will be expanded.
+        """
+        if isinstance(input, str):
+            if os.path.exists(full_path(input)):
+                # File
+                filename = full_path(input)
+                with open(filename) as fid:
+                    input = yaml.safe_load(fid)
+                # Fill any 'file' keys
+                expand_input_filepaths(
+                    input, root=os.path.split(filename)[0], ignore_keys=["output"]
+                )
+
+            else:
+                # Try raw string
+                input = yaml.safe_load(input)
+                if not isinstance(input, dict):
+                    raise ValueError(f"ERROR: parsing unsuccessful, could not read {input}")
+                expand_input_filepaths(input)
+
+        else:
+            expand_input_filepaths(input)
+
+        input = convert_input_quantities(input)
+        self.check_input_consistency(input)
+        self._input = input
+
+    @property
+    def input(self):
+        # User should see the generator input structure in user input notation
+        return convert_quantities_to_user_input(copy.deepcopy(self._input))
+
+    def __repr__(self):
+        s = "<distgen.Generator with input: \n"
+        return s + yaml.dump(self.input) + "\n>"
+
+    def __getitem__(self, varstr):
+        if varstr.endswith(":value"):
+            pstr = varstr.replace(":value", "")
+            var = get_nested_dict(self._input, pstr, sep=":", prefix="distgen")
+
+            if is_quantity(var):
+                return var.magnitude
+            else:
+                return var
+
+        elif varstr.endswith(":units"):
+            pstr = varstr.replace(":units", "")
+            var = get_nested_dict(self._input, pstr, sep=":", prefix="distgen")
+
+            if is_quantity(var):
+                return str(var.units)
+            else:
+                return var
+        else:
+            var = get_nested_dict(self._input, varstr, sep=":", prefix="distgen")
+
+            if is_quantity(var):
+                return {"value": var.magnitude, "units": str(var.units)}
+
+            elif isinstance(var, dict):
+                return convert_quantities_to_user_input(var, in_place=False)
+
+            else:
+                return var
+
+    def __setitem__(self, varstr, val):
+        params = copy.deepcopy(self._input)
+
+        if isinstance(val, dict):
+            val = convert_input_quantities(val, in_place=False)
+
+        pstr = varstr.replace(":value", "").replace(":units", "")
+
+        if not is_key_in_nested_dict(params, pstr, sep=":", prefix="distgen"):
+            if is_quantizable(val):
+                val = parse_quantity(val)
+            params = update_nested_dict(
+                params, {varstr: val}, verbose=False, create_new=True
+            )
+
+        if varstr.endswith(":value") or varstr.endswith(":units"):
+            var = get_nested_dict(params, pstr, sep=":", prefix="distgen")
+            set_nested_dict(
+                params, pstr, update_quantity(var, val), sep=":", prefix="distgen"
+            )
+
+        else:
+            var = get_nested_dict(params, varstr, sep=":", prefix="distgen")
+
+            if is_quantity(var):
+                print(var)
+                set_nested_dict(
+                    params, varstr, update_quantity(var, val), sep=":", prefix="distgen"
+                )
+
+            else:
+                set_nested_dict(params, varstr, val, sep=":", prefix="distgen")
+
+        self.check_input_consistency(params)  # Raises if something is wrong
+        self._input = params  # Accept changes into the Generator input state
+
+    def check_input_consistency(self, params):
+        """
+        Perform consistency/sanity checks on new user input data
+        """
+
+        # Make sure all required top level params are present
+        required_params = ["n_particle", "total_charge", "species"]
+        for rp in required_params:
+            if rp not in params:
+                raise ValueError("Required generator parameter " + rp + " not found.")
+
+        # Check that only allowed params present at top level
+        allowed_params = required_params + [
+            "output",
+            "transforms",
+            "start",
+            #"random_seed",
+            #"random_type",
+            "random",
+            "spin_polarization",
+            "spin_orientation",
+            "fix_avg_and_stds",
+        ]
+
+        for p in params:
+            if p not in allowed_params and not p.endswith("_dist"):
+                raise ValueError(
+                    "Unexpected distgen input parameter: " + p
+                )
+
+        if params["n_particle"] <= 0:
+            raise ValueError("User must specify n_particle > 0.")
+
+        if isinstance(params["n_particle"], float):
+            if params["n_particle"] - int(params["n_particle"]) > 0:
+                warnings.warn("Input variable n_particle was a float, expected int.")
+
+            params["n_particle"] = int(params["n_particle"])
+
+        if not isinstance(params["n_particle"], int):
+            raise TypeError(
+                f'Invalid type for n_particle parameter: {type(params["n_particle"])}'
+            )
+
+        if "nd_gaussian_dist" in params:
+
+            # Get the variables specified in the distribution via the required centroid:
+            allowed_nd_gaussian_dist_vars = ["x", "y", "z", "px", "py", "pz"]
+
+            if "centroid" not in params["nd_gaussian_dist"]:
+                raise ValueError("nd_gaussian_dist must include a 'centroid' field specifying the variables included in the distribution.")
+
+            nd_gaussian_dist_vars = [p for p in params['nd_gaussian_dist']['centroid'].keys()]
+            #print(nd_gaussian_dist_vars)
+
+            for var in nd_gaussian_dist_vars:
+                if var not in allowed_nd_gaussian_dist_vars:
+                    raise ValueError(f"Invalid variable specified in nd_gaussian_dist: {var}")
+                
+            if len(nd_gaussian_dist_vars) == 0:
+                raise ValueError("No valid variables specified in nd_gaussian_dist.")
+            
+            if len(nd_gaussian_dist_vars) > 6:
+                raise ValueError("Too many variables specified in nd_gaussian_dist.")
+
+            other_dist_vars = [p.replace("_dist", "") for p in params if p.endswith("_dist") and p != 'nd_gaussian_dist']
+
+            for other_var in other_dist_vars:
+                if other_var in nd_gaussian_dist_vars:
+                    raise ValueError(f"Variable {other_var} specified in both nd_gaussian_dist and as separate distribution.")
+                
+            if params['start']['type'] == 'cathode':
+                for var in nd_gaussian_dist_vars:
+                    if var in ['px', 'py', 'pz']:
+                        raise ValueError(f"Momentum variable {var} cannot be specified in nd_gaussian_dist for cathode start.")
+
+        # Check consistency of transverse coordinate definitions
+        if ("r_dist" in params) and ("x_dist" in params or "xy_dist" in params):
+            raise ValueError(
+                "Multiple/Inconsistent transverse distribution specification."
+            )
+        if ("r_dist" in params) and ("y_dist" in params or "xy_dist" in params):
+            raise ValueError(
+                "Multiple/Inconsistent transverse distribution specification."
+            )
+
+        if "output" in params:
+            out_params = params["output"]
+            for op in out_params:
+                if op not in ["file", "type"]:
+                    raise ValueError(f"Unexpected output parameter specified: {op}")
+        else:
+            params["output"] = {"type": None}
+
+        if "transforms" not in params:
+            params["transforms"] = None
+
+        if "start" not in params:
+            raise ValueError("Required generator parameter 'start' not found.")
+
+        if "type" not in params["start"]:
+            raise ValueError("The 'start' parameter must include a 'type' field.")
+
+        if params["start"]["type"] == "cathode":
+            for d in ["z_dist", "px_dist", "py_dist", "pz_dist"]:
+                if d in params:
+                    warnings.warn(
+                        f"Ignoring user specified {d} distribution for cathode start."
+                    )
+                    params.pop(d)
+
+            if single_allowed_cathode_dist_set(params):
+                pass
+            else:
+                if "MTE" not in params["start"]:
+                    raise ValueError(
+                        "User must specify the MTE for cathode start if momentum/energy distribution not specified."
+                    )
+
+        elif params["start"]["type"] == "time":
+            vprint(
+                "Ignoring user specified t distribution for time start.",
+                self.verbose > 0 and "t_dist" in params,
+                0,
+                True,
+            )
+            if "t_dist" in params:
+                warnings.warn("Ignoring user specified t distribution for time start.")
+                params.pop("t_dist")
+
+        if "species" not in params:
+            warnings.warn(
+                'Particle species not set, defaulting to species = "electron"'
+            )
+            params["species"] = "electron"
+
+        if "spin_polarization" in params:
+            if params["species"] != "electron":
+                raise ValueError(
+                    "Polarization currently may only be set for electrons"
+                )
+
+    @property
+    def fix_avg_and_stds(self):
+        if "fix_avg_and_stds" in self._input:
+            return self._input["fix_avg_and_stds"]
+        else:
+            return True  # Distgen defaults to true
+
+    def configure(self):
+        pass
+
+    def load_archive(self, h5=None):
+        """
+        Loads input and output from archived h5 file.
+        See: Generator.archive
+        """
+        if isinstance(h5, str):
+            g = h5py.File(h5, "r")
+
+            glist = archive.find_distgen_archives(g)
+            n = len(glist)
+            if n == 0:
+                # legacy: try top level
+                message = "legacy"
+            elif n == 1:
+                gname = glist[0]
+                message = f"group {gname} from"
+                g = g[gname]
+            else:
+                raise ValueError(f"Multiple archives found in file {h5}: {glist}")
+
+            vprint(f"Reading {message} archive file {h5}", self.verbose > 0, 1, False)
+        else:
+            g = h5
+
+            vprint(f"Reading Distgen archive file {h5}", self.verbose > 0, 1, False)
+
+        # self.input = archive.read_input_h5(g['input'])
+
+        if "particles" in g:
+            self.particles = ParticleGroup(g["particles"])
+            self.output = self.particles
+        else:
+            vprint("No particles found.", self.verbose > 0, 1, False)
+
+    def archive(self, h5=None):
+        """
+        Archive all data to an h5 handle or filename.
+
+        If no file is given, a file based on the fingerprint will be created.
+
+        """
+        if not h5:
+            h5 = "distgen_" + self.fingerprint() + ".h5"
+
+        if isinstance(h5, str):
+            g = h5py.File(h5, "w")
+            # Proper openPMD init
+            pmd_init(g, basePath="/", particlesPath="particles/")
+            g.attrs["software"] = np.bytes_("distgen")  # makes a fixed string
+            # TODO: add version: g.attrs('version') = np.bytes_(__version__)
+
+        else:
+            g = h5
+
+        # Init
+        archive.distgen_init(g)
+
+        # Input
+        # archive.write_input_h5(g, self.input, name='input')
+
+        # Particles
+        if self.particles:
+            self.particles.write(g, name="particles")
+        return h5
+
+    def get_dist_params(self, params):
+        """Loops through the input params dict and collects all distribution definitions"""
+
+        # params = self._input
+        dist_vars = [p.replace("_dist", "") for p in params if (p.endswith("_dist"))]
+        dist_params = {
+            p.replace("_dist", ""): params[p] for p in params if (p.endswith("_dist"))
+        }
+
+        if "r" in dist_vars and "theta" not in dist_vars:
+            vprint("Assuming cylindrical symmetry...", self.verbose > 0, 1, True)
+            dist_params["theta"] = {
+                "type": "ut",
+                "min_theta": 0 * unit_registry("rad"),
+                "max_theta": 2 * PHYSICAL_CONSTANTS.pi,
+            }
+
+        if "p" in dist_params or "KE" in dist_params:
+            if "azimuthal_angle" not in dist_params:
+                dist_params["azimuthal_angle"] = {
+                    "type": "ut",
+                    "min_theta": 0 * unit_registry("rad"),
+                    "max_theta": 2 * PHYSICAL_CONSTANTS.pi,
+                }
+
+            if "polar_angle" not in dist_params:
+                dist_params["polar_angle"] = {
+                    "type": "up",
+                    "min_phi": 0 * unit_registry("rad"),
+                    "max_phi": PHYSICAL_CONSTANTS.pi,
+                }
+
+        if "p_polar_angle" in dist_params:
+            if "azimuthal_angle" not in dist_params:
+                vprint(
+                    "Assuming cylindrical momentum symmetry...",
+                    self.verbose > 0,
+                    1,
+                    True,
+                )
+                dist_params["azimuthal_angle"] = {
+                    "type": "ut",
+                    "min_theta": 0 * unit_registry("rad"),
+                    "max_theta": 2 * PHYSICAL_CONSTANTS.pi,
+                }
+
+        if "spin_polarization" in params:
+            vprint(
+                "Assuming longitudinally polarized electrons...",
+                self.verbose > 0,
+                1,
+                True,
+            )
+      
+        if params["start"]["type"] == "time" and "t_dist" in params:
+            raise ValueError("Error: t_dist should not be set for time start")
+
+        return dist_params
+
+    def get_rands(self, variables):
+        """Gets random numbers [0,1] for the coordinatess in variables
+        using either the Hammersley sequence or rand"""
+
+        params = self._input
+
+        specials = ["xy"]
+        self.rands = {var: None for var in variables if var not in specials}
+
+        if "xy" in variables:
+            self.rands["x"] = None
+            self.rands["y"] = None
+
+        elif "r" in variables and "theta" not in variables:
+            self.rands["theta"] = None
+
+        elif "p_polar_angle" in variables:
+            self.rands["p"] = None
+            self.rands["polar_angle"] = None
+
+        elif "spin_polarization" in variables:
+            self.rands["sz"] = None
+            # self.rands['spin_azimuthal_angle']=None
+
+        n_coordinate = len(self.rands.keys())
+        n_particle = int(params["n_particle"])
+        shape = (n_coordinate, n_particle)
+
+        random = {}
+
+        if n_coordinate > 0:
+            if "random" in params:
+                random = params["random"]
+
+            elif "random_type" in params:
+                warnings.warn(
+                    "'random_type' is deprecated. Use 'random': {'type': ...} instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                random["type"] = params["random_type"]
+
+                if "random_seed" in params:
+                    warnings.warn(
+                        "'random_seed' is deprecated. Use 'random': {'seed': ...} instead.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                    random["seed"] = params["random_seed"]
+
+            if "type" not in random:
+                random["type"] = "hammersley"
+
+            rns = random_generator(shape, random["type"], **random)
+
+        for ii, key in enumerate(self.rands.keys()):
+            if len(rns.shape) > 1:
+                self.rands[key] = rns[ii, :] * unit_registry("dimensionless")
+            else:
+                self.rands[key] = rns[:] * unit_registry("dimensionless")
+
+        var_list = list(self.rands.keys())
+        for ii, vii in enumerate(var_list[:-1]):
+            viip1 = var_list[ii + 1]
+            if (
+                np.array_equal(
+                    self.rands[vii].magnitude, self.rands[viip1].magnitude
+                )
+                and n_particle != 1
+            ):
+                raise ValueError(
+                    f"Error: coordinate probabilities for {vii} and {viip1} are the same!"
+                )
+
+            # These lines can be used to check for unwanted correlations
+            # v0 = self.rands[vii].magnitude-self.rands[vii].magnitude.mean()
+            # v1 = self.rands[viip1].magnitude-self.rands[viip1].magnitude.mean()
+            # print( np.mean(v0*v1) )
+
+    def beam(self):
+        """Creates a 6d particle distribution and returns it in a distgen.beam class"""
+
+        watch = StopWatch()
+        watch.start()
+
+        params = copy.deepcopy(self._input)
+
+        MC2 = PHYSICAL_CONSTANTS.species(params["species"])["mc2"]
+
+        if params["start"]["type"] == "cathode":
+            if not len(
+                set(ALLOWED_CATHODE_DISTS).intersection(set(params.keys()))
+            ):  # If cathode is specified, but no emission model
+                # Handle momentum distribution for cathode: Assume Maxwell-Boltzmann
+                MTE = params["start"]["MTE"]
+
+                # THIS IS INCORRECT FOR ANYTHING BUT ELECTRONS (TO BE REMOVED AFTER TESTING)
+                # sigma_p = (np.sqrt( (MTE/MC2).to_reduced_units() )*unit_registry("GB")).to("eV/c")
+
+                # CORRECT FOR ALL SPECIES
+                sigma_p = np.sqrt(
+                    MC2.to("eV") * MTE.to("eV")
+                ).magnitude * unit_registry("eV/c")
+
+                params["px_dist"] = {"type": "g", "sigma_px": sigma_p}
+                params["py_dist"] = {"type": "g", "sigma_py": sigma_p}
+                params["pz_dist"] = {"type": "g", "sigma_pz": sigma_p}
+
+        elif params["start"]["type"] == "time":
+            vprint(
+                "Ignoring user specified t distribution for time start.",
+                self.verbose > 0 and "t_dist" in params,
+                0,
+                True,
+            )
+            if "t_dist" in params:
+                warnings.warn("Ignoring user specified t distribution for time start.")
+                params.pop("t_dist")
+
+        verbose = self.verbose
+        # outputfile = []
+
+        beam_params = {
+            "total_charge": params["total_charge"],
+            "n_particle": params["n_particle"],
+            "species": params["species"],
+        }
+
+        if "transforms" in params:
+            transforms = params["transforms"]
+        else:
+            transforms = None
+
+        # dist_params = {p.replace('_dist',''):self.params[p] for p in self.params if(p.endswith('_dist')) }
+        # self.get_rands()
+
+        vprint(f'Distribution format: {params["output"]["type"]}', verbose > 0, 0, True)
+
+        N = int(params["n_particle"])
+        bdist = Beam(**beam_params)
+
+        if "file" in params["output"]:
+            outfile = params["output"]["file"]
+        else:
+            outfile = "None"
+            vprint(
+                f'Warning: no output file specified, defaulting to "{outfile}".',
+                verbose > 0,
+                1,
+                True,
+            )
+        vprint(f"Output file: {outfile}", verbose > 0, 0, True)
+
+        vprint("\nCreating beam distribution....", verbose > 0, 0, True)
+        vprint(f"Beam starting from: {params['start']['type']}", verbose > 0, 1, True)
+        vprint(f"Total charge: {bdist.q:G~P}.", verbose > 0, 1, True)
+        vprint(f"Number of macroparticles: {N}.", verbose > 0, 1, True)
+
+        units = {
+            "x": "m",
+            "y": "m",
+            "z": "m",
+            "px": "eV/c",
+            "py": "eV/c",
+            "pz": "eV/c",
+            "t": "s",
+        }
+
+        # Initialize coordinates to zero
+        for var, unit in units.items():
+            bdist[var] = np.full(N, 0.0) * unit_registry(units[var])
+
+        bdist["w"] = np.full((N,), 1 / N) * unit_registry("dimensionless")
+
+        avgs = {var: 0 * unit_registry(units[var]) for var in units}
+        stds = {var: 0 * unit_registry(units[var]) for var in units}
+
+        dist_params = self.get_dist_params(
+            params
+        )  # Get the relevant dist params, setting defaults as needed, and samples random number generator
+
+        rand_variables = list(
+                dist_params.keys()
+        )  # All variables with distributions specified
+
+        if "spin_polarization" in params:
+            rand_variables = rand_variables + ["sz"]
+
+        if 'nd_gaussian' in rand_variables:
+            nd_gaussian_dist_vars = [p for p in dist_params["nd_gaussian"]['centroid'].keys()]
+            rand_variables = rand_variables + [v for v in nd_gaussian_dist_vars]
+            rand_variables.remove('nd_gaussian')
+
+        #print(rand_variables)
+
+        self.get_rands(rand_variables)
+
+        # Do radial dist first if requested
+        if "r" in dist_params and "theta" in dist_params:
+            vprint("r distribution: ", verbose > 0, 1, False)
+
+            # Get r distribution
+            rdist = get_dist("r", dist_params["r"], verbose=verbose)
+
+            if rdist.rms() > 0:
+                r = rdist.cdfinv(self.rands["r"])  # Sample to get beam coordinates
+            else:
+                r = np.zeros(len(self.rands["r"])) * rdist.rms().units
+
+            # Sample to get beam coordinates
+            vprint("theta distribution: ", verbose > 0, 1, False)
+            theta_dist = get_dist("theta", dist_params["theta"], verbose=verbose)
+            theta = theta_dist.cdfinv(self.rands["theta"])
+
+            rrms = rdist.rms()
+            avgr = rdist.avg()
+
+            # These should be filled by the theta dist?
+            avgCos = 0
+            avgSin = 0
+            avgCos2 = 0.5
+            avgSin2 = 0.5
+
+            bdist["x"] = r * np.cos(theta)
+            bdist["y"] = r * np.sin(theta)
+
+            avgs["x"] = avgr * avgCos
+            avgs["y"] = avgr * avgSin
+
+            stds["x"] = rrms * np.sqrt(
+                avgCos2
+            )  # Should check that average needs subtracting?
+            stds["y"] = rrms * np.sqrt(avgSin2)
+
+            # remove r, theta from list of distributions to sample
+            del dist_params["r"]
+            del dist_params["theta"]
+
+        # Do 2D distributions
+        if "xy" in dist_params:
+            vprint("xy distribution: ", verbose > 0, 1, False)
+            dist = get_dist("xy", dist_params["xy"], verbose=verbose)
+            bdist["x"], bdist["y"] = dist.cdfinv(self.rands["x"], self.rands["y"])
+
+            dist_params.pop("xy")
+
+            avgs["x"] = bdist.avg("x")
+            avgs["y"] = bdist.avg("y")
+
+            stds["x"] = bdist.std("x")
+            stds["y"] = bdist.std("y")
+
+        if (
+            "p" in dist_params or "KE" in dist_params
+        ):  # or "E_dist" in dist_params or "KE_dist"):
+            if "p" in dist_params:
+                vprint("p distribution: ", verbose > 0, 1, False)
+
+                # Get p distribution
+                pdist = get_dist("p", dist_params["p"], verbose=verbose)
+
+                if pdist.rms() > 0:
+                    p = pdist.cdfinv(self.rands["p"])  # Sample to get beam coordinates
+
+                avgp = pdist.avg()
+                prms = pdist.rms()
+
+            elif "KE" in dist_params:
+                vprint("KE distribution: ", verbose > 0, 1, False)
+
+                # Get p distribution
+                KEdist = get_dist("KE", dist_params["KE"], verbose=verbose)
+
+                if KEdist.rms() > 0:
+                    KE = KEdist.cdfinv(
+                        self.rands["KE"]
+                    )  # Sample to get beam coordinates
+                    p = (
+                        np.sqrt((KE + MC2) ** 2 - MC2**2)
+                        / PHYSICAL_CONSTANTS["speed of light in vacuum"]
+                    )
+
+                    avgp = np.mean(p)
+                    stdp = np.std(p)
+                    prms = np.sqrt(stdp**2 + avgp**2)
+
+            # Sample to get beam coordinates
+            vprint("azimuthal angle distribution: ", verbose > 0, 1, False)
+            theta_dist = get_dist(
+                "azimuthal_angle", dist_params["azimuthal_angle"], verbose=verbose
+            )
+            theta = theta_dist.cdfinv(self.rands["azimuthal_angle"])
+
+            vprint("polar angle distribution: ", verbose > 0, 1, False)
+            phi_dist = get_dist(
+                "polar_angle", dist_params["polar_angle"], verbose=verbose
+            )
+            phi = phi_dist.cdfinv(self.rands["polar_angle"])
+
+            bdist["px"] = p * np.cos(theta) * np.sin(phi)
+            bdist["py"] = p * np.sin(theta) * np.sin(phi)
+            bdist["pz"] = p * np.cos(phi)
+
+            avgCosTheta = theta_dist.avgCos()
+            avgSinTheta = theta_dist.avgSin()
+
+            avgCos2Theta = theta_dist.avgCos2()
+            avgSin2Theta = theta_dist.avgCos2()
+
+            avgCosPhi = phi_dist.avgCos()
+            avgSinPhi = phi_dist.avgSin()
+
+            avgCos2Phi = phi_dist.avgCos2()
+            avgSin2Phi = phi_dist.avgSin2()
+
+            avgs["px"] = avgp * avgCosTheta * avgSinPhi
+            avgs["py"] = avgp * avgSinTheta * avgSinPhi
+            avgs["pz"] = avgp * avgCosPhi
+
+            pxrms2 = prms**2 * avgCos2Theta * avgSin2Phi
+            pyrms2 = prms**2 * avgSin2Theta * avgSin2Phi
+            pzrms2 = prms**2 * avgCos2Phi
+
+            stds["px"] = np.sqrt(pxrms2 - avgs["px"] ** 2)
+            stds["py"] = np.sqrt(pyrms2 - avgs["py"] ** 2)
+            stds["pz"] = np.sqrt(pzrms2 - avgs["pz"] ** 2)
+
+            if "p" in dist_params:
+                dist_params.pop("p")
+            elif "KE" in dist_params:
+                dist_params.pop("KE")
+
+            dist_params.pop("azimuthal_angle")
+            dist_params.pop("polar_angle")
+
+        if "p_polar_angle" in dist_params:
+            vprint("|p| and polar angle distribution: ", verbose > 0, 1, False)
+            p_polar_angle_dist = get_dist(
+                "p_polar_angle", dist_params["p_polar_angle"], verbose=verbose
+            )
+            ps, phis = p_polar_angle_dist.cdfinv(
+                self.rands["p"], self.rands["polar_angle"]
+            )
+
+            vprint("azimuthal angle distribution: ", verbose > 0, 1, False)
+            theta_dist = get_dist(
+                "azimuthal_angle", dist_params["azimuthal_angle"], verbose=verbose
+            )
+            thetas = theta_dist.cdfinv(self.rands["azimuthal_angle"])
+
+            bdist["px"] = ps * np.cos(thetas) * np.sin(phis)
+            bdist["py"] = ps * np.sin(thetas) * np.sin(phis)
+            bdist["pz"] = ps * np.cos(phis)
+
+            for pvar in ["px", "py"]:
+                avgs[pvar] = 0 * unit_registry("eV/c")
+            avgs["pz"] = bdist["pz"].mean()
+
+            for pvar in ["px", "py", "pz"]:
+                stds[pvar] = bdist[pvar].std()
+
+            dist_params.pop("azimuthal_angle")
+            dist_params.pop("p_polar_angle")
+
+        if "spin_polarization" in params:
+            hbar = PHYSICAL_CONSTANTS["reduced Planck constant"].to("nm * eV/c")
+
+            bdist["sx"] = np.full(N, 0.0) * unit_registry("nm * eV/c")
+            bdist["sy"] = np.full(N, 0.0) * unit_registry("nm * eV/c")
+            bdist["sz"] = np.full(N, 0.0) * unit_registry("nm * eV/c")
+
+            # sphi_dist = get_dist('spin_azimuthal_angle', dist_params['spin_azimuthal_angle'], verbose=verbose)
+            # sphi = sphi_dist.cdfinv(self.rands['spin_azimuthal_angle'])
+
+            P = params["spin_polarization"]
+
+            if N > 1:
+                bdist["sz"][self.rands["sz"] < 0.5 * (1 - P)] = -hbar / 2
+                bdist["sz"][self.rands["sz"] >= 0.5 * (1 - P)] = +hbar / 2
+            elif self.rands["sz"][0] < 0.5 * (1 - P):
+                bdist["sz"][0] = -hbar / 2
+            else:
+                bdist["sz"][0] = +hbar / 2
+
+            if "spin_orientation" in params:
+                thx = params["spin_orientation"]["theta_x"].to("rad")
+                thy = params["spin_orientation"]["theta_y"].to("rad")
+                thz = params["spin_orientation"]["theta_z"].to("rad")
+
+                Cx, Sx = np.cos(thx), np.sin(thx)
+                Cy, Sy = np.cos(thy), np.sin(thy)
+                Cz, Sz = np.cos(thz), np.sin(thz)
+
+                Mx = np.array([[1, 0, 0], [0, Cx, -Sx], [0, Sx, Cx]])
+
+                My = np.array([[Cy, 0, +Sy], [0, 1, 0], [-Sy, 0, Cy]])
+
+                Mz = np.array([[Cz, -Sz, 0], [Sz, Cz, 0], [0, 0, 1]])
+
+                M = np.matmul(Mx, np.matmul(My, Mz))
+
+                N, len(bdist["sz"])
+
+                e3 = bdist["sz"] / (hbar / 2)
+                S = np.stack([np.zeros(N), np.zeros(N), e3.magnitude])
+                Sp = np.dot(M, S)
+
+                bdist["sx"] = Sp[0, :] * (hbar / 2)
+                bdist["sy"] = Sp[1, :] * (hbar / 2)
+                bdist["sz"] = Sp[2, :] * (hbar / 2)
+
+        if 'nd_gaussian' in dist_params:
+
+            nd_params = dist_params['nd_gaussian']
+            nd_params['type'] = 'nd_gaussian'
+            vars = list( dist_params['nd_gaussian']['centroid'].keys() )
+
+            dist = get_dist(vars, nd_params, verbose=verbose)
+            nd_rands = {k:self.rands[k] for k in nd_params['centroid'].keys()}
+
+            samples = dist.cdfinv(nd_rands)
+
+            for var in nd_params['centroid'].keys():
+                bdist[var] = samples[var]
+
+            dist_params.pop("nd_gaussian", None)
+
+            for k, v in nd_params['centroid'].items():
+                avgs.pop(k, None)
+                stds.pop(k, None)
+
+            #for k, v in dist.sigmas.items():
+            #    stds[k] = v
+
+        # Do all other specified single coordinate dists
+        for x in dist_params.keys():
+            vprint(x + " distribution: ", verbose > 0, 1, False)
+            dist = get_dist(x, dist_params[x], verbose=verbose)  # Get distribution
+
+            if dist.std() > 0:
+                # Only reach here if the distribution has > 0 size
+                bdist[x] = dist.cdfinv(self.rands[x])  # Sample to get beam coordinates
+
+                # Fix up the avg and std so they are exactly what user asked for
+                if "avg_" + x in dist_params[x]:
+                    avgs[x] = dist_params[x]["avg_" + x]
+                else:
+                    avgs[x] = dist.avg()
+
+                stds[x] = dist.std()
+
+
+            else:  # Someone may set sigma = 0 but have a non-zero avg
+                if "avg_" + x in dist_params[x]:
+                    avgs[x] = dist_params[x]["avg_" + x]
+                else:
+                    avgs[x] = dist.avg()
+
+        if self.fix_avg_and_stds:  # This is the default behavior
+            if N < 100:
+                warnings.warn(
+                    "Distgen is fixing the average and standard deviation for particle coordinates for a beam with N<100 macroparticles. This may cause undesired behavior.  Consider setting fix_avg_and_stds = False in your Distgen input."
+                )
+
+            # Shift and scale coordinates to undo sampling error
+            for x in avgs:
+                vprint(
+                    f"Shifting avg_{x} = {bdist.avg(x):G~P} -> {avgs[x]:G~P}",
+                    verbose > 0 and bdist[x].mean() != avgs[x],
+                    1,
+                    True,
+                )
+                vprint(
+                    f"Scaling sigma_{x} = {bdist.std(x):G~P} -> {stds[x]:G~P}",
+                    verbose > 0 and bdist[x].std() != stds[x],
+                    1,
+                    True,
+                )
+
+                # bdist = transform(bdist, {'type':f'set_avg_and_std {x}', 'avg_'+x:avgs[x],'sigma_'+x:stds[x], 'verbose':0})
+
+                bdist = set_avg_and_std(
+                    bdist,
+                    **{
+                        "variables": x,
+                        "avg_" + x: avgs[x],
+                        "sigma_" + x: stds[x],
+                        "verbose": 0,
+                    },
+                )
+
+        # Handle any start type specific settings
+        if params["start"]["type"] == "cathode":
+            if np.count_nonzero(bdist["pz"] < 0) > 0:
+                bdist["pz"] = np.abs(bdist["pz"])  # Only take forward hemisphere
+                vprint(
+                    "Cathode start: fixing pz momenta to forward hemisphere",
+                    verbose > 0,
+                    1,
+                    True,
+                )
+                vprint(
+                    f'avg_pz -> {bdist.avg("pz"):G~P}, sigma_pz -> {bdist.std("pz"):G~P}',
+                    verbose > 0,
+                    2,
+                    True,
+                )
+
+        elif params["start"]["type"] == "time":
+            if "tstart" in params["start"]:
+                tstart = params["start"]["tstart"]
+
+            else:
+                vprint(
+                    "Time start: no start time specified, defaulting to 0 sec.",
+                    verbose > 0,
+                    1,
+                    True,
+                )
+                tstart = 0 * unit_registry("sec")
+
+            vprint(
+                f"Time start: fixing all particle time values to start time: {tstart:G~P}.",
+                verbose > 0,
+                1,
+                True,
+            )
+            bdist = set_avg(
+                bdist,
+                **{
+                    "variables": "t",
+                    "avg_t": tstart,
+                    "verbose": verbose > 0,
+                },
+            )
+
+        elif params["start"]["type"] == "free":
+            pass
+
+        else:
+            raise ValueError(
+                f'Beam start type "{params["start"]["type"]}" is not supported!'
+            )
+
+        # Apply any user desired coordinate transformations
+        if transforms:
+            # Check if the user supplied the transform order, otherwise just go through the dictionary
+            if "order" in transforms:
+                order = transforms["order"]
+                if not isinstance(order, list):
+                    raise ValueError(
+                        'Transform "order" key must be associated a list of transform IDs'
+                    )
+                del transforms["order"]
+            else:
+                order = transforms.keys()
+
+            for name in order:
+                T = transforms[name]
+                T["verbose"] = verbose > 0
+                vprint(
+                    f'Applying user supplied transform: "{name}" = {T["type"]}...',
+                    verbose > 0,
+                    1,
+                    True,
+                )
+                bdist = transform(bdist, T)
+
+        watch.stop()
+        vprint(f"...done. Time Elapsed: {watch.print()}.\n", verbose > 0, 0, True)
+        return bdist
+
+    def run(self, max_workers=1, executor=None):
+        """Runs the generator.beam function stores the partice in
+        an openPMD-beamphysics ParticleGroup in self.particles"""
+
+        if max_workers == 1:
+            # Default run, no parallelization
+            if self._input is not None:
+                beam = self.beam()
+
+                if self._input["start"]["type"] == "cathode":
+                    status = ParticleStatus.CATHODE
+                else:
+                    status = ParticleStatus.ALIVE
+
+                self.particles = ParticleGroup(data=beam.data(status=status))
+                self.output = self.particles
+                vprint(
+                    f"Created particles in .particles: \n   {self.particles}",
+                    self.verbose > 0,
+                    1,
+                    True,
+                )
+            else:
+                print("No input data specified.")
+
+            # return self.output
+
+        else:
+            vprint(
+                f"Creating particles in parallel with {max_workers} workers",
+                self.verbose > 0,
+                0,
+                True,
+            )
+            if executor is None:
+                executor = ProcessPoolExecutor()
+                executor.max_workers = max_workers
+
+            vprint("Setting up workers...", self.verbose > 0, 1, False)
+            generators = set_up_worker_generators(self, n_gen=max_workers)
+            inputs = [gen.input for gen in generators]
+            vprint("done.", self.verbose > 0, 0, True)
+
+            # Run
+            vprint("Executing worker tasks...", self.verbose > 0, 1, False)
+            with executor as p:
+                ps = list(p.map(worker_func, inputs))
+            vprint("done", self.verbose > 0, 0, True)
+
+            vprint("Collecting beamlets...", self.verbose > 0, 1, False)
+
+            self.particles = join_particle_groups(*ps)
+            self.output = self.particles
+            vprint(
+                f"Created particles in .particles: \n   {self.particles}",
+                self.verbose > 0,
+                1,
+                True,
+            )
+
+        return self.output
+
+
+def worker_func(inputs):
+    G = Generator(inputs)
+
+    return G.run()
+
+
+def set_up_worker_generators(G, n_gen=1):
+    inputs = G.input
+
+    if "random_type" in inputs:
+        inputs["random"] = {"type": inputs["random_type"]}
+        del inputs["random_type"]
+
+        G = Generator(inputs)
+
+    generators = [G.copy() for ii in range(n_gen)]
+
+    for ii, gen in enumerate(generators):
+        n_particle_subset = int(G["n_particle"] / n_gen)
+
+        gen["n_particle"] = n_particle_subset
+        gen["total_charge:value"] = G["total_charge:value"] / n_gen
+
+        if gen["random"]["type"] == "hammersley":
+            gen["random:burnin"] = ii * n_particle_subset
+
+    return generators

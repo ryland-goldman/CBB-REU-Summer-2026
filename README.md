@@ -89,6 +89,9 @@ Each directory's `README.md` documents its physics, field maps, and outputs.
 [G4beamline](https://www.muonsinternal.com/muons3/G4beamline),
 [Adam Bartnik's LinacSim](https://cesrwww.lepp.cornell.edu/wiki/CESR/LinacSim),
 [LUME-Impact](https://github.com/ChristopherMayes/lume-impact),
+[lume-gpt](https://github.com/ColwynGulliford/lume-gpt),
+[distgen](https://github.com/ColwynGulliford/distgen),
+[GPT_tools](https://github.com/AdamCBartnik/GPT_tools),
 [openPMD-beamphysics](https://github.com/ChristopherMayes/openPMD-beamphysics) /
 [openPMD-viewer](https://github.com/openPMD/openPMD-viewer),
 [easygdf](https://gitlab.com/chris.pierce/easygdf))

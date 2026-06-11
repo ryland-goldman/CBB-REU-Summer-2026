@@ -1,0 +1,202 @@
+from beamphysics import ParticleGroup
+from beamphysics.units import c_light, e_charge, mec2
+from beamphysics.species import mass_of, MASS_OF
+from beamphysics.species import charge_of, CHARGE_OF
+from beamphysics.species import mH2pc2
+
+from scipy.constants import physical_constants
+
+
+from gpt.tools import transform_to_centroid_coordinates
+import numpy as np
+
+from gpt.parsers import read_gdf_file
+from gpt.parsers import read_particle_gdf_file
+
+def identify_species(mass, charge):
+    """
+    Simple function to identify a species based on its mass in kg and charge in C.
+    
+    Finds species:
+        'electron'
+        'positron'
+        'proton'
+        'H2+'
+    
+    TODO: more species
+    
+    """
+
+    for species, mc2 in MASS_OF.items():
+
+        MC2 = mass * c_light**2 / e_charge
+
+        if np.isclose(MC2, mc2, atol=0, rtol=1e-04) and np.isclose(charge, charge_of(species), atol=0, rtol=1e-04):
+            return species
+
+    raise ValueError(f'Cannot identify species with mass {mass} and charge {charge}')
+
+
+    """
+    qelem = physical_constants['elementary charge'][0]
+
+    if np.isclose(mass, mH2pc2, atol=0) and np.isclose(charge, qelem, atol=0, rtol=1e-04):
+        return 'H2+'
+
+    elif np.isclose(mass,  physical_constants['electron mass'][0], atol=0, rtol=1e-04) and np.isclose(charge, -qelem, atol=0, rtol=1e-04):
+        return 'electron'
+
+    elif np.isclose(mass,  physical_constants['electron mass'][0], atol=0, rtol=1e-04) and np.isclose(charge, +qelem, atol=0, rtol=1e-04):
+        return 'positron'
+
+    elif np.isclose(mass,  physical_constants['proton mass'][0], atol=0, rtol=1e-04) and np.isclose(charge, +qelem, atol=0, rtol=1e-04):
+        return 'proton'
+        
+    else:
+        raise ValueError(f'Cannot identify species with mass {mass} and charge {charge}')
+    """
+
+def raw_data_to_particle_data(gpt_output_dict, verbose=False):
+
+    """
+    Convert a gpt_out (tout or screen) dict to a standard form
+    
+    """
+    data = {}
+
+    n_particle = len(gpt_output_dict['x'])
+     
+    masses = np.unique(gpt_output_dict['m'])
+    charges = np.unique(gpt_output_dict['q'])
+    
+    assert len(masses) == 1, 'All masses must be the same.'
+    assert len(charges) == 1, 'All charges must be the same'
+    mass = masses[0]
+    charge = charges[0]
+
+    species = identify_species(mass, charge)
+    
+    data['species'] = species
+    data['n_particle'] = n_particle
+
+    data['x'] = gpt_output_dict['x']
+    data['y'] = gpt_output_dict['y']
+    data['z'] = gpt_output_dict['z']
+    factor = c_light**2 /e_charge # kg -> eV
+
+    mc = mass_of(species)  # Returns rest energy in eV, which corresponds to same numeric value of mc [eV/c] 
+
+    for v in ['x', 'y', 'z']:
+        if f'GB{v}' not in gpt_output_dict:
+            data[f'p{v}'] = gpt_output_dict['G']*gpt_output_dict[f'B{v}']*mc
+        else: 
+            data[f'p{v}'] = gpt_output_dict[f'GB{v}']*mc
+    
+    #data['px'] = gpt_output_dict['G']*gpt_output_dict['Bx']*mc
+    #data['py'] = gpt_output_dict['G']*gpt_output_dict['By']*mc
+    #data['pz'] = gpt_output_dict['G']*gpt_output_dict['Bz']*mc
+
+    data['t'] = gpt_output_dict['t']
+        
+    data['status'] = np.full(n_particle, 1)
+    data['id'] = gpt_output_dict['ID']
+
+    #print(c_light, e_charge, gpt_output_dict['m'][0], m_e)
+
+    data['weight'] = abs(gpt_output_dict['q']*gpt_output_dict['nmacro'])
+
+    if( np.all(data['weight'] == 0.0) ):
+        data['weight']= np.full(data['weight'].shape, 1/len(data['weight']))
+
+    #extra_data = ['sx', 'sy', 'sz', 'Ex', 'Ey', 'Ez']
+
+    #for k, v in gpt_output_dict.items():
+    #    if k in extra_data:
+    #        data[k]=v
+    
+    return data
+
+
+def raw_data_to_particle_groups(touts, screens, verbose=False, ref_ccs=False):
+
+    """
+    Coverts a list of touts to a list of ParticleGroup objects
+    """
+    if(verbose):
+        print('   Converting tout and screen data to ParticleGroup(s)')
+
+    if(ref_ccs):
+
+        pg_touts = [ ParticleGroup(data=raw_data_to_particle_data(datum))  for datum in touts ]
+        pg_screens = [ ParticleGroup(data=raw_data_to_particle_data(datum))  for datum in screens ]
+        new_touts = [transform_to_centroid_coordinates(tout) for tout in pg_touts]
+        
+        return new_touts + pg_screens     
+
+    else:
+        return [ ParticleGroup(data=raw_data_to_particle_data(datum))  for datum in touts+screens ] 
+
+
+def gdf_to_particle_groups(gdffile, verbose=False):
+
+    """
+    Read an output gdf file from GPT into a lists of tout and screen particle groups
+    """
+
+    (tdata, pdata) = read_gdf_file(gdffile, 
+                                   verbose=verbose)
+
+    all_pgs = raw_data_to_particle_groups(tdata, pdata, verbose=verbose)
+
+    touts = all_pgs[:len(tdata)]
+    screens = all_pgs[len(tdata):]
+
+    return (touts, screens)
+
+def initial_beam_to_particle_group(gdffile, verbose=0): #, extra_screen_keys=['q','nmacro','ID', 'm'], missing_data=None):
+
+    screen  = read_particle_gdf_file(gdffile, verbose=verbose)# , extra_screen_keys=extra_screen_keys)
+
+    #print(screen)
+    #if missing_data is not None:
+
+    #    for mdatum in missing_data:
+
+    #        if mdatum not in screen.keys() and len(missing_data[mdatum])==len(screen['x']):
+    #            screen[mdatum] = missing_data[mdatum]
+
+    return ParticleGroup(data=raw_data_to_particle_data(screen))
+
+
+def particle_stats(particle_groups, key):
+    """
+    Gets statistic of a list of particle groups
+    
+    
+    key can be any key that ParticleGroup can calculate:
+        mean_energy
+        mean_z
+        mean_t
+        sigma_x
+        norm_emit_x
+        mean_kinetic_energy
+        ...
+        
+    
+    """
+    if key.startswith('twiss_'):
+        return np.array([p.twiss('xy')[key.replace('twiss_', '')] for p in particle_groups])
+    else:
+        return np.array([p[key] for p in particle_groups])
+
+
+
+
+
+
+         
+    
+
+    
+    
+    
