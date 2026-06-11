@@ -51,10 +51,10 @@ Top-level exports (`gpt/__init__.py`): `GPT`, `run_gpt`, `evaluate_gpt`,
 | Member | Purpose |
 |--------|---------|
 | `GPT(input_file, initial_particles=None, gpt_bin='$GPT_BIN', use_tempdir=True, workdir=None, timeout=None, ccs_beg='wcs', spin_tracking=False, n_cpu=1, ...)` | Parse deck + configure run dir. `initial_particles` (a `ParticleGroup`) is written to GDF and wired into the deck's `setfile("beam", ...)` line. |
-| `.set_variable(name, val)` / `.set_variables(dict)` | Set deck variables declared as `name=value;` lines. |
+| `.set_variable(name, val)` / `.set_variables(dict)` | Set deck variables declared as `name=value;` lines (see *Deck variables* below). |
 | `.run(gpt_verbose=False)` | Execute GPT (timeout + `kill_msgs` watchdog), then parse output. |
 | `.tout`, `.screen`, `.particles` | Lists of `ParticleGroup` (time snapshots / z-screens / both). `n_tout`, `n_screen` count them. `tout_ccs` gives touts in the bend-following coordinate system. |
-| `.stat(key, data_type='all'|'tout'|'tout_ccs'|'screen')` | Any `ParticleGroup` stat vs output index; special-cases `twiss_*`, field samples `fEx…fBz` (needs `load_fields=True`), spin `spinx/y/z`, `spin_polarization`. `.units(key)` gives units. |
+| `.stat(key, data_type='all'|'tout'|'tout_ccs'|'screen')` | Any `ParticleGroup` stat vs output index (full key grammar in *Stat keys* below); special-cases `twiss_*`, field samples `fEx…fBz` (needs `load_fields=True`), spin `spinx/y/z`, `spin_polarization`. `.units(key)` gives units. |
 | `.trajectory(pid, data_type='tout')` | Single-particle trajectory arrays by particle ID. |
 | `.plot(y=[...], y2=[...], x='mean_z')` | Stat plot with layout (`plot.plot_stats_with_layout`). |
 | `.track(particles, s=None)` / `.track1(...)` / `.track1_to_z(...)` / `.track1_in_ccs(...)` | Track a `ParticleGroup` (or one constructed single particle) through the configured deck. |
@@ -65,6 +65,74 @@ Top-level exports (`gpt/__init__.py`): `GPT`, `run_gpt`, `evaluate_gpt`,
 
 Module-level `run_gpt(settings, gpt_input_file, ...)` is the one-call version:
 make object → apply `settings` → run.
+
+## Deck variables — what you can set
+
+There is no fixed variable list: the settable set is **whatever the deck declares**. The
+parser (`parsers.parse_gpt_input_file`) strips `#` comments and registers every line of
+the form
+
+```
+name = <literal number>;
+```
+
+into `G.input['variables']` (a `{name: float}` dict) — **inspect that dict to see what a
+given deck exposes.** For the cu_injector template that means knobs like `gun_voltage`,
+`sol_1_current`, `buncher_voltage`, `buncher_phi_rel`, positions like `z_sol`, …
+
+Rules and caveats:
+
+- Only **literal numeric** assignments register. Derived lines (`b = 2*a;`), string
+  assignments, and GPT element calls are not variables — to scan a derived quantity,
+  restructure the deck so the knob is a literal and the derivation references it.
+- An assignment buried after a `)` on the same line still registers (the parser takes the
+  text after the last `)`), but the *first* definition wins when a name repeats.
+- `G.set_variable(name, val)` returns **`False` silently** for an unknown name, and
+  `set_variables(dict)` returns a per-key `{name: bool}` — check the return values; a typo
+  does not raise.
+- Values are written back verbatim into the deck on `write_input()`; units are whatever
+  the deck assumes (GPT decks are unit-convention-free — e.g. cu_injector's `gun_voltage`
+  is in kV by deck convention).
+- Related setters: `set_dist_file(f)` rewrites the `setfile("beam", ...)` line;
+  `set_support_file(old, new)` swaps a field-map path.
+
+**Settings routing in `run_gpt_with_distgen` / `evaluate_*`** (`set_gpt_and_distgen`):
+each `settings` key is tried as a **GPT deck variable first**; if absent it is treated as a
+flat distgen key (`:`-separated path into the YAML tree, with an optional leading
+`distgen:` stripped — so `distgen:n_particle` and `t_dist:sigma_t:value` both work); if
+neither matches, it raises `ValueError`. A name that exists in *both* silently goes to
+GPT only.
+
+## Stat keys — what you can plot
+
+`G.stat(key, data_type)`, `G.plot(y=[...])`, and GPT_tools' `gpt_plot` all accept any key
+that evaluates to a **scalar per dump** on an openPMD-beamphysics `ParticleGroup` (the
+stat is computed on each tout/screen and returned as an array over dumps; see
+`reference/openPMD-beamphysics Documentation/api/particles.md` for the canonical list):
+
+- **Prefix grammar:** `mean_<k>`, `sigma_<k>`, `min_<k>`, `max_<k>`, `ptp_<k>` for any
+  per-particle base key `<k>`, plus covariances `cov_<a>__<b>` (double underscore), e.g.
+  `mean_kinetic_energy`, `sigma_x`, `cov_x__px`.
+- **Base keys `<k>`:** `x y z` [m], `px py pz p` [eV/c], `t` [s], slopes `xp yp`,
+  cylindrical `r theta pr ptheta`, relativistic `gamma`, `beta`, `beta_x/y/z`, `energy`,
+  `kinetic_energy` [eV], angular momentum `Lz`, normalized-coordinate `x_bar px_bar Jx Jy`
+  (likewise y).
+- **Direct scalar keys** (no prefix): `norm_emit_x`, `norm_emit_y`, `norm_emit_4d`,
+  `higher_order_energy_spread`, `charge`, `n_particle`, `n_alive`, `n_dead`,
+  `average_current`.
+- **lume-gpt additions** (handled in `GPT.stat`): `twiss_beta_x`, `twiss_beta_y`,
+  `twiss_alpha_x`, `twiss_alpha_y`; sampled applied fields `mean_/sigma_` of
+  `fEx fEy fEz fBx fBy fBz` (requires `load_fields=True`); spin `mean_/sigma_` of
+  `spinx spiny spinz` and `spin_polarization` (requires `spin_tracking=True`).
+- `data_type` selects the dump family: `'all'`, `'tout'`, `'tout_ccs'`, `'screen'`;
+  `G.units(key)` returns the unit string. The x-axis is itself a stat key — `'mean_z'`
+  for trends along the line, `'mean_t'` for time evolution.
+
+For a **single** dump (phase-space rather than trend plots), use the `ParticleGroup`
+directly — `G.screen[-1].plot('x', 'px')`, `.plot('t', 'kinetic_energy')`,
+`.slice_plot('sigma_x')` — or GPT_tools' `gpt_plot_dist1d`/`gpt_plot_dist2d`, whose
+`ParticleGroupExtension` adds `core_emit_x/y`, `slice_emit_x/y/4d`, `action_x/y`, and
+friends to the same key grammar (see `reference/GPT_tools Documentation/README.md`).
 
 ---
 
@@ -96,9 +164,9 @@ that template *is* the Cornell DC-gun injector front end, with the same
 ## distgen integration (`gpt_distgen.py`)
 
 `run_gpt_with_distgen(settings, gpt_input_file, distgen_input_file, auto_phase=False, ...)`
-runs distgen → writes the GDF beam → runs GPT. `settings` keys are routed automatically:
-keys prefixed `distgen:` (e.g. `distgen:n_particle`) update the distgen YAML tree; bare keys
-set GPT deck variables (`set_gpt_and_distgen`). `evaluate_gpt_with_distgen` /
+runs distgen → writes the GDF beam → runs GPT. `settings` keys are routed automatically by
+`set_gpt_and_distgen` (GPT deck variable first, else distgen flat key, else `ValueError` —
+see *Deck variables* above). `evaluate_gpt_with_distgen` /
 `evaluate_gpt` wrap a run and return a merit dict (`merit.default_gpt_merit`: end emittances,
 sigmas, energy, charge conservation error) for optimizers (e.g. xopt).
 

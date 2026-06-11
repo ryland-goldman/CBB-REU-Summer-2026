@@ -69,8 +69,10 @@ postprocess → merit**, one level above `run_gpt_with_distgen`:
 | `run_gpt_with_THz` / `run_gpt_with_analytic_THz` | Runs inserting a THz interaction kick (below). |
 | `clip_to_charge` / `clip_to_emit` / `radius_including_charge` / `radius_including_emit` | Charge-/emittance-fraction clipping utilities used in merits. |
 
-Settings keys follow the lume-gpt routing convention: `distgen:`-prefixed keys edit the
-distgen YAML tree, bare keys set GPT deck variables.
+Settings keys follow the lume-gpt routing convention (`set_gpt_and_distgen`): each key is
+tried as a GPT deck variable first, else as a `:`-separated distgen flat key (optional
+`distgen:` prefix), else raises — see *Deck variables* in
+`reference/lume-gpt Documentation/README.md`.
 
 ## Screen postprocessing ([GPT_tools/postprocess.py](GPT_tools/postprocess.py))
 

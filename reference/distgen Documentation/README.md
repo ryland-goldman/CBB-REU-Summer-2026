@@ -46,11 +46,11 @@ random_type: hammersley
 total_charge: {value: 10, units: fC}
 start:                      # how particles begin
   type: cathode             # 'cathode' | 'time' | 'free'
-  MTE: {value: 5, units: meV}
+  MTE: {value: 5, units: meV}   # photocathode mean transverse energy → thermal momenta
 r_dist:                     # one <var>_dist block per sampled coordinate
   type: rg                  # radial gaussian
-  sigma_xy: {value: 1.0, units: mm}
-  n_sigma_cutoff: {value: 3.0, units: dimensionless}
+  sigma_xy: {value: 1.0, units: mm}              # σ of x and y individually
+  n_sigma_cutoff: {value: 3.0, units: dimensionless}  # truncate (and renormalize) at 3σ
 t_dist:
   type: sg                  # super-gaussian in time
   sigma_t: {value: 1, units: ps}
@@ -65,12 +65,66 @@ output:
 ```
 
 `start.type` sets the launch convention:
-- **`cathode`** — particles begin on the photocathode plane: forward-hemisphere momenta from
-  `MTE` (Maxwell-Boltzmann transverse-energy sampling) or an explicit photoemission model,
-  emission *time* spread from `t_dist`. GPT output gets cathode-start metadata
-  (`status` handling matches `ParticleGroup` cathode conventions).
-- **`time`** — a bunch at one instant; sample `z` (or use transforms) instead of `t`.
+- **`cathode`** — particles begin on the photocathode plane (z=0): momenta come from `MTE`
+  or an explicit emission model (below), emission *time* spread from `t_dist`; any
+  user-supplied `z_dist`/`px_dist`/`py_dist`/`pz_dist` is ignored with a warning. GPT
+  output gets cathode-start metadata (`status` handling matches `ParticleGroup` cathode
+  conventions).
+- **`time`** — a bunch at one instant; sample `z` (or use transforms) instead of `t`
+  (`t_dist` is ignored).
 - **`free`** — fully explicit: every coordinate from its own dist.
+
+## Key parameters explained
+
+**`MTE` — Mean Transverse Energy** (an energy quantity, typically meV). The standard
+figure of merit for a photocathode's intrinsic momentum spread. With `start: cathode` and
+no explicit momentum model, distgen assumes thermal (Maxwell-Boltzmann-style) emission: it
+builds an isotropic Gaussian momentum distribution with per-component spread
+
+> σ_p = √(mc² · MTE)  [eV/c], applied identically to px, py, pz,
+
+then keeps only the forward hemisphere (`pz → |pz|`, `generator.py` "fixing pz momenta to
+forward hemisphere"). The resulting intrinsic normalized emittance is
+ε_n,x = σ_x·√(MTE/mc²) — e.g. MTE = 5 meV (a cold cathode, as in the examples) gives
+≈0.1 µm per mm of laser spot σ; a thermionic cathode at temperature T has MTE ≈ kT
+(~100 meV at 1160 K). Instead of `MTE` you may supply **exactly one** explicit emission
+model (`ALLOWED_CATHODE_DISTS`): a `p_dist` (total-momentum magnitude, paired with
+`uniform_theta`/`uniform_phi` angle dists), a `KE_dist` (kinetic energy, e.g. `mbe`
+Maxwell-Boltzmann), or a `p_polar_angle_dist`; the `fd3sb` Fermi-Dirac three-step-barrier
+model replaces the MTE assumption with a photoemission calculation parameterized by photon
+energy, work function, and Fermi energy.
+
+**`n_sigma_cutoff`** (dimensionless) — truncates a Gaussian-family dist at ±N·σ about the
+mean and renormalizes the PDF (a truncated normal, kept analytic — not rejection
+sampling). Asymmetric cuts use `n_sigma_cutoff_left`/`n_sigma_cutoff_right` (mutually
+exclusive with the symmetric form). Omitting it means an **untruncated** Gaussian — with
+the quasirandom `hammersley` sampler the CDF is filled evenly all the way into the tails,
+so production inputs normally set a cutoff (3–5) to keep halo bounded. For radial
+Gaussians (`rg`) the cut is one-sided in radius (r from 0 to N·σ unless a left cut is
+given).
+
+**Radial-dist conventions** — `r_dist` types parameterize the 2D round beam, not the 1D
+marginal: `sigma_xy` is the σ that x and y *each* end up with (for `rg`, ⟨r²⟩ = 2σ_xy²).
+`NormRad` truncation can be given as `n_sigma_cutoff`, as an absolute
+`truncation_radius` (+`_left`/`_right`), or as `truncation_fraction` + `truncation_radius`
+— the clipped-Gaussian convention where the density at the aperture edge is the given
+fraction f of the peak (distgen back-solves σ = R·√(1/(2·ln(1/f))); mutually exclusive
+with `sigma_xy`).
+
+**`super_gaussian` shape** — set the power with `p` ∈ [1, ∞) *or* `alpha` ∈ [0, 1]
+(α = 1/p: α=1 is an ordinary Gaussian, α→0 a hard flat-top), and the length scale with
+`sigma_<var>` *or* `lambda` (one of each pair, never both). Useful for realistic
+laser temporal/spatial profiles between Gaussian and flat-top.
+
+**Parameter naming rule** — 1D dist parameters are suffixed with the variable being
+sampled: `sigma_t`/`avg_t` in `t_dist`, `sigma_px` in `px_dist`, etc. Radial dists use
+`sigma_xy`; 2D dists name both variables. Each dist class declares
+`required_params`/`optional_params` and rejects anything unrecognized, so typos fail
+loudly at parse time.
+
+**`total_charge` and weights** — macroparticles are equal-weight: `weight =
+|total_charge|/n_particle` [C], with the species charge sign applied internally. The
+weights drive every statistic and the output writers' per-particle charge columns.
 
 Relative `file:` paths inside dist blocks are expanded against the input file's directory
 (`parsing.expand_input_filepaths`).
