@@ -7,7 +7,9 @@ This is the second stage of the Cornell Linac chain modelled in WarpX. Stage 1
 limit; here we take its emitted electrons and track them through the gun's
 electrostatic accelerating field — the `CESR_gun.gdf` map scaled to 150 kV by
 `build_gun_field.py` and applied as an external (electrode) field on the
-particles, while WarpX's electrostatic solver supplies the beam self-field.
+particles, while WarpX's electromagnetostatic solver supplies the beam self-field
+(electrostatic E plus the self magnetic B from the beam current, so the
+relativistic magnetic pinch is included).
 
 Geometry is RZ (cylindrical), matching the gun field map's native symmetry.
 
@@ -164,21 +166,38 @@ def main():
         lower_bound=[0.0, 0.0],
         upper_bound=[RMAX, ZMAX],
         # r=0 must be "none" (axis); the electrode field is applied externally, so
-        # the self-field Poisson solve just needs grounded z plates (dirichlet) with
-        # a zero-normal-field (neumann) outer radial wall.
+        # the self-field solve just needs grounded z plates (dirichlet). The outer
+        # radial wall is also dirichlet (grounded pipe at r=RMAX=15 mm, well outside
+        # the r≲8 mm beam): the electromagnetostatic solver also does a vector-Poisson
+        # solve for A, and the dominant A_z component (driven by the beam's j_z) would
+        # have an all-Neumann, singular operator — and the MLMG bottom solve diverges —
+        # if the outer wall were neumann; the dirichlet wall makes A_z well-posed.
         lower_boundary_conditions=["none", "dirichlet"],
-        upper_boundary_conditions=["neumann", "dirichlet"],
+        upper_boundary_conditions=["dirichlet", "dirichlet"],
         lower_boundary_conditions_particles=["none", "absorbing"],
         upper_boundary_conditions_particles=["absorbing", "absorbing"],
         warpx_blocking_factor=8,
     )
 
-    # Electrostatic solver for the beam self-field only.
+    # Electromagnetostatic solver for the beam self-field. In addition to the
+    # electrostatic Poisson solve (∇²φ = -ρ/ε₀, E = -∇φ), warpx_magnetostatic=True
+    # also solves the Coulomb-gauge vector potential from the beam current
+    # (∇²A = -μ₀ j, B = ∇×A), so the self magnetic field is included. This supplies
+    # the relativistic magnetic-pinch term qβ×B that partially cancels the radial
+    # space-charge repulsion — the net transverse self-force is qE_r/γ² rather than the
+    # pure-electrostatic qE_r (the ≈γ²=1.66× over-repulsion at the 146 keV exit the
+    # plain labframe solver incurs). The magnetostatic MLMG solve is given the same
+    # REQUIRED_PRECISION / MAX_ITERS knobs as the electrostatic solve via the explicit
+    # warpx_magnetostatic_required_precision / warpx_magnetostatic_max_iters params.
     solver_kw = dict(grid=grid, method="Multigrid",
                      required_precision=REQUIRED_PRECISION,
-                     warpx_self_fields_verbosity=0)   # silence MLMG per-iteration chatter
+                     warpx_magnetostatic=True,
+                     warpx_magnetostatic_required_precision=REQUIRED_PRECISION,
+                     warpx_self_fields_verbosity=0,           # silence ES MLMG per-iteration chatter
+                     warpx_magnetostatic_verbosity=0)         # and the magnetostatic solve
     if MAX_ITERS:                                     # omit when None → PICMI default
         solver_kw["maximum_iterations"] = MAX_ITERS
+        solver_kw["warpx_magnetostatic_max_iters"] = MAX_ITERS
     solver = picmi.ElectrostaticSolver(**solver_kw)
 
     # ── Applied gun field: the scaled CESR_gun.gdf map, read from file ────────

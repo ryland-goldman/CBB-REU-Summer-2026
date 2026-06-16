@@ -7,8 +7,11 @@ accelerating structure modelled in Adam Bartnik's Linac GUI with the Poisson–S
 map `CESR_gun.gdf` (the "Chili Gun Mk II", ~150 kV).
 
 The gun field is applied as an external **electrode field** on the particles; WarpX's
-electrostatic solver supplies the self-consistent beam **space charge** on top. Geometry is
-**RZ (cylindrical)**, matching the field map's native symmetry.
+**electromagnetostatic** solver supplies the self-consistent beam **space charge** on top —
+both the electrostatic self-field (∇²φ = −ρ/ε₀) and, from the beam current, the self
+**magnetic** field (Coulomb-gauge ∇²A = −μ₀j, B = ∇×A), so the relativistic magnetic pinch is
+included (see *Space-charge model* below). Geometry is **RZ (cylindrical)**, matching the field
+map's native symmetry.
 
 ## Pipeline
 
@@ -126,20 +129,35 @@ beam is treated as a single injected bunch.
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
 | grid | 96 (r) × 384 (z), r ∈ [0, 15 mm], z ∈ [0, 51.77 mm] |
-| solver | electrostatic, lab frame, Multigrid (self-field only) |
+| boundaries (fields) | axis at r=0; **dirichlet** (grounded) outer radial wall + both z plates |
+| solver | electromagnetostatic, lab frame, Multigrid (self E **and** B from beam current) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
 | bunch | 1 nC, imported cathode phase space, ~133k macroparticles (optionally capped by `MAX_PART`, reweighted) |
 | time step | `dt = CFL·Δz/v_exit` (`CFL`=0.4; v_exit ≈ 0.63 c at 150 keV) |
 | duration | `TRANSIT_MARGIN`×gun-transit time (=1.15; bunch average speed ≈ `AVG_SPEED_FRAC`·v_exit, =0.6), or fixed via `MAX_STEPS`; stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
 
-The lab-frame electrostatic solver is non-relativistic in its self-field treatment: it applies
-the rest-frame Coulomb field `qE_r` with no magnetic-pinch cancellation, whereas the true net
-transverse force is `qE_r/γ²`. At the gun exit (146 keV, γ ≈ 1.29) this **overestimates the
-transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** — ramping from a few % near the
-cathode (10 keV) to ~66 % at exit. (The genuine fix is WarpX's relativistic ES mode, out of
-scope for this single-pass demo; the same caveat applies, but shrinks, in the more relativistic
-injector/linac stages — see those READMEs.) Acceptable for the demo, but note it if pushing
-to higher voltage or interpreting the absolute σ_x / emittance.
+### Space-charge model — electromagnetostatic self-field
+
+The self-field uses WarpX's **lab-frame electromagnetostatic** solver (`warpx_magnetostatic=True`
+on the PICMI `ElectrostaticSolver`): on top of the electrostatic Poisson solve (∇²φ = −ρ/ε₀,
+**E** = −∇φ) it also solves the Coulomb-gauge vector potential from the beam current
+(∇²**A** = −μ₀**j**, **B** = ∇×**A**), so the beam's **self magnetic field** is included. The
+resulting magnetic-pinch force `qβ×B` partially cancels the radial electric repulsion, giving the
+correct relativistic net transverse self-force `qE_r/γ²` rather than the pure-electrostatic `qE_r`.
+At the gun exit (146 keV, γ ≈ 1.29) the plain labframe-electrostatic solver would **overestimate
+the transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** (ramping from a few % near the
+cathode at 10 keV to ~66 % at exit); the electromagnetostatic solver removes that error
+self-consistently. (WarpX's per-species *relativistic* ES mode is an alternative for a single
+drifting species; the electromagnetostatic mode generalizes to multi-velocity beams.)
+
+The magnetostatic vector-Poisson solve reuses the `REQUIRED_PRECISION` / `MAX_ITERS` knobs (passed
+explicitly as `warpx_magnetostatic_required_precision` / `warpx_magnetostatic_max_iters`). It adds
+a 3-component MLMG solve per step, so the run is **≈2× slower** than the electrostatic-only gun
+(~80 s vs ~40 s at the default grid). **Boundary requirement:** the outer radial wall is
+`dirichlet` (not `neumann`) — the `A_z` component (driven by the dominant beam current `j_z`)
+would otherwise have an all-Neumann singular operator and the MLMG bottom solve **diverges**
+(`MLMG failed`). Grounding the pipe at r = 15 mm — well outside the r ≲ 8 mm beam — makes it
+well-posed; the headline exit energy is unchanged (146 keV) and transmission is ~81 %.
 
 ## Figures (`results/`)
 
