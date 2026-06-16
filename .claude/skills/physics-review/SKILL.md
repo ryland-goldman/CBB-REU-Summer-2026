@@ -30,6 +30,7 @@ State the chosen scope in one line before proceeding.
 - Agent teams must be enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). If team creation fails with a "not enabled" error, stop and tell the user to add it to `~/.claude/settings.json` `env` and restart.
 - Read `CLAUDE.md` and the `README.md` of every in-scope stage (plus immediate neighbors) before spawning the team, per the repo's read-aggressively rule. Teammates load `CLAUDE.md` automatically but **not** your conversation history — put stage-specific context in each spawn prompt.
 - Only one team can exist at a time; if a prior team is still running, clean it up first.
+- Instruct teammates to not run the simulation code in full, however they may execute small snippets to debug or explore results. For larger-scale interrogation, they should report to the team lead (who has execution privileges).
 
 ---
 
