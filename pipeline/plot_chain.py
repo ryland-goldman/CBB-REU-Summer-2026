@@ -35,8 +35,10 @@ PHYSICS / UNITS NOTES (reviewer-flagged):
     (gun/injector downsample-reweight), so panel (5) shows WITHIN-stage transmission and the
     waterfall stitches the true end-to-end chain via the recorded denominators.
   - Lab-frame ES self-field overestimates transverse space charge by ~γ² (≈1.66× at β≈0.7);
-    the injector/linac σ_x and capture numbers are conservative (pessimistic) — noted on the
-    panels.
+    this applies to the **injector/linac** stages (still lab-frame ES, and SC-dominant), whose
+    σ_x and capture numbers are therefore conservative (pessimistic) — noted on the panels. The
+    GUN is the exception: it uses the electromagnetostatic solver (self-B pinch ⇒ net qE_r/γ²),
+    so it carries no γ² overestimate.
 """
 
 import os

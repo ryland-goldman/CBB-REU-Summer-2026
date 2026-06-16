@@ -129,28 +129,50 @@ original LinacSim GPT deck emits it that way via `settdist("beam","F",…,"t",�
 - **`"timed"` (default — the realistic representation).** The imported macroparticles are
   released over `PULSE_WIDTH` (=2 ns) by a per-step `installbeforestep` injection callback
   (`ParticleContainerWrapper.add_particles`), so only the fraction of charge already emitted
-  is present at any instant — the physical low line-density. This is the WarpX counterpart of
-  GPT's native time-release and of the cross-code benchmark's `warpx_tr.py`.
+  is present at any instant — the physical low line-density. This reproduces the *mechanism* of
+  GPT's native time-release (`settdist`) and the cross-code benchmark's `warpx_tr.py`. It does
+  **not** reproduce the pulse *profile*: emission times are drawn uniformly (flat-top), whereas
+  the real 2 ns pulse has ~30 V/ns edge ramps (`cathode_master.in` `Vp=30`) that emit less at
+  the edges; the dominant correction is the line-density drop, not the edge shape, but the
+  trapezoidal profile is not modelled. The cathode run is a *stationary* DC emitter with no
+  per-particle birth time, so every release time carries the **same** steady-state cathode phase
+  space — a DC line-density reconstruction, not a resolved emission history.
 - **`"snapshot"`.** All 1 nC is present at t=0, initially crammed into the ~0.2 mm cathode-exit
-  z-extent — a line-charge density orders of magnitude above the real 2 ns beam. It
-  **over-states the space-charge force**: the WarpX–GPT benchmark put the beam-representation
-  effect at ~28 % on emittance, and here the over-dense snapshot additionally blows ~19 % of
-  the beam off as halo (transmission ≈ 81 % vs ≈ 100 % for the same grid/charge time-released).
-  Kept for speed and back-compat only — it is **not** a realistic operating point.
+  z-extent — a line-charge density orders of magnitude above the real 2 ns beam, which
+  **over-states the space-charge force.** Two consequences are *confounded* here and should not
+  be read as one clean number: the over-dense snapshot both (a) inflates emittance (the WarpX–GPT
+  benchmark's *controlled* beam-representation term is ~28 % on a matched core) **and** (b) blows
+  the high-amplitude halo to the pipe wall, so the snapshot loses ~19 % of the beam that the
+  time-released run keeps (transmission ≈ 81 % snapshot vs ≈ 100 % timed, same grid/charge).
+  Because the two modes' εn,x are then computed on *different* particle sets (timed keeps the
+  halo snapshot scrapes), their raw εn,x difference is **not** a clean measure of the
+  space-charge over-statement — the controlled benchmark number is. Snapshot is kept for speed
+  and back-compat only — it is **not** a realistic operating point.
 
 **Exit-beam handoff (timed mode).** The released beam's ballistic z-extent
-(~v_exit·`PULSE_WIDTH` ≈ 0.38 m) is many times the 51.77 mm gun domain, so no single
-volumetric snapshot can hold it. `build_exit_handoff()` reconstructs the full exit beam the
-same way `pipeline/collimator.py` tracks the iris scrape — by particle **id** across the
-volumetric dumps: each macroparticle's last appearance is found, particles last seen at the
-pipe wall (`r ≥ RMAX`) are dropped as radial loss, and the rest are drifted ballistically to a
-common reference time (rebuilding one consistent snapshot, head downstream / tail at the
-entrance). The result is written to `gun/diags/handoff` as openPMD (via
+(~v_exit·`PULSE_WIDTH` ≈ 0.4 m) is many times the gun domain, so no single volumetric snapshot
+can hold it. `build_exit_handoff()` reconstructs the full exit beam by particle **id** across
+the volumetric dumps (the `pipeline/collimator.py` idiom), sampling each particle in the
+**field-free pad past the field map** (z ≥ `ZMAX_FIELD`): its first appearance there is its
+exit-plane phase space, and a ballistic drift to a common reference time then rebuilds one
+consistent snapshot (head downstream / tail at the entrance, matching the injector's
+`z − z.min() + Z_INJECT`). Sampling in the **field-free** pad — not at the particle's last
+in-field dump — is essential: a field-free drift preserves εn,x, but drifting a still-in-field
+particle as if field-free manufactures a spurious x–u correlation and inflates εn,x ~8× (the
+reason the domain carries the `ZPAD` drift pad). Note εn,x of the reconstructed *instantaneous*
+beam is the **projected** emittance of the ~0.4 m drifting bunch (head drifted longer than tail):
+≈ 45 mm·mrad, physically ~8× the **per-slice** beam quality (≈ 5.7 mm·mrad, the steady-state
+plateau in `beam_envelope.png`, flat through the exit and into the pad — confirming the drift
+preserves per-slice εn,x). That head–tail projection is real (an instantaneous diagnostic of the
+2 ns beam would measure it), not an artifact; the injector's prebunchers compress the beam
+longitudinally and recover it. Do **not** read the 45 mm·mrad handoff number as the beam quality. Particles that never reach the pad are classified as a
+radial (`r=RMAX`) loss or, for the last sliver of the pulse, an un-flushed tail (run ends first,
+~2 %), and counted. The result is written to `gun/diags/handoff` (openPMD via
 `pipeline.impact_io.write_openpmd_particles`); the injector's `load_gun_bunch` reads it when
-present, else falls back to the volumetric `gun/diags/particles` (legacy snapshot). **Caveat:**
-the injector's prebuncher phases were tuned against the compact snapshot handoff, so the longer
-timed beam shifts its operating point and should be re-validated (the LinacSim
-input-reconciliation backlog) — the handoff is wired, the re-tuning is a follow-up.
+present, else the volumetric `gun/diags/particles` (legacy snapshot). **Caveat:** the injector's
+prebuncher phases were tuned against the compact snapshot handoff, so the longer timed beam
+shifts its operating point and should be re-validated (the LinacSim input-reconciliation
+backlog) — the handoff is wired, the re-tuning is a follow-up.
 
 **Approximations.** The cathode model is a 2D Cartesian slab, not RZ, so the slab→radius
 remap is an approximation: the `r`-importance resample (step 2) makes the **areal density**
@@ -163,7 +185,7 @@ beam is treated as a single injected bunch.
 | parameter | value |
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
-| grid | 128 (r) × 512 (z), r ∈ [0, 15 mm], z ∈ [0, 51.77 mm] (finer than the old 96×384 to resolve the near-cathode dynamics — see *Cross-code validation*) |
+| grid | 128 (r) × 712 (z), r ∈ [0, 15 mm], z ∈ [0, 71.77 mm] = field map (`ZMAX_FIELD`=51.77 mm) + `ZPAD`=20 mm field-free drift pad; dz≈0.10 mm (finer than the old 96×384 to resolve the near-cathode dynamics, and padded so the exit beam is sampled in field-free space — see *Cross-code validation* and *Beam source*) |
 | boundaries (fields) | axis at r=0; **dirichlet** (grounded) outer radial wall + both z plates |
 | solver | electromagnetostatic, lab frame, Multigrid (self E **and** B from beam current) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
@@ -188,12 +210,18 @@ drifting species; the electromagnetostatic mode generalizes to multi-velocity be
 
 The magnetostatic vector-Poisson solve reuses the `REQUIRED_PRECISION` / `MAX_ITERS` knobs (passed
 explicitly as `warpx_magnetostatic_required_precision` / `warpx_magnetostatic_max_iters`). It adds
-a 3-component MLMG solve per step, so the run is **≈2× slower** than the electrostatic-only gun
-(~80 s vs ~40 s at the default grid). **Boundary requirement:** the outer radial wall is
+a 3-component MLMG solve per step, so it is **≈2× slower per step** than an electrostatic-only
+gun. (Absolute runtime is dominated by the `timed` default — full pulse + the finer 128×712
+padded grid run in minutes, not the old ~80 s; use `BEAM_RELEASE="snapshot"` and a coarser grid
+for a quick check.) **Boundary requirement:** the outer radial wall is
 `dirichlet` (not `neumann`) — the `A_z` component (driven by the dominant beam current `j_z`)
 would otherwise have an all-Neumann singular operator and the MLMG bottom solve **diverges**
 (`MLMG failed`). Grounding the pipe at r = 15 mm — well outside the r ≲ 8 mm beam — makes it
-well-posed; the headline exit energy is unchanged (146 keV) and transmission is ~81 %.
+well-posed (it also models φ as a grounded conductor rather than a Neumann mirror, physically
+the real beampipe); the headline exit energy is unchanged (146 keV). Transmission depends on the
+beam representation: ≈ 81 % for the over-dense `snapshot` beam (halo blown to the wall), ≈ 100 %
+for the realistic `timed` release (the low line-density beam barely diverges) — see *Beam
+representation*.
 
 ### Cross-code validation (WarpX vs GPT)
 
@@ -213,7 +241,8 @@ the physics choices this stage makes:
   image that adds to it (a +12 % error in the benchmark). This stage's z = 0 plate is dirichlet.
 - **Grid must resolve the near-cathode dynamics.** εn,x falls and only converges once the grid
   is fine enough near the cathode (the benchmark converged by nz ≈ 720 over 55 mm); the old
-  nz = 384 over 51.77 mm sat on the unconverged side, so the grid here is **128 × 512**.
+  nz = 384 over 51.77 mm sat on the unconverged side, so the grid here is **128 × 712** (over
+  the 71.77 mm field-free-padded domain; dz≈0.10 mm).
 - **Match the beam representation.** The benchmark's single largest term (~28 %) is snapshot vs
   time-release — implemented here as `BEAM_RELEASE` (see *Beam source*).
 

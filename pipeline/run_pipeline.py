@@ -89,9 +89,15 @@ linac_rest.config(POWER_MW=11.0)                      # one power convention acr
 
 # ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
 #    reason the injector NZ must stay at 1664: see pipeline/README.md § Configuration. ──
-# Balanced profile: ACTIVE (~1.7×, ~5 min). Comment these 3 lines for the baseline.
+# Balanced profile: ACTIVE. Comment these 3 lines for the baseline. NOTE: the gun now defaults
+# to the realistic time-release beam (BEAM_RELEASE="timed") over the full 2 ns pulse on a
+# field-free-padded grid, plus the ~2×-per-step electromagnetostatic self-field — so the GUN
+# dominates the chain runtime (several minutes) regardless of this profile. nz=384 here is a
+# Balanced resolution over the padded 71.77 mm domain (dz≈0.19 mm); the default is 712. For a
+# quick smoke run use gun.config(BEAM_RELEASE="snapshot") (NOT realistic — over-states space
+# charge) and/or a coarser nz.
 cathode.config(PPC=6, REQUIRED_PRECISION=3e-5)
-gun.config(nz=256, MAX_PART=50000, REQUIRED_PRECISION=1e-4)
+gun.config(nz=384, MAX_PART=50000, REQUIRED_PRECISION=1e-4)
 injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
 # Conservative (~1.3×, near-identical):
 # gun.config(MAX_PART=80000, REQUIRED_PRECISION=1e-4)

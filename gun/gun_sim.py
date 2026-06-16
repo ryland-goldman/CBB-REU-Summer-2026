@@ -38,13 +38,15 @@ grid pulse (cathode_master.in `twidth=2`), four gun-transit-times long, so the p
 beam is a long, low-density quasi-DC stream — the original GPT deck emits it that way via
 `settdist(...,"t",...)`. Releasing the whole bunch at one instant ("snapshot") instead
 over-concentrates the charge and over-states the space-charge force (the WarpX–GPT
-150 kV-gun cross-code benchmark in CornellMisc/.../bench/writeup measured this beam-
-representation effect at ~28 % on emittance; here the over-dense snapshot also blows ~19 %
-of the beam off as halo it would otherwise keep). We therefore release the imported
-macroparticles over `PULSE_WIDTH` via a per-step injection callback (the benchmark's
-warpx_tr.py technique), and reconstruct the full ~2 ns exit beam for the injector by id-
-tracking it across the exit plane (`build_exit_handoff`). "snapshot" is kept for speed and
-back-compat. See README → *Beam source* for the handoff and the injector-retuning caveat.
+150 kV-gun cross-code benchmark in CornellMisc/.../bench/writeup put the *controlled* beam-
+representation term at ~28 % on emittance; here the over-dense snapshot ALSO blows the halo to
+the wall — ≈81 % vs ≈100 % transmission — so the two modes' raw εn,x are computed on different
+particle sets and their difference is confounded, see README). We release the imported
+macroparticles over `PULSE_WIDTH` (uniform/flat-top — the real pulse has 30 V/ns edge ramps,
+not modelled) via a per-step injection callback (the benchmark's warpx_tr.py technique), and
+reconstruct the full exit beam for the injector by id-tracking it through the field-free pad
+past the field map (`build_exit_handoff`). "snapshot" is kept for speed and back-compat. See
+README → *Beam source* for the handoff and the injector-retuning caveat.
 """
 
 import os
@@ -66,7 +68,18 @@ ep0 = picmi.constants.ep0
 GUN_FIELD = "gun/gun_field/gun_E.h5"
 GUN_VOLTAGE = 150.0e3        # [V]
 RMAX = 0.015                 # field-map R extent [m]
-ZMAX = 0.051765              # field-map Z extent [m]
+ZMAX_FIELD = 0.051765        # field-map Z extent [m] — the gun field ends here (Ez→0 at the
+                             # map edge, verified) and is the physical exit plane.
+# The RZ DOMAIN extends a field-free drift pad past the field map. WarpX zero-fills the
+# applied field beyond the map (verified), so z ∈ (ZMAX_FIELD, ZMAX] is a field-free drift.
+# This pad is REQUIRED by the timed-mode exit-beam reconstruction: build_exit_handoff samples
+# each particle AFTER it clears the field, in field-free space, where the drift-to-a-common-
+# time is emittance-preserving. Without the pad the domain ended exactly at the field map, so
+# the reconstruction drifted still-in-field particles as if field-free and inflated εn,x ~8×
+# (physics-review CRITICAL). ZPAD ≥ one inter-dump z-step (≈ v_exit·run_time/N_DIAGS ≈ 13 mm)
+# so every exiting particle is caught in ≥1 field-free dump before it leaves the domain.
+ZPAD = 0.020                 # field-free drift pad past the field map [m]
+ZMAX = ZMAX_FIELD + ZPAD     # full RZ domain z-extent [m]
 
 CATHODE_DIAG = "cathode/diags/particles"
 BUNCH_CHARGE = 1.0e-9        # renormalized gun bunch charge [C] = 1 nC, matching the
@@ -98,12 +111,13 @@ HANDOFF_DIR = "gun/diags/handoff"   # timed mode reconstructs the full released 
                              # dumps) for the injector; snapshot mode leaves it absent.
 
 # ── Grid (RZ, single azimuthal mode — the gun field is m = 0) ─────────────────
-# 128×512 (was 96×384): the WarpX–GPT 150 kV-gun cross-code benchmark
+# 128 (r) × 712 (z): the WarpX–GPT 150 kV-gun cross-code benchmark
 # (CornellMisc/.../bench/writeup) found εn,x falls ~4 % and only converges once the
 # grid resolves the near-cathode dynamics (their RZ study converged by nz≈720 over
-# 55 mm); the old nz=384 over 51.77 mm (dz≈135 µm) sat on the unconverged side. The
-# 1.33× refinement keeps the gun's near-isotropic cell aspect (dz/dr≈0.86).
-nr, nz = 128, 512            # divisible by the blocking factor (8)
+# 55 mm); the old nz=384 over 51.77 mm (dz≈135 µm) sat on the unconverged side. nz=712
+# over the padded 71.77 mm domain keeps dz≈101 µm (near-isotropic dz/dr≈0.86) across
+# BOTH the field region and the field-free pad (uniform grid).
+nr, nz = 128, 712            # divisible by the blocking factor (8)
 
 # ── Diagnostics output directory ──────────────────────────────────────────────
 DIAG_DIR = "gun/diags"
@@ -220,21 +234,26 @@ def build_exit_handoff():
     """Reconstruct the full time-released exit beam and write it for the injector.
 
     Time-release makes the gun beam a ~2 ns quasi-DC stream whose ballistic z-extent
-    (~v_exit·PULSE_WIDTH ≈ 0.38 m) is many times the 51.77 mm gun domain, so no single
-    volumetric snapshot can hold the whole released beam. We instead reconstruct it from
-    the volumetric dumps the same way `pipeline/collimator.py` tracks the iris scrape —
-    by particle **id** across dumps:
+    (~v_exit·PULSE_WIDTH ≈ 0.4 m) is many times the gun domain, so no single volumetric
+    snapshot can hold the whole released beam. We reconstruct it from the volumetric dumps
+    by particle **id** (the `pipeline/collimator.py` idiom), sampling each particle in the
+    FIELD-FREE pad past the field map so the reconstruction is emittance-correct:
 
-      1. For each macroparticle, find its LAST appearance (latest dump it is present in).
-      2. A particle last seen near the outer radial wall (r ≥ RMAX − tol) was scraped by
-         the pipe → dropped. Everything else left (or is leaving) through the z = ZMAX
-         exit plane → kept.
-      3. Drift every kept particle ballistically (field-free, past the map end) to a common
-         reference time t_ref = max last-appearance time, rebuilding one consistent
-         snapshot: early-emitted → exited early → drifted furthest → the bunch HEAD
-         (largest z); last-emitted → still at ZMAX → the TAIL. This matches the injector's
-         `z − z.min() + Z_INJECT` (tail at the entrance) convention and is the same
-         drift-to-a-common-reference the cross-code benchmark uses to read εn,x.
+      1. For each id, find its FIRST appearance with z ≥ ZMAX_FIELD — i.e. just after it
+         clears the gun field into the field-free pad. Its (x, u) there IS the exit-plane
+         phase space (the field is ≈0 beyond ZMAX_FIELD). Sampling in the pad — NOT at the
+         particle's last in-field dump — is the fix for the εn,x inflation: a field-free
+         ballistic drift preserves εn,x, but drifting a still-in-field particle as if
+         field-free manufactures a spurious x–u correlation (physics-review CRITICAL).
+      2. An id that NEVER reaches z ≥ ZMAX_FIELD did not exit: if it is still present in the
+         final dump it is the un-flushed tail (run ended first); otherwise it was absorbed
+         before the pad, i.e. scraped at the r = RMAX wall (the only other boundary) → a
+         radial loss. Both are dropped and counted (this correctly identifies losses — the
+         old r-at-last-dump test was a no-op because absorbed particles vanish at r<RMAX).
+      3. Drift the kept (field-free) samples to a common reference time t_ref = max sample
+         time — all motion is field-free so εn,x is preserved. early-emitted → exited
+         early → drifted furthest → bunch HEAD (largest z); last-emitted → z≈ZMAX_FIELD →
+         TAIL, matching the injector's `z − z.min() + Z_INJECT` (tail at the entrance).
 
     Writes an openPMD particle dump to HANDOFF_DIR via `pipeline.impact_io`. The injector's
     `load_gun_bunch` reads HANDOFF_DIR when present (else the volumetric snapshot).
@@ -243,16 +262,15 @@ def build_exit_handoff():
     from pipeline.impact_io import write_openpmd_particles
 
     MC2_EV = 510998.95069
-    r_tol = 2.0 * (RMAX / nr)        # within ~2 radial cells of the pipe ⇒ radial loss
     pdir = os.path.join(DIAG_DIR, "particles")
     ts = OpenPMDTimeSeries(pdir)
     if len(ts.iterations) == 0:
         print("  handoff: no volumetric dumps to reconstruct from — skipped", flush=True)
         return
 
-    # Stack every (id, dump) row, then keep each id's LAST appearance (latest dump time).
-    # Vectorized so the ~Npart×Ndumps rows never hit a Python-level loop.
+    # Stack every (id, dump) row. Vectorized so the ~Npart×Ndumps rows never hit a loop.
     cols = {k: [] for k in ("id", "t", "x", "y", "z", "ux", "uy", "uz", "w")}
+    final_it = ts.iterations[-1]
     for it, t_dump in zip(ts.iterations, ts.t):
         idp, x, y, z, ux, uy, uz, w = ts.get_particle(
             ["id", "x", "y", "z", "ux", "uy", "uz", "w"],
@@ -266,28 +284,38 @@ def build_exit_handoff():
         print("  handoff: no particles tracked — skipped", flush=True)
         return
     cat = {k: np.concatenate(v) for k, v in cols.items()}
-    # Sort by (id, t); the last row of each id-group is its last appearance.
-    order = np.lexsort((cat["t"], cat["id"]))
-    sid = cat["id"][order]
-    keep_last = np.empty(sid.size, dtype=bool)
-    keep_last[-1] = True
-    keep_last[:-1] = sid[1:] != sid[:-1]           # True where the id changes (group end)
-    pick = order[keep_last]
-    t_last = cat["t"][pick]
+    n_ids = np.unique(cat["id"]).size
+
+    # First appearance in the FIELD-FREE pad (z ≥ ZMAX_FIELD) per id: restrict to pad rows,
+    # sort by (id, t), take the earliest-t row of each id-group.
+    pad = np.where(cat["z"] >= ZMAX_FIELD)[0]
+    if pad.size == 0:
+        print("  handoff: no particle reached the field-free pad (z ≥ "
+              f"{ZMAX_FIELD*1e3:.1f} mm) — run longer? skipped", flush=True)
+        return
+    order = np.lexsort((cat["t"][pad], cat["id"][pad]))
+    sid = cat["id"][pad][order]
+    first = np.empty(sid.size, dtype=bool)
+    first[0] = True
+    first[1:] = sid[1:] != sid[:-1]                # True at each id-group start (earliest t)
+    pick = pad[order[first]]
+    t_s = cat["t"][pick]
     x, y, z = cat["x"][pick], cat["y"][pick], cat["z"][pick]
     ux, uy, uz, w = cat["ux"][pick], cat["uy"][pick], cat["uz"][pick], cat["w"][pick]
-    r = np.hypot(x, y)
-    kept = r < (RMAX - r_tol)                       # else: scraped at the pipe wall
-    n_lost = int((~kept).sum())
-    t_last, x, y, z, ux, uy, uz, w = (a[kept] for a in (t_last, x, y, z, ux, uy, uz, w))
-    if x.size == 0:
-        print("  handoff: every tracked particle hit the pipe wall — skipped", flush=True)
-        return
+    n_exit = pick.size
 
-    # Ballistic drift to the common reference time t_ref = max(t_last).
+    # Classify the ids that never reached the pad: still in the final dump → un-flushed tail;
+    # else absorbed before the pad → radial (r=RMAX) loss.
+    exited_ids = set(cat["id"][pick].tolist())
+    final_ids = set(cat["id"][cat["t"] == ts.t[-1]].tolist()) if len(ts.t) else set()
+    not_exited = [i for i in np.unique(cat["id"]).tolist() if i not in exited_ids]
+    n_unflushed = sum(1 for i in not_exited if i in final_ids)
+    n_radial = len(not_exited) - n_unflushed
+
+    # Ballistic drift of the field-free samples to a common reference time t_ref = max(t_s).
     gamma = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)
     vx, vy, vz = (c * ux / gamma, c * uy / gamma, c * uz / gamma)
-    dtau = t_last.max() - t_last
+    dtau = t_s.max() - t_s
     xh, yh, zh = x + vx * dtau, y + vy * dtau, z + vz * dtau
 
     pg = ParticleGroup(data=dict(
@@ -301,8 +329,9 @@ def build_exit_handoff():
     if os.path.isdir(HANDOFF_DIR):
         shutil.rmtree(HANDOFF_DIR)
     write_openpmd_particles(pg, HANDOFF_DIR, iteration=0, time=0.0)
-    print(f"  handoff: {xh.size} exit-beam macroparticles "
-          f"({pg.charge*1e9:.3f} nC, {n_lost} scraped at the pipe), "
+    print(f"  handoff: {n_exit}/{n_ids} macroparticles cleared the field "
+          f"({pg.charge*1e9:.3f} nC, transmission {100*n_exit/n_ids:.0f}%; "
+          f"{n_radial} radial loss, {n_unflushed} un-flushed), "
           f"z-extent {(zh.max()-zh.min())*1e3:.0f} mm → {HANDOFF_DIR}", flush=True)
 
 
@@ -382,13 +411,15 @@ def main():
     # Steps for the bunch to just cross the full gun (average speed ~AVG_SPEED_FRAC·v_exit).
     # We stop as the beam reaches the exit: running longer empties the domain, and
     # the Multigrid self-field solve aborts when there is essentially no charge left.
-    # In timed mode the gun stays populated until the LAST-emitted particle (released at
-    # t=PULSE_WIDTH) has crossed, so the run is PULSE_WIDTH + one transit long (the domain
-    # never fully empties mid-run, so the MLMG solve is not starved). MAX_STEPS (module
+    # Run length is sized on the time to clear the FIELD region (ZMAX_FIELD), NOT the full
+    # padded domain: the run must STOP while the beam is still in the field-free pad, before
+    # it drains out the padded ZMAX — an empty domain aborts the MLMG self-field solve
+    # (`MLMG failed`). At PULSE_WIDTH + TRANSIT_MARGIN·transit_field the last-released particle
+    # has cleared the field into the pad (caught in ≥1 field-free dump for the handoff) while
+    # the bulk is still transiting, so the solve is never charge-starved. MAX_STEPS (module
     # constant, 0 = auto) overrides the derived value when set.
-    transit_time = ZMAX / (AVG_SPEED_FRAC * v_exit)
-    run_time = (PULSE_WIDTH + TRANSIT_MARGIN * transit_time) if timed \
-        else (TRANSIT_MARGIN * transit_time)
+    transit_field = ZMAX_FIELD / (AVG_SPEED_FRAC * v_exit)
+    run_time = (PULSE_WIDTH if timed else 0.0) + TRANSIT_MARGIN * transit_field
     max_steps = MAX_STEPS or int(run_time / dt)
 
     print(f"Gun: {GUN_VOLTAGE/1e3:.0f} kV  ->  γ={gamma:.3f}, β={v_exit/c:.3f}, "

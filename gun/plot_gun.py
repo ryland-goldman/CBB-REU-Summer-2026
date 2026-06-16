@@ -80,6 +80,14 @@ def main():
 
     t_ns, zmean, ke_mean, ke_max, n_live = [], [], [], [], []
     sig_r, emit_nx = [], []           # for beam_envelope.png (filled in the same loop)
+    # Pooled (all-dump) particle columns for the per-z PROFILE used by energy_gain /
+    # beam_envelope. A per-DUMP ⟨z⟩ aggregate traces a compact bunch but is meaningless for
+    # the timed quasi-DC stream — every dump then holds the whole 0→exit stream, so ⟨z⟩ is
+    # pinned mid-domain and the per-dump εn,x is the whole-stream chromatic mix (~50 mm·mrad,
+    # NOT the exit emittance). Binning every dump's particles by their ACTUAL z instead gives
+    # the physical steady-state profile KE(z)/σ_x(z)/εn,x(z), and reduces to the bunch
+    # trajectory for the compact snapshot beam (see beam_envelope/energy_gain below).
+    z_pool, ke_pool, x_pool, ux_pool, w_pool = [], [], [], [], []
     for i, it in enumerate(iters):
         z, x, ux, uy, uz, w = ts.get_particle(
             ["z", "x", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
@@ -92,6 +100,7 @@ def main():
         ke = (gamma_of(ux, uy, uz) - 1.0) * MC2
         zmean.append(z.mean() * 1e3)
         ke_mean.append(ke.mean()); ke_max.append(ke.max())
+        z_pool.append(z); ke_pool.append(ke); x_pool.append(x); ux_pool.append(ux); w_pool.append(w)
         # ── Envelope diagnostics (one transverse plane; RZ ⇒ x and y are equivalent) ──
         # Per-plane RMS size σ_x = sqrt(⟨(x−⟨x⟩)²⟩), reported in mm — weighted and
         # mean-centered, matching pipeline/plot_chain.py so the two figures agree on the
@@ -113,6 +122,29 @@ def main():
     print(f"beam: {n_live[0]} launched, {n_live[-1]} at last dump; "
           f"peak ⟨KE⟩ {np.nanmax(ke_mean):.1f} keV, max KE {np.nanmax(ke_max):.1f} keV")
 
+    # ── Per-z PROFILE (pooled over all dumps), binned by actual z ──────────────
+    # See the pooling note above: this is the physically meaningful aggregation for the
+    # timed quasi-DC stream (and equivalent to the trajectory for the snapshot bunch).
+    zc = kez = kezmax = sxz = enz = np.array([])
+    if z_pool:
+        zP = np.concatenate(z_pool); keP = np.concatenate(ke_pool)
+        xP = np.concatenate(x_pool); uxP = np.concatenate(ux_pool); wP = np.concatenate(w_pool)
+        nbin = 60
+        edges = np.linspace(0.0, zP.max(), nbin + 1)
+        idx = np.clip(np.digitize(zP, edges) - 1, 0, nbin - 1)
+        zc = 0.5 * (edges[:-1] + edges[1:]) * 1e3      # bin centers [mm]
+        kez = np.full(nbin, np.nan); kezmax = np.full(nbin, np.nan)
+        sxz = np.full(nbin, np.nan); enz = np.full(nbin, np.nan)
+        for b in range(nbin):
+            m = idx == b
+            if m.sum() < 20:                            # ignore sparse edge bins
+                continue
+            xb, uxb, wb, keb = xP[m], uxP[m], wP[m], keP[m]
+            kez[b] = np.average(keb, weights=wb); kezmax[b] = keb.max()
+            xm = np.average(xb, weights=wb)
+            sxz[b] = np.sqrt(np.average((xb - xm) ** 2, weights=wb)) * 1e3
+            enz[b] = rms_emit(xb, uxb, wb) * 1e6
+
     # ── Fig 2: r–z at launch / mid / exit ─────────────────────────────────────
     live = [it for it, n in zip(iters, n_live) if n > 0]
     picks = [live[0], live[len(live)//2], live[-1]] if len(live) >= 3 else live
@@ -130,15 +162,15 @@ def main():
     fig.savefig(f"{RESULTS}/beam_rz.png", dpi=140)
     print(f"wrote {RESULTS}/beam_rz.png")
 
-    # ── Fig 3: energy gain vs ⟨z⟩ ─────────────────────────────────────────────
+    # ── Fig 3: energy gain vs z (per-z profile, pooled over dumps) ─────────────
     fig, ax = plt.subplots(figsize=(7.2, 4.6), constrained_layout=True)
-    ok = np.isfinite(zmean)
-    ax.plot(zmean[ok], ke_mean[ok], "o-", color="C2", ms=3, label="mean KE")
-    ax.plot(zmean[ok], ke_max[ok], "^--", color="C1", ms=3, label="max KE")
+    okz = np.isfinite(kez)
+    ax.plot(zc[okz], kez[okz], "o-", color="C2", ms=3, label="mean KE")
+    ax.plot(zc[okz], kezmax[okz], "^--", color="C1", ms=3, label="max KE")
     ax.axhline(GUN_VOLTAGE / 1e3, color="k", ls=":", label=f"{GUN_VOLTAGE/1e3:.0f} keV (gun voltage)")
-    ax.set_xlabel("mean beam position  ⟨z⟩  [mm]")
+    ax.set_xlabel("beam position  z  [mm]")
     ax.set_ylabel("kinetic energy  [keV]")
-    ax.set_title("Beam energy gain along the gun")
+    ax.set_title("Beam energy gain along the gun  (per-z profile, pooled over dumps)")
     ax.legend()
     fig.savefig(f"{RESULTS}/energy_gain.png", dpi=140)
     print(f"wrote {RESULTS}/energy_gain.png")
@@ -162,16 +194,16 @@ def main():
     # ══════════════════════════════════════════════════════════════════════════
     # Fig 5: beam_envelope.png — per-plane RMS size σ_x and emittance εn,x vs ⟨z⟩
     # ──────────────────────────────────────────────────────────────────────────
-    ok = np.isfinite(zmean) & np.isfinite(sig_r)
+    okz = np.isfinite(sxz) & np.isfinite(enz)
     fig, ax = plt.subplots(figsize=(7.6, 4.6), constrained_layout=True)
-    l1, = ax.plot(zmean[ok], sig_r[ok], "o-", color="C0", ms=3,
+    l1, = ax.plot(zc[okz], sxz[okz], "o-", color="C0", ms=3,
                   label=r"RMS size  $\sigma_x=\sqrt{\langle x^2\rangle}$")
-    ax.set_xlabel("mean beam position  ⟨z⟩  [mm]")
+    ax.set_xlabel("beam position  z  [mm]")
     ax.set_ylabel(r"per-plane RMS size  $\sigma_x$  [mm]", color="C0")
     ax.tick_params(axis="y", labelcolor="C0")
-    ax.set_title("Transverse envelope and emittance along the gun")
+    ax.set_title("Transverse envelope and emittance along the gun  (per-z profile)")
     ax2 = ax.twinx()
-    l2, = ax2.plot(zmean[ok], emit_nx[ok], "s--", color="C3", ms=3,
+    l2, = ax2.plot(zc[okz], enz[okz], "s--", color="C3", ms=3,
                    label=r"norm. emittance  $\varepsilon_{n,x}$")
     ax2.set_ylabel(r"$\varepsilon_{n,x}$  [mm·mrad]", color="C3")
     ax2.tick_params(axis="y", labelcolor="C3")
