@@ -15,7 +15,8 @@ Lens 0A  ->  Prebuncher 1  ->  Prebuncher 2 (reversed)  ->  Sol 0 / Lens 0E  -> 
  @0.225 m     @0.534 m            @1.318 m                    @1.897 / 1.914 m
 ```
 
-It reads the gun's exit beam (~146 keV, β ≈ 0.63, ~0.83 nC, already RZ), velocity-bunches
+It reads the gun's exit beam (~146 keV, β ≈ 0.63, ~1.0 nC time-release / ~0.83 nC legacy
+snapshot, already RZ), velocity-bunches
 it with two 214 MHz prebuncher cavities while focusing it with three static solenoid
 lenses, and hands a focused, collimated beam to `linac_sec1` at the true linac entrance
 **z ≈ 2.03 m** (Z_acc_1). Modelling all elements in ONE drift is essential: the bunching,
@@ -32,7 +33,16 @@ injector.run()        # build fields + sim + plots  (writes injector/diags/main)
 
 `injector.run()` runs the faithful default operating point and writes `injector/diags/main`.
 The build reads `fieldmaps/{prebuncher_25D,SOL_0,LENS_0A,LENS_0E}.gdf`; the sim reads the
-gun output from `gun/diags/particles`. Run the whole chain with `pipeline/run_pipeline.py`.
+gun output from **`gun/diags/handoff`** when the gun ran in its default time-release mode (the
+full reconstructed ~2 ns exit beam — see `gun/README.md` → *Beam source*), else from
+`gun/diags/particles` (the legacy snapshot). Run the whole chain with
+`pipeline/run_pipeline.py`.
+
+> **Caveat (time-release handoff).** The prebuncher phases tuned below were established against
+> the compact *snapshot* gun handoff. The time-release beam is longer and lower-density (the
+> physical 2 ns grid pulse), so its operating point should be re-validated — the handoff wiring
+> is in place, the phase re-tuning is a follow-up (part of the LinacSim input-reconciliation
+> backlog). Force the legacy input with `gun.config(BEAM_RELEASE="snapshot")` before `gun.run()`.
 
 ## Task 1 — Prebuncher power: 8 kW is faithful, and intentionally weak
 

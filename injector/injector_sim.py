@@ -88,7 +88,14 @@ q_e = picmi.constants.q_e
 PREB1_FIELD = "injector/injector_field/preb1_EB.h5"   # forward field at Z_GAP_CENTER_1
 PREB2_FIELD = "injector/injector_field/preb2_EB.h5"   # forward field at Z_GAP_CENTER_2; +π = reversal
 
-GUN_DIAG = "gun/diags/particles"
+# Prefer the gun's reconstructed time-release exit beam when present (BEAM_RELEASE="timed":
+# the full ~2 ns released bunch, id-tracked across the exit plane — see gun/gun_sim.py
+# build_exit_handoff). Fall back to the volumetric last-snapshot for the legacy snapshot
+# gun. NOTE: the prebuncher phases below were tuned against the compact snapshot handoff;
+# the timed beam is longer and lower-density, so its operating point should be re-validated
+# (the LinacSim input-reconciliation backlog) — the handoff is wired, the re-tuning is not.
+GUN_DIAG = ("gun/diags/handoff" if os.path.isdir("gun/diags/handoff")
+            else "gun/diags/particles")
 Z_INJECT = 0.005                 # lab z where the bunch tail (smallest z) is placed [m]
 MAX_PART = 50000                 # downsample the gun snapshot (reweighted) for speed
 RNG_SEED = 0

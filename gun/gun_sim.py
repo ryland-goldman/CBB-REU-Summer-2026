@@ -32,6 +32,19 @@ and renormalize the total weight to a physical gun bunch charge
 `BUNCH_CHARGE` (the CESR gun is pulse-grid gated). The full 82 nC injected as
 one instantaneous bunch is unphysical — its radial space-charge field (~50 MV/m)
 dwarfs the gun field and blows the beam apart before it accelerates.
+
+Beam representation (`BEAM_RELEASE`, default "timed"): the CESR gun is gated by a 2 ns
+grid pulse (cathode_master.in `twidth=2`), four gun-transit-times long, so the physical
+beam is a long, low-density quasi-DC stream — the original GPT deck emits it that way via
+`settdist(...,"t",...)`. Releasing the whole bunch at one instant ("snapshot") instead
+over-concentrates the charge and over-states the space-charge force (the WarpX–GPT
+150 kV-gun cross-code benchmark in CornellMisc/.../bench/writeup measured this beam-
+representation effect at ~28 % on emittance; here the over-dense snapshot also blows ~19 %
+of the beam off as halo it would otherwise keep). We therefore release the imported
+macroparticles over `PULSE_WIDTH` via a per-step injection callback (the benchmark's
+warpx_tr.py technique), and reconstruct the full ~2 ns exit beam for the injector by id-
+tracking it across the exit plane (`build_exit_handoff`). "snapshot" is kept for speed and
+back-compat. See README → *Beam source* for the handoff and the injector-retuning caveat.
 """
 
 import os
@@ -39,7 +52,7 @@ import shutil
 
 import numpy as np
 import pywarpx
-from pywarpx import picmi
+from pywarpx import picmi, callbacks, particle_containers
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
@@ -61,8 +74,36 @@ BUNCH_CHARGE = 1.0e-9        # renormalized gun bunch charge [C] = 1 nC, matchin
                              # raw cathode snapshot is ~82 nC
 RNG_SEED = 0
 
+# ── Beam representation (snapshot vs time-release) ────────────────────────────
+# The single largest unrealism the WarpX–GPT 150 kV-gun cross-code benchmark
+# (CornellMisc/.../bench/writeup) identified: injecting the whole bunch at ONE instant
+# ("snapshot") over-concentrates the charge and over-states the space-charge force vs
+# releasing it over the real emission window ("time-release"), a ~28 % effect on εn,x in
+# a comparable gun. The CESR gun is gated by a 2 ns grid pulse (cathode_master.in
+# `twidth=2`), four gun-transit-times long, so the physical beam is a long, low-density,
+# quasi-DC stream — exactly what the original GPT deck emits via `settdist(...,"t",...)`.
+# We reproduce that by injecting the imported macroparticles over PULSE_WIDTH with a
+# per-step `installbeforestep` callback (the same technique the benchmark's warpx_tr.py
+# uses), instead of all at t=0.
+BEAM_RELEASE = "timed"       # "timed" → release over PULSE_WIDTH (realistic, default);
+                             # "snapshot" → all charge at t=0 (over-states space charge,
+                             # kept for speed / back-compat with the old chain handoff).
+PULSE_WIDTH = 2.0e-9         # grid-pulse emission window [s] (cathode_master.in twidth=2 ns).
+                             # Flat-top model: emission times are drawn uniformly over
+                             # [0, PULSE_WIDTH] (the real pulse has 30 V/ns edge ramps; a
+                             # flat top is a documented first approximation — the dominant
+                             # correction is the line-density drop, not the edge shape).
+HANDOFF_DIR = "gun/diags/handoff"   # timed mode reconstructs the full released exit beam
+                             # here (id-tracked exit-plane crossing across the volumetric
+                             # dumps) for the injector; snapshot mode leaves it absent.
+
 # ── Grid (RZ, single azimuthal mode — the gun field is m = 0) ─────────────────
-nr, nz = 96, 384             # divisible by the blocking factor (8)
+# 128×512 (was 96×384): the WarpX–GPT 150 kV-gun cross-code benchmark
+# (CornellMisc/.../bench/writeup) found εn,x falls ~4 % and only converges once the
+# grid resolves the near-cathode dynamics (their RZ study converged by nz≈720 over
+# 55 mm); the old nz=384 over 51.77 mm (dz≈135 µm) sat on the unconverged side. The
+# 1.33× refinement keeps the gun's near-isotropic cell aspect (dz/dr≈0.86).
+nr, nz = 128, 512            # divisible by the blocking factor (8)
 
 # ── Diagnostics output directory ──────────────────────────────────────────────
 DIAG_DIR = "gun/diags"
@@ -148,15 +189,121 @@ def load_cathode_bunch():
 
     # Renormalize weights so the imported distribution carries BUNCH_CHARGE.
     w = w * (BUNCH_CHARGE / (w.sum() * q_e))
+
+    # Emission time per macroparticle. In "timed" mode the bunch is released over the
+    # PULSE_WIDTH grid-pulse window (uniform → flat-top current); the macroparticles are
+    # sorted by t so the per-step injection callback can walk them in one pass. In
+    # "snapshot" mode every particle is emitted at t=0 (all charge present at once).
+    if BEAM_RELEASE == "timed":
+        t = rng.uniform(0.0, PULSE_WIDTH, size=r.size)
+        order = np.argsort(t)
+        t = t[order]
+        xpos, ypos, zpos, uxn, uyn, uz, w = (
+            a[order] for a in (xpos, ypos, zpos, uxn, uyn, uz, w))
+    else:
+        t = np.zeros(r.size)
+
     print(f"Imported {r.size} macroparticles from cathode (iter {it}); "
-          f"renormalized to {BUNCH_CHARGE*1e9:.3f} nC, r ≤ {r.max()*1e3:.2f} mm",
+          f"renormalized to {BUNCH_CHARGE*1e9:.3f} nC, r ≤ {r.max()*1e3:.2f} mm; "
+          f"release={BEAM_RELEASE}"
+          + (f" over {PULSE_WIDTH*1e9:.1f} ns" if BEAM_RELEASE == "timed" else ""),
           flush=True)
     # openPMD ux/uy/uz are the dimensionless normalized momenta γβ; PICMI's
     # ParticleListDistribution wants proper velocity u = γβc in m/s, so ×c.
     # (Without this the beam is injected essentially at rest and the cathode's
     # thermal transverse momentum — hence its emittance — is lost; the energy
     # gain is insensitive because the cathode KE ≪ 150 keV gun voltage.)
-    return dict(x=xpos, y=ypos, z=zpos, ux=uxn * c, uy=uyn * c, uz=uz * c, w=w)
+    return dict(x=xpos, y=ypos, z=zpos, ux=uxn * c, uy=uyn * c, uz=uz * c, w=w, t=t)
+
+
+def build_exit_handoff():
+    """Reconstruct the full time-released exit beam and write it for the injector.
+
+    Time-release makes the gun beam a ~2 ns quasi-DC stream whose ballistic z-extent
+    (~v_exit·PULSE_WIDTH ≈ 0.38 m) is many times the 51.77 mm gun domain, so no single
+    volumetric snapshot can hold the whole released beam. We instead reconstruct it from
+    the volumetric dumps the same way `pipeline/collimator.py` tracks the iris scrape —
+    by particle **id** across dumps:
+
+      1. For each macroparticle, find its LAST appearance (latest dump it is present in).
+      2. A particle last seen near the outer radial wall (r ≥ RMAX − tol) was scraped by
+         the pipe → dropped. Everything else left (or is leaving) through the z = ZMAX
+         exit plane → kept.
+      3. Drift every kept particle ballistically (field-free, past the map end) to a common
+         reference time t_ref = max last-appearance time, rebuilding one consistent
+         snapshot: early-emitted → exited early → drifted furthest → the bunch HEAD
+         (largest z); last-emitted → still at ZMAX → the TAIL. This matches the injector's
+         `z − z.min() + Z_INJECT` (tail at the entrance) convention and is the same
+         drift-to-a-common-reference the cross-code benchmark uses to read εn,x.
+
+    Writes an openPMD particle dump to HANDOFF_DIR via `pipeline.impact_io`. The injector's
+    `load_gun_bunch` reads HANDOFF_DIR when present (else the volumetric snapshot).
+    """
+    from pmd_beamphysics import ParticleGroup
+    from pipeline.impact_io import write_openpmd_particles
+
+    MC2_EV = 510998.95069
+    r_tol = 2.0 * (RMAX / nr)        # within ~2 radial cells of the pipe ⇒ radial loss
+    pdir = os.path.join(DIAG_DIR, "particles")
+    ts = OpenPMDTimeSeries(pdir)
+    if len(ts.iterations) == 0:
+        print("  handoff: no volumetric dumps to reconstruct from — skipped", flush=True)
+        return
+
+    # Stack every (id, dump) row, then keep each id's LAST appearance (latest dump time).
+    # Vectorized so the ~Npart×Ndumps rows never hit a Python-level loop.
+    cols = {k: [] for k in ("id", "t", "x", "y", "z", "ux", "uy", "uz", "w")}
+    for it, t_dump in zip(ts.iterations, ts.t):
+        idp, x, y, z, ux, uy, uz, w = ts.get_particle(
+            ["id", "x", "y", "z", "ux", "uy", "uz", "w"],
+            species="electrons", iteration=it)
+        if len(idp) == 0:
+            continue
+        cols["id"].append(idp.astype(np.int64)); cols["t"].append(np.full(len(idp), t_dump))
+        cols["x"].append(x); cols["y"].append(y); cols["z"].append(z)
+        cols["ux"].append(ux); cols["uy"].append(uy); cols["uz"].append(uz); cols["w"].append(w)
+    if not cols["id"]:
+        print("  handoff: no particles tracked — skipped", flush=True)
+        return
+    cat = {k: np.concatenate(v) for k, v in cols.items()}
+    # Sort by (id, t); the last row of each id-group is its last appearance.
+    order = np.lexsort((cat["t"], cat["id"]))
+    sid = cat["id"][order]
+    keep_last = np.empty(sid.size, dtype=bool)
+    keep_last[-1] = True
+    keep_last[:-1] = sid[1:] != sid[:-1]           # True where the id changes (group end)
+    pick = order[keep_last]
+    t_last = cat["t"][pick]
+    x, y, z = cat["x"][pick], cat["y"][pick], cat["z"][pick]
+    ux, uy, uz, w = cat["ux"][pick], cat["uy"][pick], cat["uz"][pick], cat["w"][pick]
+    r = np.hypot(x, y)
+    kept = r < (RMAX - r_tol)                       # else: scraped at the pipe wall
+    n_lost = int((~kept).sum())
+    t_last, x, y, z, ux, uy, uz, w = (a[kept] for a in (t_last, x, y, z, ux, uy, uz, w))
+    if x.size == 0:
+        print("  handoff: every tracked particle hit the pipe wall — skipped", flush=True)
+        return
+
+    # Ballistic drift to the common reference time t_ref = max(t_last).
+    gamma = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)
+    vx, vy, vz = (c * ux / gamma, c * uy / gamma, c * uz / gamma)
+    dtau = t_last.max() - t_last
+    xh, yh, zh = x + vx * dtau, y + vy * dtau, z + vz * dtau
+
+    pg = ParticleGroup(data=dict(
+        x=xh, y=yh, z=zh,
+        px=ux * MC2_EV, py=uy * MC2_EV, pz=uz * MC2_EV,   # γβ·m_ec² /c = γβ·(mc² in eV) [eV/c]
+        t=np.zeros(xh.size),
+        weight=w * q_e,                                   # macro count → charge [C]
+        status=np.ones(xh.size, dtype=np.int64),
+        species="electron",
+    ))
+    if os.path.isdir(HANDOFF_DIR):
+        shutil.rmtree(HANDOFF_DIR)
+    write_openpmd_particles(pg, HANDOFF_DIR, iteration=0, time=0.0)
+    print(f"  handoff: {xh.size} exit-beam macroparticles "
+          f"({pg.charge*1e9:.3f} nC, {n_lost} scraped at the pipe), "
+          f"z-extent {(zh.max()-zh.min())*1e3:.0f} mm → {HANDOFF_DIR}", flush=True)
 
 
 def main():
@@ -209,13 +356,19 @@ def main():
     pywarpx.particles.B_ext_particle_init_style = "none"
 
     bunch = load_cathode_bunch()
+    timed = (BEAM_RELEASE == "timed")
+    # snapshot: seed the species with the whole bunch (all at t=0). timed: seed with only
+    # the earliest-emitted macroparticle (PICMI requires a non-empty initial distribution),
+    # then inject the rest over the pulse via the per-step callback below. `sl` selects the
+    # seed slice; the cathode arrays are already t-sorted in timed mode.
+    sl = slice(0, 1) if timed else slice(None)
     electrons = picmi.Species(
         particle_type="electron",
         name="electrons",
         initial_distribution=picmi.ParticleListDistribution(
-            x=bunch["x"], y=bunch["y"], z=bunch["z"],
-            ux=bunch["ux"], uy=bunch["uy"], uz=bunch["uz"],
-            weight=bunch["w"],
+            x=bunch["x"][sl], y=bunch["y"][sl], z=bunch["z"][sl],
+            ux=bunch["ux"][sl], uy=bunch["uy"][sl], uz=bunch["uz"][sl],
+            weight=bunch["w"][sl],
         ),
         warpx_do_not_deposit=not SPACE_CHARGE,   # SPACE_CHARGE=False → no beam self-field
     )
@@ -229,13 +382,20 @@ def main():
     # Steps for the bunch to just cross the full gun (average speed ~AVG_SPEED_FRAC·v_exit).
     # We stop as the beam reaches the exit: running longer empties the domain, and
     # the Multigrid self-field solve aborts when there is essentially no charge left.
-    # MAX_STEPS (module constant, 0 = auto) overrides the derived value when set.
-    max_steps = MAX_STEPS or int(
-        TRANSIT_MARGIN * ZMAX / (AVG_SPEED_FRAC * v_exit) / dt)
+    # In timed mode the gun stays populated until the LAST-emitted particle (released at
+    # t=PULSE_WIDTH) has crossed, so the run is PULSE_WIDTH + one transit long (the domain
+    # never fully empties mid-run, so the MLMG solve is not starved). MAX_STEPS (module
+    # constant, 0 = auto) overrides the derived value when set.
+    transit_time = ZMAX / (AVG_SPEED_FRAC * v_exit)
+    run_time = (PULSE_WIDTH + TRANSIT_MARGIN * transit_time) if timed \
+        else (TRANSIT_MARGIN * transit_time)
+    max_steps = MAX_STEPS or int(run_time / dt)
 
     print(f"Gun: {GUN_VOLTAGE/1e3:.0f} kV  ->  γ={gamma:.3f}, β={v_exit/c:.3f}, "
           f"v_exit={v_exit:.2e} m/s", flush=True)
-    print(f"dt = {dt:.3e} s, max_steps = {max_steps}", flush=True)
+    print(f"dt = {dt:.3e} s, max_steps = {max_steps}"
+          + (f" (release over {PULSE_WIDTH*1e9:.1f} ns + transit)" if timed else ""),
+          flush=True)
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
     # Fresh diags: WarpX appends one openPMD file per dump, so re-running with a
@@ -282,8 +442,42 @@ def main():
     sim.add_diagnostic(field_diag)
     sim.add_diagnostic(part_diag)
 
+    # ── Time-release injection ────────────────────────────────────────────────
+    # Build up the bunch over PULSE_WIDTH: each step, inject the macroparticles whose
+    # emission time falls in the step window. Particle 0 is already seeded, so injection
+    # starts at index 1. add_particles writes into the live container (the broken RZ
+    # accessor is the READ path — `Component x does not exist` — not this write path,
+    # verified by spike). ux/uy/uz are proper velocity γβc [m/s], matching the seed's
+    # ParticleListDistribution units.
+    if timed:
+        state = {"next": 1, "step": 0}
+        pc = [None]
+        bt = bunch["t"]
+
+        def _inject():
+            if pc[0] is None:
+                pc[0] = particle_containers.ParticleContainerWrapper("electrons")
+            t_hi = (state["step"] + 1) * dt
+            j = state["next"]
+            k = j
+            while k < bt.size and bt[k] < t_hi:
+                k += 1
+            if k > j:
+                pc[0].add_particles(
+                    x=bunch["x"][j:k], y=bunch["y"][j:k], z=bunch["z"][j:k],
+                    ux=bunch["ux"][j:k], uy=bunch["uy"][j:k], uz=bunch["uz"][j:k],
+                    w=bunch["w"][j:k])
+                state["next"] = k
+            state["step"] += 1
+
+        callbacks.installbeforestep(_inject)
+
     print(f"\nRunning {max_steps} steps (diag every {period}) …")
     run_step(sim, max_steps, desc="gun")
+    if timed:
+        print(f"Injected {state['next']}/{bunch['t'].size} macroparticles over the pulse",
+              flush=True)
+        build_exit_handoff()
     print(f"\nDone. openPMD output → {DIAG_DIR}/{{fields,particles}}/")
 
 

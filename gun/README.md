@@ -42,7 +42,10 @@ hand-tuned for the 150 kV point — `v_exit` is recomputed from `GUN_VOLTAGE`, b
 average-speed fraction is not, so re-check it if `GUN_VOLTAGE` is changed substantially
 via `config()`); `N_DIAGS` (40) for the openPMD
 dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (reweighted,
-charge-preserving); the grid `nr, nz`; and `SPACE_CHARGE` (default `True`). Setting
+charge-preserving); `BEAM_RELEASE` (`"timed"`/`"snapshot"`) and `PULSE_WIDTH` (2 ns) for the
+beam representation (see *Beam source*; `"timed"` runs ~5× longer than `"snapshot"` because the
+run spans the full pulse + a transit instead of one transit); the grid `nr, nz`; and
+`SPACE_CHARGE` (default `True`). Setting
 `SPACE_CHARGE=False` passes `warpx_do_not_deposit` (beam self-field off, only the applied gun field
 acts) — but note the self-field is *dominant* here at 146 keV (it "dwarfs the gun field," ~17% of
 charge is already lost to it), so SC-off is a large physics change, not a mild diagnostic. Runtime ≈
@@ -113,9 +116,41 @@ bunch charge. We:
 **Why renormalize:** injecting the full 82 nC as one instantaneous bunch is unphysical — its
 radial space-charge field dwarfs the gun field and blows the beam apart before it
 accelerates (observed directly: the beam is absorbed within ~50 steps). At 1 nC the beam still
-transports — **≈ 83 % reaches the exit** (the rest is lost to the stronger space charge at this
-higher charge) — and accelerates to ~146 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
+transports and accelerates to ~146 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
 explore the space-charge regime.
+
+### Beam representation — time-release vs snapshot (`BEAM_RELEASE`)
+
+Even at 1 nC, *how* the bunch is fed to the gun matters. The CESR gun is gated by a **2 ns
+grid pulse** (`cathode_master.in` `twidth=2`), which is ~four gun-transit-times long
+(transit ≈ 0.47 ns), so the physical beam is a **long, low-density, quasi-DC stream** — the
+original LinacSim GPT deck emits it that way via `settdist("beam","F",…,"t",…)`. Two modes:
+
+- **`"timed"` (default — the realistic representation).** The imported macroparticles are
+  released over `PULSE_WIDTH` (=2 ns) by a per-step `installbeforestep` injection callback
+  (`ParticleContainerWrapper.add_particles`), so only the fraction of charge already emitted
+  is present at any instant — the physical low line-density. This is the WarpX counterpart of
+  GPT's native time-release and of the cross-code benchmark's `warpx_tr.py`.
+- **`"snapshot"`.** All 1 nC is present at t=0, initially crammed into the ~0.2 mm cathode-exit
+  z-extent — a line-charge density orders of magnitude above the real 2 ns beam. It
+  **over-states the space-charge force**: the WarpX–GPT benchmark put the beam-representation
+  effect at ~28 % on emittance, and here the over-dense snapshot additionally blows ~19 % of
+  the beam off as halo (transmission ≈ 81 % vs ≈ 100 % for the same grid/charge time-released).
+  Kept for speed and back-compat only — it is **not** a realistic operating point.
+
+**Exit-beam handoff (timed mode).** The released beam's ballistic z-extent
+(~v_exit·`PULSE_WIDTH` ≈ 0.38 m) is many times the 51.77 mm gun domain, so no single
+volumetric snapshot can hold it. `build_exit_handoff()` reconstructs the full exit beam the
+same way `pipeline/collimator.py` tracks the iris scrape — by particle **id** across the
+volumetric dumps: each macroparticle's last appearance is found, particles last seen at the
+pipe wall (`r ≥ RMAX`) are dropped as radial loss, and the rest are drifted ballistically to a
+common reference time (rebuilding one consistent snapshot, head downstream / tail at the
+entrance). The result is written to `gun/diags/handoff` as openPMD (via
+`pipeline.impact_io.write_openpmd_particles`); the injector's `load_gun_bunch` reads it when
+present, else falls back to the volumetric `gun/diags/particles` (legacy snapshot). **Caveat:**
+the injector's prebuncher phases were tuned against the compact snapshot handoff, so the longer
+timed beam shifts its operating point and should be re-validated (the LinacSim
+input-reconciliation backlog) — the handoff is wired, the re-tuning is a follow-up.
 
 **Approximations.** The cathode model is a 2D Cartesian slab, not RZ, so the slab→radius
 remap is an approximation: the `r`-importance resample (step 2) makes the **areal density**
@@ -128,13 +163,14 @@ beam is treated as a single injected bunch.
 | parameter | value |
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
-| grid | 96 (r) × 384 (z), r ∈ [0, 15 mm], z ∈ [0, 51.77 mm] |
+| grid | 128 (r) × 512 (z), r ∈ [0, 15 mm], z ∈ [0, 51.77 mm] (finer than the old 96×384 to resolve the near-cathode dynamics — see *Cross-code validation*) |
 | boundaries (fields) | axis at r=0; **dirichlet** (grounded) outer radial wall + both z plates |
 | solver | electromagnetostatic, lab frame, Multigrid (self E **and** B from beam current) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
+| beam representation | `BEAM_RELEASE="timed"` (default): release the 1 nC over the 2 ns grid pulse (`PULSE_WIDTH`); `"snapshot"`: all at t=0 (over-states space charge) — see *Beam source* |
 | bunch | 1 nC, imported cathode phase space, ~133k macroparticles (optionally capped by `MAX_PART`, reweighted) |
 | time step | `dt = CFL·Δz/v_exit` (`CFL`=0.4; v_exit ≈ 0.63 c at 150 keV) |
-| duration | `TRANSIT_MARGIN`×gun-transit time (=1.15; bunch average speed ≈ `AVG_SPEED_FRAC`·v_exit, =0.6), or fixed via `MAX_STEPS`; stops as the beam reaches the exit — running longer empties the domain and aborts the Multigrid self-field solve |
+| duration | snapshot: `TRANSIT_MARGIN`×gun-transit (=1.15; bunch average speed ≈ `AVG_SPEED_FRAC`·v_exit, =0.6); timed: `PULSE_WIDTH + TRANSIT_MARGIN`×transit so the last-released particle clears the gun. Or fixed via `MAX_STEPS`. Snapshot stops as the beam reaches the exit (running longer empties the domain and aborts the Multigrid solve); timed stays populated until the pulse flushes, so the solve is never charge-starved mid-run |
 
 ### Space-charge model — electromagnetostatic self-field
 
@@ -158,6 +194,32 @@ a 3-component MLMG solve per step, so the run is **≈2× slower** than the elec
 would otherwise have an all-Neumann singular operator and the MLMG bottom solve **diverges**
 (`MLMG failed`). Grounding the pipe at r = 15 mm — well outside the r ≲ 8 mm beam — makes it
 well-posed; the headline exit energy is unchanged (146 keV) and transmission is ~81 %.
+
+### Cross-code validation (WarpX vs GPT)
+
+A from-scratch WarpX–GPT cross-code benchmark of this exact 150 kV gun
+(`CornellMisc/.../bench/writeup`, "Reconciling WarpX and GPT on the 150 kV gun emittance")
+reconciled a 30–40 % emittance disagreement between the two codes and, in doing so, validated
+the physics choices this stage makes:
+
+- **Relativistic / magnetic-pinch space charge.** A lab-frame ES solver over-states the
+  transverse space-charge force by ≈γ² (the dropped magnetic cancellation). The benchmark's fix
+  is WarpX's *relativistic* ES; this stage's **electromagnetostatic** solver achieves the same
+  by solving the self-**B** explicitly (qβ×B pinch ⇒ net qE_r/γ²), and generalizes to a
+  multi-velocity beam. (The benchmark integrates the γ² error to ~+2 % on its short 10 ps bunch;
+  it grows with γ and line length.)
+- **Dirichlet cathode image, *not* Neumann.** The metal cathode is a Dirichlet plane whose
+  opposite-sign image partly cancels the bunch self-field; a Neumann plane gives a *same*-sign
+  image that adds to it (a +12 % error in the benchmark). This stage's z = 0 plate is dirichlet.
+- **Grid must resolve the near-cathode dynamics.** εn,x falls and only converges once the grid
+  is fine enough near the cathode (the benchmark converged by nz ≈ 720 over 55 mm); the old
+  nz = 384 over 51.77 mm sat on the unconverged side, so the grid here is **128 × 512**.
+- **Match the beam representation.** The benchmark's single largest term (~28 %) is snapshot vs
+  time-release — implemented here as `BEAM_RELEASE` (see *Beam source*).
+
+With matched physics and converged numerics the benchmark found WarpX and GPT consistent to
+within statistics (~3 %) on a controlled snapshot, so these settings are the cross-validated
+recipe, not just a WarpX convention.
 
 ## Figures (`results/`)
 
