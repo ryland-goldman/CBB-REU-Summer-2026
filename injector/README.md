@@ -117,8 +117,8 @@ Z1→Z2 — using an analytic estimate of Preb-1's +20 keV kick. The faithful cr
 raises β over the inter-cavity drift, so timing Preb-2 with the bare injection β would
 mis-time it by ~−10° at 214 MHz; the two-segment estimate cuts this to a **~−4° residual**
 (the analytic thin-gap kick slightly overshoots the space-charge-loaded ensemble mean, so it
-does not reach <1°). This is below both the constant-v-per-segment approximation and the
-γ²-scale self-field pessimism, and the σ-ratio bunching gate passes — accepted at the design
+does not reach <1°). This is below the constant-v-per-segment approximation, and the σ-ratio
+bunching gate passes — accepted at the design
 point, documented honestly as ~4° (NOT <1°). **The exact fix is a two-pass run** (read the
 post-Preb-1 β from a diagnostic, rebuild the Preb-2 timing); needed only if a future study
 changes Preb-1's mean kick (a Preb-1 power scan, or moving its phase toward crest) — the scan
@@ -156,8 +156,8 @@ lab frame via `grid_global_offset`. The 1-A maps scale linearly with current.
 - **LENS_0A 8 mm placement (note):** native peak 0.2333 m vs GUI 0.225 m differ by 8 mm —
   below the map's own ~31 mm axial cell, so neither is "more accurate." We ship the
   GUI-position (programmatic) placement for consistency across all three. Capture is
-  **tune-sensitive** to the upstream lens placement/currents — treat the default as a
-  conservative (γ²) lower bound, not a precise value, and use the optional current scan to
+  **tune-sensitive** to the upstream lens placement/currents — treat the default as one operating
+  point, not a precise capture optimum, and use the optional current scan to
   characterize it. *(An earlier ~7× LENS_0A sensitivity figure — 0.21% vs 1.6% — was measured
   before the LENS_0E grid_global_offset bug was fixed and is superseded; with all three lenses
   correctly placed, and with the multi-plane iris scrape, the default captures ~7%.)*
@@ -223,10 +223,11 @@ the plain lab-frame electrostatic Poisson solve. In addition to `∇²φ = -ρ/�
 Coulomb-gauge vector potential from the beam current (`∇²A = -μ₀ j`, `B = ∇×A`), so the self
 magnetic field is included and the relativistic magnetic-pinch term `qβ×B` partially cancels the
 radial space-charge repulsion: the net transverse self-force is `qE_r/γ²` rather than the
-pure-electrostatic `qE_r`. This removes the ≈γ² (≈1.66–2.0× at β≈0.63–0.7) transverse-SC
-over-repulsion the lab-frame solver incurs — the WarpX–GPT 150 kV-gun benchmark's *cause 4*, which
-that writeup flags **grows for a longer line**, and the injector is the longest line in the chain
-(~2 m at γ≈1.3–1.4 *throughout*, unlike the low-γ-weighted gun where it was only +2%). Matches the
+pure-electrostatic `qE_r`. This removes the ≈γ² (≈1.6–1.7× at β≈0.6–0.65 — the beam mean γ stays
+≈1.29–1.31 across the line) transverse-SC over-repulsion the lab-frame solver incurs — the
+WarpX–GPT 150 kV-gun benchmark's *cause 4*, which that writeup flags **grows for a longer line**,
+and the injector is the longest line in the chain (~2 m at γ≈1.3 *throughout*, unlike the
+low-γ-weighted gun where it was only +2%). Matches the
 gun's solver. Measured A/B on the same time-release input: iris transmission **34% (lab-frame) →
 42% (EMS)**; cost ≈3.7× (the extra A_z vector-Poisson over the long-thin box, ~78 → ~287 s).
 
@@ -235,6 +236,13 @@ gun's solver. Measured A/B on the same time-release input: iris transmission **3
 > *singular* operator — the MLMG bottom solve then diverges — unless the outer wall is grounded.
 > At RMAX=36 mm (well outside the beam) the self-field has decayed, so the beam dynamics are
 > unaffected; this only makes A_z well-posed.
+
+The A_z solve reuses φ's knobs (`REQUIRED_PRECISION=1e-4`, `MAX_ITERS=500`) and is muted
+(`warpx_magnetostatic_verbosity=0`). A_z is the harder-conditioned solve, so it could in principle
+hit the iteration cap and proceed *under-converged* (under-counting the pinch) silently — but a
+verbosity≥2 spot-check confirms it converges in **3–4 V-cycles** (resid/bnorm ~1e-5, far below the
+500 cap) at the default tune. If you tighten `CFL` or relax the knobs, re-check with
+`warpx_magnetostatic_verbosity=2` that A_z still converges rather than capping.
 
 ## Capture / handoff result (the headline, with caveats)
 
@@ -252,11 +260,17 @@ transverse over-repulsion focuses the beam tighter, so more clears the iris.
 > (a ~380 mm / 2 ns quasi-DC stream spanning ~155° of RF) the longitudinal waist now lands at
 > z ≈ 1.66 m — ~370 mm *upstream* of the 2.03 m handoff — so the bunch re-expands (σ_z 4.5 → 41 mm)
 > before it is handed off, and the beam radially expands to the 36 mm domain wall over the
-> unfocused 0.225→1.6 m drift (~37% loss there). So the **downstream RF-bucket capture (~7%) and
-> the "146 → ~220 keV" net-acceleration figures below predate this reconciliation and are not yet
-> re-measured** — re-tuning the phases/currents for the long beam is the open follow-up (the
-> LinacSim reconciliation backlog). The iris-transmission and solver numbers above ARE on the
-> current time-release beam.
+> unfocused 0.225→1.6 m drift (~37% loss there). That ~37% loss also trips `linac_sec1`'s dump
+> selector: `load_injector_bunch` applies an `n ≥ 0.8·nmax` population gate *before* its
+> nearest-⟨z⟩ pick, so when the near-handoff dumps drop below 0.8·nmax it falls back to an
+> earlier, off-plane dump (recorded `it_handoff` at ⟨z⟩≈0.843 m on the current run) — i.e. the
+> linac is presently *not* injecting the 2.03 m handoff beam. So the **downstream RF-bucket
+> capture (~7%) and the "146 → ~220 keV" net-acceleration figures below predate this
+> reconciliation and are not yet re-measured** — re-tuning the phases/currents for the long beam
+> (and re-converging the selector) is the open follow-up (the LinacSim reconciliation backlog).
+> The iris-transmission and solver numbers above ARE on the current time-release beam. NOTE: the
+> `injector exit (2.03 m plane)` phase-space panel shows the physical handoff plane, **not** the
+> off-plane dump the selector currently ingests.
 
 > **Fixed (physics-review):** two corrections fed these numbers. (1) An earlier version placed
 > LENS_0E ~800 mm out of position (a `grid_global_offset` bug that omitted the native grid origin

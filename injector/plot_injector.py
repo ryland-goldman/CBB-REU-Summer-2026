@@ -23,7 +23,7 @@ overwrites the same files instead of leaving orphans:
 
   * injector_line.png          — σ_z(z) (vs. drift) and peak current / mean energy
   * injector_phasespace.png    — z–KE at injection / cavity exit / best focus /
-                                 injector exit (the z≈2.03 m handoff the linac reads)
+                                 injector exit (the z≈2.03 m handoff plane)
   * injector_cavity.png        — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map(s)
                                  in the lab frame, plus the cos/sin RF waveform vs time
   * injector_bunch_profile.png — the real longitudinal line-charge density λ(z)
@@ -379,16 +379,20 @@ def per_case_figure(name, rec, base):
 
     snaps, its = rec["snaps"], rec["it"]
     picks, titles = snapshot_picks(rec, base)
-    # Append the injector EXIT / handoff snapshot: the dump nearest the z≈Z_HANDOFF
-    # (2.03 m) plane — the SAME selection the linac stage uses to read its input beam
-    # (linac_sec1 picks the snapshot nearest the handoff). The bunch re-expands past
-    # best focus, so the phase space the downstream stage actually inherits is a
-    # distinct, later state worth showing alongside the min-σ_z point. Skip if the
+    # Append the injector EXIT snapshot: the dump nearest the z≈Z_HANDOFF (2.03 m) handoff
+    # PLANE. The bunch re-expands past best focus, so the phase space at the physical handoff
+    # plane is a distinct, later state worth showing alongside the min-σ_z point. Skip if the
     # exit dump duplicates a pick already shown (e.g. best focus IS the last dump).
+    # CAVEAT: this is the 2.03 m plane, NOT necessarily the dump linac_sec1 actually ingests —
+    # linac_sec1.load_injector_bunch applies an n≥0.8·nmax population gate BEFORE its nearest-⟨z⟩
+    # pick, so under heavy radial loss (when the near-handoff dumps drop below 0.8·nmax) the
+    # linac falls back to an earlier, off-plane dump. Re-converging that selector to the true
+    # handoff is the deferred operating-point re-tune (see injector/README.md); this panel shows
+    # the physical handoff plane regardless.
     it_exit = its[int(np.argmin(np.abs(rec["zmean"] - Z_HANDOFF)))]
     if it_exit not in picks:
         picks = picks + [it_exit]
-        titles = titles + ["injector exit (handoff)"]
+        titles = titles + ["injector exit (2.03 m plane)"]
     fig, axs = plt.subplots(1, len(picks), figsize=(4.3 * len(picks), 4.0),
                             constrained_layout=True)
     for ax, it, ti in zip(axs, picks, titles):

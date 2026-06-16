@@ -375,10 +375,10 @@ def main():
     # the Coulomb-gauge vector potential from the beam current (∇²A = -μ₀ j, B = ∇×A), so the
     # self magnetic field is included and the relativistic magnetic-pinch term qβ×B partially
     # cancels the radial space-charge repulsion: the net transverse self-force is qE_r/γ²
-    # rather than the pure-electrostatic qE_r. This removes the ≈γ² (≈1.66–2.0× at β≈0.63–0.7)
+    # rather than the pure-electrostatic qE_r. This removes the ≈γ² (≈1.6–1.7× at β≈0.6–0.65)
     # transverse-SC over-repulsion that the plain lab-frame solver incurs — the writeup's
     # cause-4, which it flags GROWS for a longer line, and the injector is the longest line in
-    # the chain (~2 m at γ≈1.3–1.4 throughout, unlike the low-γ-weighted gun where it was only
+    # the chain (~2 m at γ≈1.3 throughout, unlike the low-γ-weighted gun where it was only
     # +2%). The magnetostatic MLMG solve gets the same precision/iteration knobs as the ES solve.
     solver = picmi.ElectrostaticSolver(
         grid=grid, method="Multigrid", required_precision=REQUIRED_PRECISION,

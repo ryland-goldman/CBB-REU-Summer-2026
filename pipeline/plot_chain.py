@@ -432,14 +432,17 @@ def render_scorecard(tables, linac_inj):
                     f"({qcap*1e9:.4f}/{qinj*1e9:.4f} nC); "
                     f"iris transmission = {linac_inj['q_in_domain_C']/qinj*100:.1f}% "
                     f"(multi-plane 9.547 mm scrape). "
-                    f"γ²≈1.7× → capture is a conservative LOWER bound. σ_KE charge-conditional.")
+                    f"capture vs TRUE injected (injector now EMS; linac_sec1 SC small @25 MeV). "
+                    f"σ_KE charge-conditional.")
     # Two reader notes (physics-flagged) so adjacent-dump and emittance effects aren't misread:
-    note_handoff = ("the injector-exit row is the dump at the 2.03 m handoff plane (same dump the "
-                    "linac reader ingests), not the drained tail at the 2.10 m absorbing exit; any "
+    note_handoff = ("the injector-exit row is the dump at the 2.03 m handoff plane, not the drained "
+                    "tail at the 2.10 m absorbing exit. NOTE: linac_sec1's selector applies an "
+                    "n≥0.8·nmax population gate, so under heavy radial loss it can fall back to an "
+                    "earlier off-plane dump rather than this 2.03 m one (the deferred re-tune); any "
                     "small ⟨KE⟩ difference vs the linac-entry row is dump spacing, not a discontinuity.")
     note_emit = ("injector ε_n,x growth is space-charge + solenoid-aberration dominated over the "
-                 "2 m low-energy drift; the γ²≈1.7× ES transverse-SC overestimate makes this an "
-                 "UPPER bound on emittance growth (opposite direction to the capture lower bound).")
+                 "2 m low-energy drift, now with the relativistic EMS self-field (the 1/γ² magnetic "
+                 "pinch is included, so it is no longer a γ²-inflated upper bound).")
 
     # ── stdout ──
     print("\n" + "=" * 100)

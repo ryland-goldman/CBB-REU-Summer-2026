@@ -232,11 +232,12 @@ baseline (σ_drift/σ_2cav ≈ 4.4× near the focus, ≈ 2.4× vs Preb-1 alone).
 and mean KE — the two kicks (Preb-1 +20 keV, Preb-2 ~+54 keV mean) raise ⟨KE⟩ through the line.
 
 ### `injector_phasespace.png` — the chirp through the two cavities
-![Injector: z–KE phase space at three points](injector/results/injector_phasespace.png)
+![Injector: z–KE phase space at four points](injector/results/injector_phasespace.png)
 
-Mean-subtracted `z–KE` phase space at injection / cavity exit / best focus. The two cavities drive
-the head→tail chirp compressive (net chirp past Z2 turns negative), unlike the single-cavity
-prebuncher which barely perturbed the gun beam.
+Mean-subtracted `z–KE` phase space at four points: injection / cavity exit / best focus / **injector
+exit** (the dump nearest the z≈2.03 m handoff plane — the beam re-expanded past best focus). The two
+cavities drive the head→tail chirp compressive (net chirp past Z2 turns negative), unlike the
+single-cavity prebuncher which barely perturbed the gun beam.
 
 ### `injector_cavity.png` — the RF drive (both cavities)
 ![Injector: on-axis Ez(z) lobes of both prebunchers and their RF waveforms](injector/results/injector_cavity.png)
