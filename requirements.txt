@@ -1,8 +1,19 @@
 # Cornell Linac beam simulation — Python dependencies
-# Install into the CBB conda environment:  pip install -r requirements.txt
-# (WarpX/pywarpx, openpmd-api, and the impact-t/ImpactTexe binary are typically
-#  installed via conda/mamba — `conda install -c conda-forge impact-t` provides the
-#  serial ImpactTexe the linac_rest stage runs through lume-impact.)
+#
+# PREFERRED: install everything from conda-forge (this is how the reference CBB
+# env was built). Note the conda package names that differ from the pip names:
+#   pip `pywarpx`  -> conda `warpx`   (bundles the pywarpx Python module + executables;
+#                                      there is NO conda package literally named "pywarpx")
+#   ImpactTexe     -> conda `impact-t` (the serial Impact-T binary linac_rest runs
+#                                      through lume-impact; not pip-installable)
+# One-shot env creation (Linux cluster or macOS):
+#   conda create -n CBB -c conda-forge warpx impact-t openpmd-api openpmd-viewer \
+#       lume-impact openpmd-beamphysics easygdf numpy scipy matplotlib tqdm
+#
+# FALLBACK: `pip install -r requirements.txt` into an env that already has
+# warpx/impact-t/openpmd-api from conda (those three are best from conda-forge;
+# openpmd-api needs its C++ core, and ImpactTexe is a Fortran binary).
+# pipeline/beam_gui.py additionally needs tkinter (ships with conda-forge python).
 
 # Core PIC engine
 pywarpx==26.4
