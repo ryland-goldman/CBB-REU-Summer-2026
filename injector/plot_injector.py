@@ -22,7 +22,8 @@ diags/<case> input dir and the figure titles, not the filename) so a new run
 overwrites the same files instead of leaving orphans:
 
   * injector_line.png          — σ_z(z) (vs. drift) and peak current / mean energy
-  * injector_phasespace.png    — z–KE at injection / cavity exit / best focus
+  * injector_phasespace.png    — z–KE at injection / cavity exit / best focus /
+                                 injector exit (the z≈2.03 m handoff the linac reads)
   * injector_cavity.png        — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map(s)
                                  in the lab frame, plus the cos/sin RF waveform vs time
   * injector_bunch_profile.png — the real longitudinal line-charge density λ(z)
@@ -68,7 +69,8 @@ def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
 # RF drive constants (F_RF, Q_L, V1J_KEV, gap centres) come from the single source of
 # truth in the build module so this figure's re-derived scale/phase cannot drift from
 # the actual run.
-from .build_injector_field import V1J_KEV, F_RF, Q_L_1, Z_GAP_CENTER_1, Z_GAP_CENTER_2
+from .build_injector_field import (
+    V1J_KEV, F_RF, Q_L_1, Z_GAP_CENTER_1, Z_GAP_CENTER_2, Z_HANDOFF)
 
 c = 299792458.0
 MC2 = 0.51099895e3                # electron rest energy [keV]
@@ -377,7 +379,18 @@ def per_case_figure(name, rec, base):
 
     snaps, its = rec["snaps"], rec["it"]
     picks, titles = snapshot_picks(rec, base)
-    fig, axs = plt.subplots(1, 3, figsize=(13, 4.0), constrained_layout=True)
+    # Append the injector EXIT / handoff snapshot: the dump nearest the z≈Z_HANDOFF
+    # (2.03 m) plane — the SAME selection the linac stage uses to read its input beam
+    # (linac_sec1 picks the snapshot nearest the handoff). The bunch re-expands past
+    # best focus, so the phase space the downstream stage actually inherits is a
+    # distinct, later state worth showing alongside the min-σ_z point. Skip if the
+    # exit dump duplicates a pick already shown (e.g. best focus IS the last dump).
+    it_exit = its[int(np.argmin(np.abs(rec["zmean"] - Z_HANDOFF)))]
+    if it_exit not in picks:
+        picks = picks + [it_exit]
+        titles = titles + ["injector exit (handoff)"]
+    fig, axs = plt.subplots(1, len(picks), figsize=(4.3 * len(picks), 4.0),
+                            constrained_layout=True)
     for ax, it, ti in zip(axs, picks, titles):
         z, ke, w = snaps[it]
         ax.scatter((z - z.mean()) * 1e3, ke - ke.mean(), s=2, alpha=0.15, color="C0")

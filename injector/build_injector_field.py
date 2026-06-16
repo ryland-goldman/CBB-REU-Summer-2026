@@ -70,18 +70,21 @@ OUT_FILE_1 = os.path.join(OUT_DIR, "preb1_EB.h5")   # forward field, gap at Z_GA
 OUT_FILE_2 = os.path.join(OUT_DIR, "preb2_EB.h5")   # forward field, gap at Z_GAP_CENTER_2 (+π at run)
 
 # ── Solenoid lenses (static B-only focusing maps; per-Ampere normalised) ───────
-# Three energized LinacSim lenses (GUI defaults; 0B/0C/0D are 0 A, Sol 1A-C are
-# downstream of Section 1 — all omitted). Each is a separate single-mesh openPMD
-# file (the grids differ: LENS_0A is nr=189/nz=16, the others nr=16/nz~601), placed
-# in the lab frame via grid_global_offset. Imported by injector_sim.py.
-SOL_GDF = {"LENS_0A": "fieldmaps/LENS_0A.gdf",
-           "SOL_0":   "fieldmaps/SOL_0.gdf",
-           "LENS_0E": "fieldmaps/LENS_0E.gdf"}
-SOL_FILES = {"LENS_0A": os.path.join(OUT_DIR, "lens0a.h5"),
-             "SOL_0":   os.path.join(OUT_DIR, "sol0.h5"),
-             "LENS_0E": os.path.join(OUT_DIR, "lens0e.h5")}
+# The full LinacSim injector solenoid set (in z-order). LENS_0A / SOL_0 / LENS_0E carry
+# the GUI default currents (6 / 40 / 10 A); LENS_0B / 0C / 0D default to 0 A in LinacSim
+# (so they are inert at the faithful operating point) but are real magnets at 1.603 /
+# 1.692 / 1.838 m — built here and config()-overridable in injector_sim.py so they can be
+# energized for matching/transport studies (the 0.225→1.6 m drift is otherwise unfocused).
+# Sol 1A-C are downstream of the 2.03 m handoff (Section 1) and remain omitted. Each is a
+# separate single-mesh openPMD file (the grids differ: LENS_0A is nr=189/nz=16, the others
+# nr=16/nz~601), placed in the lab frame via grid_global_offset. Imported by injector_sim.py.
+SOL_NAMES = ("LENS_0A", "LENS_0B", "LENS_0C", "LENS_0D", "SOL_0", "LENS_0E")
+SOL_GDF = {n: f"fieldmaps/{n}.gdf" for n in SOL_NAMES}
+SOL_FILES = {n: os.path.join(OUT_DIR, n.lower().replace("_", "") + ".h5")
+             for n in SOL_NAMES}
 # GUI lab-z of each lens (LinacSim gpt_master.in positions).
-SOL_GUI_Z = {"LENS_0A": 0.225, "SOL_0": 1.897, "LENS_0E": 1.914}
+SOL_GUI_Z = {"LENS_0A": 0.225, "LENS_0B": 1.603, "LENS_0C": 1.692,
+             "LENS_0D": 1.838, "SOL_0": 1.897, "LENS_0E": 1.914}
 # Offset is ALWAYS derived programmatically (offset = GUI_z − Z[argmax|Bz|]), per map,
 # from the LOADED peak — NOT hard-coded. This self-corrects against stale plan literals
 # (the plan table's SOL_0 native peak 0.8209 m / offset +1.0761 m is stale; the actual
@@ -288,7 +291,7 @@ def build_solenoids():
     reads the WRITTEN placement, not an input recompute, so it cannot self-confirm a wrong
     grid_global_offset.
     """
-    for name in ("LENS_0A", "SOL_0", "LENS_0E"):
+    for name in SOL_NAMES:
         d = easygdf.load(SOL_GDF[name])
         col = {b["name"]: np.asarray(b["value"]) for b in d["blocks"]}
         R, Z, Br, Bz = col["R"], col["Z"], col["Br"], col["Bz"]

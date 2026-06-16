@@ -34,11 +34,13 @@ PHYSICS / UNITS NOTES (reviewer-flagged):
     never the post-scrape first-dump charge. Absolute charge resets at each handoff
     (gun/injector downsample-reweight), so panel (5) shows WITHIN-stage transmission and the
     waterfall stitches the true end-to-end chain via the recorded denominators.
-  - Lab-frame ES self-field overestimates transverse space charge by ~γ² (≈1.66× at β≈0.7);
-    this applies to the **injector/linac** stages (still lab-frame ES, and SC-dominant), whose
-    σ_x and capture numbers are therefore conservative (pessimistic) — noted on the panels. The
-    GUN is the exception: it uses the electromagnetostatic solver (self-B pinch ⇒ net qE_r/γ²),
-    so it carries no γ² overestimate.
+  - Lab-frame ES self-field overestimates transverse space charge by ~γ²; the GUN and INJECTOR
+    now use the electromagnetostatic solver (self-B pinch ⇒ net qE_r/γ²), so they carry no γ²
+    overestimate. Only **linac_sec1** is still lab-frame ES — but at its ~25 MeV the beam is
+    stiff and space charge is small, so the residual γ² effect there is minor (not the
+    SC-dominant low-energy regime the injector was). NOTE: these cross-stage figures regenerate
+    from a full-chain run; after the injector solver switch they should be re-run (pending the
+    time-release operating-point re-tune — see injector/README.md).
 """
 
 import os
@@ -261,7 +263,7 @@ def render_chain_evolution(tables):
                       textcoords="axes fraction", fontsize=7, color="0.3",
                       arrowprops=dict(arrowstyle="->", color="0.5", lw=0.8))
     a_sx.set_ylabel("σ_x  [mm]"); a_sx.set_title("Transverse size (per-plane RMS)")
-    a_sx.annotate("σ_x conservative:\nES omits 1/γ² pinch (~γ²≈1.7×)",
+    a_sx.annotate("gun+injector: EMS (γ² pinch in);\nlinac_sec1 ES but SC small @25 MeV",
                   xy=(0.50, 0.92), xycoords="axes fraction", fontsize=7, color="0.3")
     a_sz.set_yscale("log"); a_sz.set_ylabel("σ_z  [mm]")
     a_sz.set_title("Bunch length (linac_rest excluded: only 2 Impact-T dumps)")
@@ -313,9 +315,9 @@ def render_emittance_budget(tables):
         "emittance after the r-importance resample builds a uniform DISC (⟨x²⟩=R²/4), so "
         "ε_n,x drops ×√(3/4)≈0.87 (~2.3→~2.0 mm·mrad) — a geometry correction (the disc is "
         "more physical), NOT physical growth. (2) the injector ε_n growth is space-charge + "
-        "solenoid-aberration dominated over the 2 m low-energy drift; the γ²≈1.7× ES "
-        "transverse-SC overestimate makes it an UPPER bound (real growth is somewhat less — "
-        "opposite sense to the capture lower bound). (3) the injector-exit bar is the "
+        "solenoid-aberration dominated over the 2 m low-energy drift, now with the relativistic "
+        "EMS self-field (the 1/γ² magnetic pinch is included, so it is no longer a γ²-inflated "
+        "upper bound). (3) the injector-exit bar is the "
         "UN-collimated 2.03 m handoff beam (no iris mask); the iris-survivor beam "
         "linac_sec1 actually receives is ~13% lower (≈326 vs ≈375 mm·mrad).")
     ax.annotate(textwrap.fill(footnote, width=150),
@@ -395,7 +397,7 @@ def render_transmission_waterfall(tables, linac_inj):
         "Starts at gun exit (physical ~1 nC renorm); cathode dump weight (~82 nC, "
         "pre-renorm, not physical) excluded. 'injector exit' is the recorded 2.03 m "
         "handoff charge (q_injected_C; dump fallback). "
-        "Capture vs TRUE injected; γ²≈1.7× ES self-field overestimate ⇒ a conservative LOWER bound.")
+        "Capture vs TRUE injected (injector now relativistic EMS; linac_sec1 SC small at 25 MeV).")
     ax.annotate(textwrap.fill(footnote, width=165),
                 xy=(0.0, -0.13), xycoords="axes fraction", va="top",
                 fontsize=7, color="0.3")

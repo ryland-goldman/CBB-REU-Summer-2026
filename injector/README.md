@@ -126,16 +126,28 @@ facility carries this note.
 
 ## Solenoid lenses (the transverse focusing / radial-scrape fix)
 
-Three energized LinacSim lenses (GUI defaults; 0B/0C/0D are 0 A and omitted). Each is a
-separate per-Ampere B-only openPMD map (the grids differ — LENS_0A is nr=189/nz=16, the
-others nr=16/nz~601 — so they cannot be combined), placed in the lab frame via
-`grid_global_offset`. The 1-A maps scale linearly with current.
+All six LinacSim injector solenoids are now built and wired (in z-order). LENS_0A / SOL_0 /
+LENS_0E carry the GUI default currents (6 / 40 / 10 A); **LENS_0B / 0C / 0D default to 0 A**
+— the faithful LinacSim GUI value, so they are inert at the default operating point (a 0-A
+lens is skipped) — but are real magnets, built and `config()`-overridable (`I_LENS0B=…`) for
+matching/transport studies. Sol 1A-C sit downstream of the 2.03 m handoff (Section 1) and
+remain omitted. Each lens is a separate per-Ampere B-only openPMD map (the grids differ —
+LENS_0A is nr=189/nz=16, the others nr=16/nz~601 — so they cannot be combined), placed in the
+lab frame via `grid_global_offset`. The 1-A maps scale linearly with current.
 
-| Map | Current | GUI / lab-z peak | native peak z | programmatic offset |
-|-----|---------|------------------|---------------|---------------------|
-| LENS_0A | 6 A | 0.225 m | 0.2333 m | −0.0083 m |
-| SOL_0   | 40 A | 1.897 m | 0.8129 m | +1.0841 m |
-| LENS_0E | 10 A | 1.914 m | 1.9147 m | −0.0007 m |
+| Map | Current | GUI / lab-z peak | native peak z | programmatic offset | peak \|Bz\| |
+|-----|---------|------------------|---------------|---------------------|-------------|
+| LENS_0A | 6 A | 0.225 m | 0.2333 m | −0.0083 m | 4.03 mT/A |
+| LENS_0B | 0 A (default) | 1.603 m | 1.6107 m | +0.7923 m | 0.40 mT/A |
+| LENS_0C | 0 A (default) | 1.692 m | 1.7013 m | +0.7907 m | 0.32 mT/A |
+| LENS_0D | 0 A (default) | 1.838 m | 1.8240 m | +0.8140 m | 0.34 mT/A |
+| SOL_0   | 40 A | 1.897 m | 0.8129 m | +1.0841 m | 0.15 mT/A |
+| LENS_0E | 10 A | 1.914 m | 1.9147 m | −0.0007 m | 2.21 mT/A |
+
+> **Note (the 0.225→1.6 m gap):** LENS_0B/0C/0D cluster near Sol 0 / 0E around 1.9 m — they
+> are **not** in the long unfocused 0.225→1.6 m drift where the time-release beam radially
+> expands. Energizing them tightens the late matching telescope (and can help squeeze the
+> iris); it does **not** add focusing to that early gap, which is unfocused in LinacSim too.
 
 - **Offsets are derived programmatically** per map: `offset = GUI_z − Z[argmax|Bz|]`, landing
   each peak dead-on at its GUI lab-z. This self-corrects against stale plan literals (the plan
@@ -204,17 +216,47 @@ when the envelope happens to be monotone.
   coupled *through* the self-field, so the ~1 mm bunch is set with SC on; the faithful default is
   `True`.
 
+## Self-field solver (relativistic electromagnetostatic)
+
+The beam self-field uses WarpX's **electromagnetostatic** solver (`warpx_magnetostatic=True`), not
+the plain lab-frame electrostatic Poisson solve. In addition to `∇²φ = -ρ/ε₀` it solves the
+Coulomb-gauge vector potential from the beam current (`∇²A = -μ₀ j`, `B = ∇×A`), so the self
+magnetic field is included and the relativistic magnetic-pinch term `qβ×B` partially cancels the
+radial space-charge repulsion: the net transverse self-force is `qE_r/γ²` rather than the
+pure-electrostatic `qE_r`. This removes the ≈γ² (≈1.66–2.0× at β≈0.63–0.7) transverse-SC
+over-repulsion the lab-frame solver incurs — the WarpX–GPT 150 kV-gun benchmark's *cause 4*, which
+that writeup flags **grows for a longer line**, and the injector is the longest line in the chain
+(~2 m at γ≈1.3–1.4 *throughout*, unlike the low-γ-weighted gun where it was only +2%). Matches the
+gun's solver. Measured A/B on the same time-release input: iris transmission **34% (lab-frame) →
+42% (EMS)**; cost ≈3.7× (the extra A_z vector-Poisson over the long-thin box, ~78 → ~287 s).
+
+> **Gotcha (same as the gun):** the outer radial wall BC is `dirichlet`, not `neumann`. The
+> magnetostatic vector-Poisson's dominant A_z component (driven by `j_z`) has an all-Neumann,
+> *singular* operator — the MLMG bottom solve then diverges — unless the outer wall is grounded.
+> At RMAX=36 mm (well outside the beam) the self-field has decayed, so the beam dynamics are
+> unaffected; this only makes A_z well-posed.
+
 ## Capture / handoff result (the headline, with caveats)
 
 At the faithful currents (6/40/10 A) the three lenses focus the beam through the injector:
 Lens 0A (z ≈ 0.225 m) sets the early envelope, and the Sol 0 / Lens 0E matching telescope at
 z ≈ 1.9 m — just upstream of the 1.922 m iris — squeezes it through the 9.547 mm aperture.
-**~32% of the handoff charge passes the iris** (≈0.24 / 0.75 nC, via the multi-plane scrape at
-the real 1.922 m iris plane — see *The 9.547 mm collimator*), and the downstream linac captures
-**~7% of the true injected charge** into the RF bucket (⟨KE⟩ ≈ 25 MeV, σ_KE ≈ 8 MeV, max
-~32 MeV). The two prebunchers net-accelerate the beam **146 → ~220 keV** at the handoff while
-velocity-bunching it. This is **faithful machine behavior** — real lenses at real z, real iris,
-real handoff — and a large improvement over the old mislocated-solenoid hack.
+On the time-release gun beam with the relativistic EMS self-field (see *Self-field solver*),
+**~42% of the handoff charge passes the iris** (0.262 / 0.620 nC, via the multi-plane scrape at
+the real 1.922 m iris plane — see *The 9.547 mm collimator*). This is a controlled A/B above the
+**34%** the old lab-frame electrostatic solver gives on the *same* input — removing the γ²
+transverse over-repulsion focuses the beam tighter, so more clears the iris.
+
+> **⚠ Operating point under re-validation (time-release beam).** The prebuncher phases and lens
+> currents were tuned for the compact *snapshot* gun handoff. On the physical time-release beam
+> (a ~380 mm / 2 ns quasi-DC stream spanning ~155° of RF) the longitudinal waist now lands at
+> z ≈ 1.66 m — ~370 mm *upstream* of the 2.03 m handoff — so the bunch re-expands (σ_z 4.5 → 41 mm)
+> before it is handed off, and the beam radially expands to the 36 mm domain wall over the
+> unfocused 0.225→1.6 m drift (~37% loss there). So the **downstream RF-bucket capture (~7%) and
+> the "146 → ~220 keV" net-acceleration figures below predate this reconciliation and are not yet
+> re-measured** — re-tuning the phases/currents for the long beam is the open follow-up (the
+> LinacSim reconciliation backlog). The iris-transmission and solver numbers above ARE on the
+> current time-release beam.
 
 > **Fixed (physics-review):** two corrections fed these numbers. (1) An earlier version placed
 > LENS_0E ~800 mm out of position (a `grid_global_offset` bug that omitted the native grid origin
@@ -228,9 +270,9 @@ real handoff — and a large improvement over the old mislocated-solenoid hack.
 > several× more than that.)
 
 Three caveats frame this number:
-1. **Conservative lower bound:** the lab-frame electrostatic self-field omits the 1/γ² magnetic
-   pinch cancellation, overestimating transverse space charge by ~γ² (≈1.66× at β≈0.7) over the
-   ~2 m drift, so the real machine focuses tighter and captures more.
+1. **Self-field solver (resolved):** the injector now uses the relativistic electromagnetostatic
+   solver (`warpx_magnetostatic`), which includes the 1/γ² magnetic-pinch cancellation — so the
+   earlier lab-frame "~γ² conservative lower bound" no longer applies. See *Self-field solver*.
 2. **Tune-sensitive:** capture responds strongly to the upstream lens currents/placement; the
    faithful 6/40/10 A currents are not tuned to a capture optimum, so the optional current scan
    is the right tool to map the achievable capture (an earlier ~7×-from-8 mm-LENS_0A figure was
@@ -264,8 +306,9 @@ writes to `injector/results/`:
 
 ## Notes / caveats
 
-- The lab-frame electrostatic self-field is non-relativistic (omits 1/γ², overestimates
-  transverse SC by ~γ²); the focusing solution is pessimistic and the capture a lower bound.
+- The self-field is the relativistic electromagnetostatic solver (includes the 1/γ² magnetic
+  pinch — see *Self-field solver*), so the earlier lab-frame "~γ² pessimistic lower bound" framing
+  no longer applies.
 - Preb-2 phasing uses the injection β (+ analytic Preb-1 kick): valid only while both cavities
   are sub-threshold (the design point); a hardened-Preb-1 scan needs a two-pass run.
 - The 9.547 mm collimation is a post-hoc **multi-plane id scrape** (the in-run scrape isn't

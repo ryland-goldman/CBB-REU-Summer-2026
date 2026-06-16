@@ -144,6 +144,15 @@ PREB2_REV_PHASE = 0.0            # [rad] faithful reversed install in this crest
 I_LENS0A = 6.0
 I_SOL0 = 40.0
 I_LENS0E = 10.0
+# Lenses 0B / 0C / 0D (z = 1.603 / 1.692 / 1.838 m) default to 0 A — the faithful LinacSim
+# GUI value, so the default operating point is unchanged (a 0-A lens is skipped below).
+# They are real magnets, now built and wired so a matching/transport study can energize
+# them via config(I_LENS0B=...). NOTE: they sit clustered with Sol 0 / 0E near 1.9 m, NOT
+# in the unfocused 0.225→1.6 m drift where the time-release beam expands — energizing them
+# tightens the late telescope, it does not add focusing to that early gap.
+I_LENS0B = 0.0
+I_LENS0C = 0.0
+I_LENS0D = 0.0
 
 # ── Collimator (the faithful injector→linac iris/pipe) ────────────────────────
 # LinacSim gpt_master.in: a scatteriris of radius 9.547 mm at z=1.922 m, followed by a
@@ -349,15 +358,36 @@ def main():
         n_azimuthal_modes=1,
         lower_bound=[0.0, 0.0],
         upper_bound=[RMAX, ZMAX],
+        # r=0 is "none" (axis). The outer radial wall at RMAX=36 mm (well outside the
+        # r≲10 mm beam) is dirichlet, NOT neumann: the electromagnetostatic solver also does
+        # a vector-Poisson solve for A, and the dominant A_z component (driven by the beam's
+        # j_z) has an all-Neumann, SINGULAR operator — the MLMG bottom solve then diverges —
+        # unless the outer wall is dirichlet, which makes A_z well-posed (same fix as the gun;
+        # at 36 mm the self-field has long decayed, so the beam dynamics are unaffected).
         lower_boundary_conditions=["none", "dirichlet"],
-        upper_boundary_conditions=["neumann", "dirichlet"],
+        upper_boundary_conditions=["dirichlet", "dirichlet"],
         lower_boundary_conditions_particles=["none", "absorbing"],
         upper_boundary_conditions_particles=["absorbing", "absorbing"],
         warpx_blocking_factor=8,
     )
+    # Electromagnetostatic (relativistic) self-field solver. In addition to the
+    # electrostatic Poisson solve (∇²φ = -ρ/ε₀, E = -∇φ), warpx_magnetostatic=True solves
+    # the Coulomb-gauge vector potential from the beam current (∇²A = -μ₀ j, B = ∇×A), so the
+    # self magnetic field is included and the relativistic magnetic-pinch term qβ×B partially
+    # cancels the radial space-charge repulsion: the net transverse self-force is qE_r/γ²
+    # rather than the pure-electrostatic qE_r. This removes the ≈γ² (≈1.66–2.0× at β≈0.63–0.7)
+    # transverse-SC over-repulsion that the plain lab-frame solver incurs — the writeup's
+    # cause-4, which it flags GROWS for a longer line, and the injector is the longest line in
+    # the chain (~2 m at γ≈1.3–1.4 throughout, unlike the low-γ-weighted gun where it was only
+    # +2%). The magnetostatic MLMG solve gets the same precision/iteration knobs as the ES solve.
     solver = picmi.ElectrostaticSolver(
         grid=grid, method="Multigrid", required_precision=REQUIRED_PRECISION,
-        maximum_iterations=MAX_ITERS, warpx_self_fields_verbosity=0,
+        maximum_iterations=MAX_ITERS,
+        warpx_magnetostatic=True,
+        warpx_magnetostatic_required_precision=REQUIRED_PRECISION,
+        warpx_magnetostatic_max_iters=MAX_ITERS,
+        warpx_self_fields_verbosity=0,
+        warpx_magnetostatic_verbosity=0,
     )
 
     # ── Applied fields ────────────────────────────────────────────────────────
@@ -367,6 +397,9 @@ def main():
     # The 1-A-normalised maps are scaled by a constant time function = the current.
     applied = []
     for path, cur in [(SOL_FILES["LENS_0A"], I_LENS0A),
+                      (SOL_FILES["LENS_0B"], I_LENS0B),
+                      (SOL_FILES["LENS_0C"], I_LENS0C),
+                      (SOL_FILES["LENS_0D"], I_LENS0D),
                       (SOL_FILES["SOL_0"],   I_SOL0),
                       (SOL_FILES["LENS_0E"], I_LENS0E)]:
         if cur != 0.0:

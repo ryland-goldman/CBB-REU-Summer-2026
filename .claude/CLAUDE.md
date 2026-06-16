@@ -18,7 +18,14 @@ The `injector` stage is the full LinacSim injector subsection in one self-consis
 space-charge run — Lens 0A → Prebuncher 1 → Prebuncher 2 (reversed) → Sol 0 / Lens 0E —
 handing a focused, velocity-bunched beam through the 9.547 mm collimator to `linac_sec1`
 at the true linac entrance z ≈ 2.03 m. (It replaced the earlier single-cavity `prebuncher/`
-stage.)
+stage.) Its self-field is the **electromagnetostatic** solver (`warpx_magnetostatic`, matching
+the gun — outer radial wall `dirichlet` for A_z well-posedness), so the ~γ² lab-frame
+transverse-SC over-repulsion (the WarpX–GPT gun benchmark's cause 4, which grows for a longer
+line) is removed — the injector is the longest, lowest-γ line where it matters most. All six
+LinacSim solenoids are built (`SOL_NAMES`); Lens 0B/0C/0D default to 0 A (faithful, inert) and
+are `config()`-overridable (`I_LENS0B…`). **Open:** the prebuncher operating point still needs
+re-tuning for the longer time-release gun beam (waist lands ~370 mm before the handoff, radial
+blow-up over the unfocused 0.225→1.6 m drift) — the LinacSim reconciliation backlog.
 
 The `linac_rest` stage is the **rest of the straight electron line to CHESS** — Cornell linac
 sections 2–8 (CEA 2/3/4/5 + CU 3/4/5), seven S-band traveling-wave sections chained into **one
