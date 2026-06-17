@@ -16,7 +16,7 @@ from matplotlib.colors import LogNorm
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-from pipeline.beam_metrics import rms_emit, screen_profile
+from pipeline.beam_metrics import screen_profile
 
 MC2 = 0.51099895e3           # electron rest energy [keV]
 GUN_FIELD = "gun/gun_field/gun_E.h5"
@@ -61,7 +61,6 @@ def main():
     iters = ts.iterations
 
     t_ns, zmean, ke_mean, ke_max, n_live = [], [], [], [], []
-    sig_r, emit_nx = [], []
     # Pooled (all-dump) columns for the per-z profile, kept WITH the particle id so the profile
     # is reconstructed as fixed-z virtual SCREENS (id-track each particle's crossing of every
     # z-plane), not a z-histogram: a per-dump ⟨z⟩ aggregate is meaningless for the timed quasi-DC
@@ -74,22 +73,15 @@ def main():
         t_ns.append(ts.t[i] * 1e9)
         if len(z) == 0:
             zmean.append(np.nan); ke_mean.append(np.nan); ke_max.append(np.nan)
-            sig_r.append(np.nan); emit_nx.append(np.nan)
             continue
         ke = (gamma_of(ux, uy, uz) - 1.0) * MC2
         zmean.append(z.mean() * 1e3)
         ke_mean.append(ke.mean()); ke_max.append(ke.max())
         id_pool.append(idp.astype(np.int64))
         z_pool.append(z); ke_pool.append(ke); x_pool.append(x); ux_pool.append(ux); w_pool.append(w)
-        # Single-plane RMS σ_x = sqrt(⟨(x−⟨x⟩)²⟩) [mm] (pairs with εn,x); radial RMS is √2·σ_x.
-        xm = np.average(x, weights=w)
-        sig_r.append(np.sqrt(np.average((x - xm) ** 2, weights=w)) * 1e3)
-        # εn,x [mm·mrad]: ux is normalized momentum γβx, so x[m]·ux is [m·rad], ×1e6.
-        emit_nx.append(rms_emit(x, ux, w) * 1e6)
 
     t_ns = np.array(t_ns); zmean = np.array(zmean)
     ke_mean = np.array(ke_mean); ke_max = np.array(ke_max)
-    sig_r = np.array(sig_r); emit_nx = np.array(emit_nx)
     print(f"beam: {n_live[0]} launched, {n_live[-1]} at last dump; "
           f"peak ⟨KE⟩ {np.nanmax(ke_mean):.1f} keV, max KE {np.nanmax(ke_max):.1f} keV")
 
@@ -123,7 +115,7 @@ def main():
     fig.savefig(f"{RESULTS}/beam_rz.png", dpi=140)
     print(f"wrote {RESULTS}/beam_rz.png")
 
-    # ── Fig 3: energy gain vs z (per-z profile, pooled over dumps) ─────────────
+    # ── Fig 3: energy gain vs z (fixed-z virtual screens) ─────────────────────
     fig, ax = plt.subplots(figsize=(7.2, 4.6), constrained_layout=True)
     okz = np.isfinite(kez)
     ax.plot(zc[okz], kez[okz], "o-", color="C2", ms=3, label="mean KE")
@@ -131,7 +123,7 @@ def main():
     ax.axhline(GUN_VOLTAGE / 1e3, color="k", ls=":", label=f"{GUN_VOLTAGE/1e3:.0f} keV (gun voltage)")
     ax.set_xlabel("beam position  z  [mm]")
     ax.set_ylabel("kinetic energy  [keV]")
-    ax.set_title("Beam energy gain along the gun  (per-z profile, pooled over dumps)")
+    ax.set_title("Beam energy gain along the gun  (fixed-z virtual screens)")
     ax.legend()
     fig.savefig(f"{RESULTS}/energy_gain.png", dpi=140)
     print(f"wrote {RESULTS}/energy_gain.png")
@@ -153,7 +145,7 @@ def main():
     print(f"wrote {RESULTS}/exit_phase_space.png")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Fig 5: beam_envelope.png — per-plane RMS size σ_x and emittance εn,x vs ⟨z⟩
+    # Fig 5: beam_envelope.png — per-plane RMS size σ_x and emittance εn,x vs z
     # ──────────────────────────────────────────────────────────────────────────
     okz = np.isfinite(sxz) & np.isfinite(enz)
     fig, ax = plt.subplots(figsize=(7.6, 4.6), constrained_layout=True)
@@ -162,7 +154,7 @@ def main():
     ax.set_xlabel("beam position  z  [mm]")
     ax.set_ylabel(r"per-plane RMS size  $\sigma_x$  [mm]", color="C0")
     ax.tick_params(axis="y", labelcolor="C0")
-    ax.set_title("Transverse envelope and emittance along the gun  (per-z profile)")
+    ax.set_title("Transverse envelope and emittance along the gun  (fixed-z virtual screens)")
     ax2 = ax.twinx()
     l2, = ax2.plot(zc[okz], enz[okz], "s--", color="C3", ms=3,
                    label=r"norm. emittance  $\varepsilon_{n,x}$")
