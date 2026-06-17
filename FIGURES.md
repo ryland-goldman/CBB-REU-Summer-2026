@@ -227,9 +227,11 @@ and writes the figures below with **config-independent filenames**.
 ![Injector: σ_z(z), peak current, mean KE, both prebuncher gaps](injector/results/injector_line.png)
 
 **Left:** bunch length `σ_z(z)` along the line, with vertical markers at both prebuncher gaps
-(Z1 = 534 mm, Z2 = 1318 mm). The two-cavity distributed buncher drives σ_z well below the drift
-baseline (σ_drift/σ_2cav ≈ 4.4× near the focus, ≈ 2.4× vs Preb-1 alone). **Right:** peak current
-and mean KE — the two kicks (Preb-1 +20 keV, Preb-2 ~+54 keV mean) raise ⟨KE⟩ through the line.
+(Z1 = 534 mm, Z2 = 1318 mm). The two-cavity distributed buncher tightens σ_z monotonically from
+~108 mm (injection) to its ~33 mm waist, which lands **at** the 2.03 m handoff plane. **Right:**
+peak current and mean KE — with the zero-crossing, centroid-referenced phasing the two cavities
+velocity-bunch at **zero net mean-energy change** (⟨KE⟩ ≈ flat, 149→152 keV); the ±18 keV swings
+near each gap are the long bunch *straddling* the cavity mid-transit and cancel as it clears.
 
 ### `injector_phasespace.png` — the chirp through the two cavities
 ![Injector: z–KE phase space at four points](injector/results/injector_phasespace.png)

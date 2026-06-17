@@ -75,10 +75,13 @@ PREB2_KW = 10.0                  # Prebuncher 2 design power [kW] (prebuncher2_i
 PREB2_Q = Q_L_2                  # loaded Q of prebuncher 2 (4300)
 PREB2_PHI_OFF = 0.0              # phase offset [deg] from the zc base (0 = centroid on zero-crossing)
 PREB2_REVERSED = True            # apply the reversed-install phase PREB2_REV_PHASE
-# Reversed install is a genuine +π in absolute drive phase (180° rotation flips Ez). In the
-# zc + phi_off=0 parametrization phi_off carries NO reversal info (unlike the old crest+GUI
-# convention), so Preb-2 needs rev_phase=π to bunch (rev=0 would land it energy-neutral but
-# DEBUNCHING). See README -> Reversed install.
+# Reversed install ≡ +π in absolute drive phase (180° rotation flips Ez); in the zc+phi_off=0
+# parametrization phi_off carries NO reversal info (unlike the old crest+GUI convention), so the
+# +π is applied here explicitly. Both rev=0 and rev=π are energy-flat (centroid on a zero-crossing)
+# — they differ only in the chirp SLOPE. Keep rev=π: it is the faithful reversed geometry AND lands
+# the σ_z waist AT the 2.03 m handoff. rev=0 (a forward Preb-2) actually bunches HARDER — it
+# over-compresses to an earlier waist (~1.64 m) that re-expands before the handoff. See README ->
+# Reversed install.
 PREB2_REV_PHASE = np.pi          # [rad] reversed install in the zc/centroid parametrization
 
 # ── Solenoid lens currents [A] (config()-overridable; 0 disables a lens) ───────
@@ -354,9 +357,11 @@ def main():
     # Stop just before the bunch centre reaches the exit (margin < 1): once the beam clears
     # the absorbing boundary the domain empties and the Multigrid solve aborts. Size the
     # transit from the ACTUAL net kick (kick frac = -cos(base+phi_off), not the PHASE label)
-    # via a 3-leg estimate with the real per-leg speed after EACH cavity (including Preb-2's
-    # larger kick — omitting it over-estimated transit and over-ran the wall). The 0.98 margin
-    # stops short of the wall while landing a dump on the 2.03 m plane.
+    # via a 3-leg estimate with the real per-leg speed after EACH cavity (matters for the
+    # net-accelerating crest path, where Preb-2's larger kick — if omitted — over-estimated
+    # transit and over-ran the wall; at the energy-flat zc default both net kicks are ~0 so the
+    # legs collapse to v_beam). The 0.98 margin stops short of the wall while landing a dump on
+    # the 2.03 m plane.
     base1 = np.pi / 2.0 if PHASE == "zc" else np.pi
     MC2_KEV = m_e * c**2 / q_e / 1e3
     kick_frac1 = -np.cos(base1 + np.radians(PREB1_PHI_OFF))

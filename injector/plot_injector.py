@@ -61,15 +61,6 @@ def rf_scale(power, q_l=Q_L_1):
     return float(np.sqrt(1e3 * q_l * power / (2.0 * np.pi * F_RF)))
 
 
-def rf_phase(phase, t_gap):
-    """RF phase φ putting the bunch-tail gap arrival at zero-crossing/crest.
-    Mirrors injector_sim make_cavity() base term (phi_off omitted: the waveform
-    figure shows the zc/crest landing, not the GUI on-crest reference)."""
-    if phase == "crest":
-        return -OMEGA * t_gap + np.pi
-    return -OMEGA * t_gap + np.pi / 2.0
-
-
 def load_cavity_axis():
     """On-axis Ez(z) of the raw 1-J Prebuncher-1 map, in LAB z."""
     s = io.Series(PREB1_FIELD, io.Access.read_only)
@@ -202,12 +193,20 @@ def cavity_figure(name, rec, power, phase):
     phi1, t_gap1 = cavity_phi(Z_GAP_CENTER_1, v_beam, PREB1_PHI_OFF, phase, 0.0,
                               z_ref=z_centroid)
     z1_lab, ez1 = load_cavity_axis_file(PREB1_FIELD)
+    # Post-Preb-1 speed for the Z1->Z2 leg — the SAME analytic kick the sim uses
+    # (make_cavity is timed with v_after_preb1, not v_beam); at the zc default Preb-1's
+    # net centroid kick is ~0 so this equals v_beam, but under crest / a Preb-1 scan it
+    # differs (~13° on the Preb-2 panel) — keep the plot faithful to the sim drive.
+    base1 = np.pi / 2.0 if phase == "zc" else np.pi
+    kick1 = -np.cos(base1 + np.radians(PREB1_PHI_OFF)) * scale1 * V1J_KEV
+    ke_after1 = max(float(rec["ke"][0]) + kick1, 1.0)
+    v_after_preb1 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after1 / MC2) ** 2)
     # Preb 2 (reversed via PREB2_REV_PHASE; arrival chains from Preb-1's centroid t_gap1)
     have2 = PREB2_KW > 0
     if have2:
         scale2 = rf_scale(PREB2_KW, PREB2_Q)
         rev = PREB2_REV_PHASE if PREB2_REVERSED else 0.0
-        phi2, t_gap2 = cavity_phi(Z_GAP_CENTER_2, v_beam, PREB2_PHI_OFF, phase, rev,
+        phi2, t_gap2 = cavity_phi(Z_GAP_CENTER_2, v_after_preb1, PREB2_PHI_OFF, phase, rev,
                                   t_offset=t_gap1, z_ref=Z_GAP_CENTER_1)
         z2_lab, ez2 = load_cavity_axis_file(PREB2_FIELD)
 
