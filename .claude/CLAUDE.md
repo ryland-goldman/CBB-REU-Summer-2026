@@ -92,11 +92,6 @@ python pipeline/run_pipeline.py                  # full chain, live progress + f
 python pipeline/beam_gui.py                       # standalone Tk beam explorer over existing dumps
 ```
 
-In a notebook, `pipeline/warpx_plot_gui.py` is the Jupyter (ipywidgets) variant of the beam
-explorer: `from pipeline.warpx_plot_gui import warpx_plot_gui; warpx_plot_gui('<diags dir>')`
-over any one openPMD particle directory (needs `ipywidgets`, deliberately not in
-`requirements.txt`; see `pipeline/README.md`).
-
 Per-stage `SPACE_CHARGE` (beam self-field) is a `config()`-overridable module constant on every
 stage: the four WarpX stages default `True` (self-field on, `warpx_do_not_deposit` when `False`),
 `linac_rest` defaults `False` (the SC-off energy headline; `True` sets Impact-T `Bcurr` for an

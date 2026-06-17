@@ -142,25 +142,6 @@ but **stage-local** for `linac_sec1` (offset ~1.9 m) and `linac_rest` (offset ~5
 the chain in absolute lab z (every derived quantity is z-offset-invariant, so only the absolute z
 position is affected).
 
-### Jupyter variant (`pipeline/warpx_plot_gui.py`)
-
-The same GPT_tools-style explorer as an **ipywidgets** function for notebooks, pointed at any one
-openPMD particle directory (it is generic — works on dumps from outside this repo too):
-
-```python
-%matplotlib widget        # ipympl backend → live pan/zoom; plain inline also works
-from pipeline.warpx_plot_gui import warpx_plot_gui
-warpx_plot_gui('gun/diags/particles')   # or any WarpX openPMD particle dir
-```
-
-Tabs: **Trends** (σ_x/σ_y, σ_z, ε_n,x/ε_n,y, charge, ⟨KE⟩, σ_E, trajectory vs t or ⟨z⟩),
-**1D Dist.** (charge density or per-bin slice statistics — σ_x, σ_y, ε_n,x, ε_n,y, σ_E — vs any
-coordinate), **2D Dist.** (weighted hist2d, or scatter colored by density / any variable), and a
-**Filter** tab (range cut on any variable). The GPT "screen z" selector becomes a snapshot
-selector labeled by dump time and ⟨z⟩ (WarpX dumps are time snapshots, so per-particle `t` is not
-a plottable variable). Needs `ipywidgets` (notebook-only; intentionally not in
-`requirements.txt` — nothing in the pipeline imports it).
-
 ## Cross-stage figures (`pipeline/plot_chain.py`)
 
 `pipeline.plot_chain()` (a thin wrapper for `pipeline.plot_chain.main()`) builds ONE per-dump
