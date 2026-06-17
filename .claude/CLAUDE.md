@@ -10,7 +10,7 @@ Concretely, the repo rebuilds the front end of the Cornell Linac (Adam Bartnik's
 
 ```
 cathode  ─►  gun  ─►  injector  ─►  linac_sec1  ─►  linac_rest
-(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids,  (~25 MeV captured,  (sections 2–8,
+(SCL diode)  (~149 keV)  (2 prebunchers + 3 solenoids,  (~25 MeV captured,  (sections 2–8,
               velocity bunching + focusing, ~2 m)        SLAC TW section)     ~308 MeV, Impact-T)
 ```
 

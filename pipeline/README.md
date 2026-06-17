@@ -5,7 +5,7 @@ each stage's top-level facade module and calling `.run()`:
 
 ```
 cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
-gun.run()          # build gun field map + RZ acceleration (~146 keV) + plots
+gun.run()          # build gun field map + RZ acceleration (~149 keV) + plots
 injector.run()     # build injector fields (2 cavities + 3 solenoids) + RZ run + plots
 linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~25 MeV captured) + plots
 linac_rest.run()   # sections 2–8 (Impact-T): captured core → ≈308 MeV at 11 MW + plots
@@ -83,7 +83,7 @@ python pipeline/run_pipeline.py
     `SPACE_CHARGE=False` there disables Child–Langmuir limiting, so the diode passes the full
     2×J_CL over-injection (~double the physical current) and the validation figures become invalid —
     it is **not a meaningful operating point**, only a forces-off sanity check (the stage prints a
-    warning). For `gun` the self-field is *dominant* at 146 keV (it "dwarfs the gun field"), so
+    warning). For `gun` the self-field is *dominant* at 149 keV (it "dwarfs the gun field"), so
     SC-off is a large change there too, not a mild diagnostic.
   - **Caveat — `linac_rest` SC-on is exploratory/unvalidated.** The per-section ΔE gates were
     validated SC-off; the calibration always runs SC-free (energy gain is SC-independent at γ>49)

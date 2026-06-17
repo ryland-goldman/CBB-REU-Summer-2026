@@ -47,11 +47,11 @@ beam representation (see *Beam source*; `"timed"` runs ~5× longer than `"snapsh
 run spans the full pulse + a transit instead of one transit); the grid `nr, nz`; and
 `SPACE_CHARGE` (default `True`). Setting
 `SPACE_CHARGE=False` passes `warpx_do_not_deposit` (beam self-field off, only the applied gun field
-acts) — but note the self-field is *dominant* here at 146 keV (it "dwarfs the gun field," ~17% of
+acts) — but note the self-field is *dominant* here at 149 keV (it "dwarfs the gun field," ~17% of
 charge is already lost to it), so SC-off is a large physics change, not a mild diagnostic. Runtime ≈
 `nz²` (per-step cost ∝ cells, and
 `dz = ZMAX/nz` ⇒ fewer steps as `nz` drops), so halving `nz` ≈ 4× faster. This holds because the
-gun's cells are near-isotropic (`dz/dr ≈ 1.3`) so the MLMG solve stays well-conditioned as `nz`
+gun's cells are near-isotropic (`dz/dr ≈ 0.86`) so the MLMG solve stays well-conditioned as `nz`
 drops — **unlike the injector's long-thin box**, where coarsening `NZ` slows the solve instead
 (see `injector/README.md`). Keep `N_DIAGS ≥ 20` so `space_charge.png` still finds its
 near-launch field snapshot (it self-skips otherwise).
@@ -116,7 +116,7 @@ bunch charge. We:
 **Why renormalize:** injecting the full 82 nC as one instantaneous bunch is unphysical — its
 radial space-charge field dwarfs the gun field and blows the beam apart before it
 accelerates (observed directly: the beam is absorbed within ~50 steps). At 1 nC the beam still
-transports and accelerates to ~146 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
+transports and accelerates to ~149 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
 explore the space-charge regime.
 
 ### Beam representation — time-release vs snapshot (`BEAM_RELEASE`)
@@ -202,7 +202,7 @@ on the PICMI `ElectrostaticSolver`): on top of the electrostatic Poisson solve (
 (∇²**A** = −μ₀**j**, **B** = ∇×**A**), so the beam's **self magnetic field** is included. The
 resulting magnetic-pinch force `qβ×B` partially cancels the radial electric repulsion, giving the
 correct relativistic net transverse self-force `qE_r/γ²` rather than the pure-electrostatic `qE_r`.
-At the gun exit (146 keV, γ ≈ 1.29) the plain labframe-electrostatic solver would **overestimate
+At the gun exit (149 keV, γ ≈ 1.29) the plain labframe-electrostatic solver would **overestimate
 the transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** (ramping from a few % near the
 cathode at 10 keV to ~66 % at exit); the electromagnetostatic solver removes that error
 self-consistently. (WarpX's per-species *relativistic* ES mode is an alternative for a single
@@ -218,7 +218,7 @@ for a quick check.) **Boundary requirement:** the outer radial wall is
 would otherwise have an all-Neumann singular operator and the MLMG bottom solve **diverges**
 (`MLMG failed`). Grounding the pipe at r = 15 mm — well outside the r ≲ 8 mm beam — makes it
 well-posed (it also models φ as a grounded conductor rather than a Neumann mirror, physically
-the real beampipe); the headline exit energy is unchanged (146 keV). Transmission depends on the
+the real beampipe); the headline exit energy is unchanged (149 keV). Transmission depends on the
 beam representation: ≈ 81 % for the over-dense `snapshot` beam (halo blown to the wall), ≈ 100 %
 for the realistic `timed` release (the low line-density beam barely diverges) — see *Beam
 representation*.
@@ -271,13 +271,16 @@ recipe, not just a WarpX convention.
    than carrying the bin-to-bin sampling jitter a z-histogram of the pooled quasi-DC stream produces.
    `energy_gain.png` shares the same screen reconstruction.
 6. **`space_charge.png`** — `r–z` maps of the beam **self-field** (`ρ` and the space-charge
-   potential well `φ`, ≈ −250 V) at a near-launch snapshot — the dumped self-field nothing else
-   plots, and the well that motivates renormalizing the bunch to 1 nC.
+   potential well `φ`, ≈ −6 V at the near-launch snapshot plotted — ⟨z⟩ ≈ 0.3 mm) — the dumped
+   self-field nothing else plots, and the well that motivates renormalizing the bunch to 1 nC.
+   The realistic low-line-density `timed` beam makes this well shallow (it deepens to only
+   ~−100 V at the fuller later dumps); the ~−250 V well is the old over-dense `snapshot` beam.
 
 ## Notes / extensions
 
 - The beam energy gain tracks `∫ e·|Ez| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the ~150 keV
-  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~146 keV mean).
+  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~149 keV mean,
+  cross-validated against GPT at 148.9 keV — see *Cross-code validation*).
 - To approach the continuous-emission picture, inject a train of bunches or feed the cathode
   current directly rather than a single snapshot.
 - A solenoid (magnetic focusing) could be added via a second `read_from_file` B map if the

@@ -15,7 +15,7 @@ stage's openPMD beam as input, so the simulations form a single self-consistent 
 
 ```
 cathode  ─►  gun  ─►  injector  ─►  linac_sec1  ─►  linac_rest
-(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)  (sections 2–8, ~308 MeV, Impact-T)
+(SCL diode)  (~149 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)  (sections 2–8, ~308 MeV, Impact-T)
 ```
 
 ## Setup
@@ -72,7 +72,7 @@ Each stage is also a top-level Python package — `import cathode; cathode.run()
 | Stage | Directory | What it does |
 |-------|-----------|--------------|
 | **1. Cathode** | [`cathode/`](cathode/README.md) | Thermionic cathode as a finite-extent, space-charge-limited (Child–Langmuir) diode in 2D x–z. The electron source. |
-| **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~146 keV. |
+| **2. Gun** | [`gun/`](gun/README.md) | CESR electrostatic gun (~150 kV) in RZ, using the `CESR_gun.gdf` Poisson–Superfish field map. Accelerates the cathode beam to ~149 keV. |
 | **3. Injector** | [`injector/`](injector/README.md) | The full LinacSim injector subsection in one RZ space-charge run (RZ): Lens 0A → Prebuncher 1 (8 kW) → Prebuncher 2 (10 kW, reversed) → Sol 0 / Lens 0E, then the 9.547 mm collimator. Two-cavity velocity bunching + solenoid focusing; hands a focused, collimated beam to the linac at z ≈ 2.03 m. (Replaced the earlier single-cavity `prebuncher/` stage.) |
 | **4. Linac Sec 1** | [`linac_sec1/`](linac_sec1/README.md) | SLAC-design 3 m, 2π/3 traveling-wave accelerating section (RZ). Reads the injector's focused beam at the z ≈ 2.03 m handoff and applies the multi-plane 9.547 mm iris scrape at injection; no in-stage solenoid (focusing is upstream now). At the faithful 11 MW point capture is ~7% of true injected to ⟨KE⟩ ≈ 25 MeV — a conservative (γ²) lower bound, tune-sensitive to the upstream lens currents. |
 | **5. Linac Rest** | [`linac_rest/`](linac_rest/README.md) | Cornell linac **sections 2–8** (CEA 2/3/4/5 + CU 3/4/5) — seven S-band traveling-wave sections chained into one **Impact-T** deck (via lume-impact, not WarpX). Reads `linac_sec1`'s captured ~25 MeV exit beam, keeps the β > 0.999 core (a model-validity cut), and accelerates on-crest to ≈308 MeV at 11 MW (307.97 survivors through the real bore). No field maps (generic constant-gradient TW, reusing the lume-impact `rfdata4–7` shape); space charge off by default; quads OFF for the headline. The e+ compressor (CU 2) is out of scope. |
