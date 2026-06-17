@@ -50,6 +50,36 @@ Whenever you add or significantly change a feature, stage, folder, script, or de
 
 When in doubt, treat a doc update as part of "done" — a feature isn't complete until `CLAUDE.md`, the root `README.md`, and the stage `README.md` reflect it.
 
+## Codebase Standards
+
+Documentation lives in the README files; code comments hold only what a reader of that
+line genuinely needs. Keep the code scannable and the prose in one place.
+
+- **Docs live in READMEs, not code.** Physics rationale, operating points, design
+  history, field-map provenance, and performance-tuning narrative belong in the stage
+  `README.md` (architecture goes in this file). Do not restate them in the code.
+- **Module docstrings are short** — a summary of what the file does (≤ ~6 lines) plus a
+  pointer: `See <stage>/README.md for physics, parameters, and gotchas.`
+- **Keep a comment only if it is essential** — i.e. it prevents a silent regression a
+  reader of *that line* could not otherwise know:
+  - sign / unit conventions on physical quantities (negative field scale; `u = γβc`;
+    momentum `= γβ·mₑ·c`),
+  - WarpX / pywarpx / Impact-T footguns tied to a specific line (MLMG `dirichlet` outer
+    wall; PICMI "last applied field must load E"; θ₀ is *absolute* per section;
+    `species` singular vs `electrons` plural; field-free-pad sampling),
+  - non-obvious local logic (multi-plane iris scrape vs single cut; transit-stop sizing;
+    "transmission measured before charge re-impose").
+
+  Prefer one terse line, optionally `# see README → "<heading>"`, over a paragraph.
+- **Delete redundant narrative comments** that only re-explain what the README already
+  says. If a comment holds a fact the README is *missing*, move it to the README, then
+  delete the comment.
+- **No dead code, no history/TODO prose** in comments. (The commented operating-point
+  presets in `run_pipeline.py` stay — they are usage examples, not dead code.)
+- **Naming:** module constants `UPPER_SNAKE`, functions `lower_snake`, classes
+  `PascalCase`, private helpers leading `_`. Runtime-tunable parameters are module-level
+  constants overridable via `stage.config(**kwargs)` (keys must match the names).
+
 ## Commands
 
 All commands run from the **repo root** in the `CBB` environment. Stage scripts use hard-coded relative paths (e.g. `gun/diags`), so running from anywhere else breaks the inter-stage handoff.
@@ -61,11 +91,6 @@ pip install -r requirements.txt                 # pywarpx/openpmd-api are best v
 python pipeline/run_pipeline.py                  # full chain, live progress + final-beam summary
 python pipeline/beam_gui.py                       # standalone Tk beam explorer over existing dumps
 ```
-
-In a notebook, `pipeline/warpx_plot_gui.py` is the Jupyter (ipywidgets) variant of the beam
-explorer: `from pipeline.warpx_plot_gui import warpx_plot_gui; warpx_plot_gui('<diags dir>')`
-over any one openPMD particle directory (needs `ipywidgets`, deliberately not in
-`requirements.txt`; see `pipeline/README.md`).
 
 Per-stage `SPACE_CHARGE` (beam self-field) is a `config()`-overridable module constant on every
 stage: the four WarpX stages default `True` (self-field on, `warpx_do_not_deposit` when `False`),

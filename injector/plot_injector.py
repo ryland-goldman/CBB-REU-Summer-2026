@@ -1,37 +1,12 @@
 """
-Figures and summary for the WarpX injector stage.
+Figures and summary for the WarpX injector stage. Reads `injector/diags/main`
+plus any `injector/diags/P*` scan cases (+ `P0_drift` baseline); writes the
+injector_{line,phasespace,cavity,bunch_profile}.png and compare_power_phase.png
+figures. Per-case figures use config-independent filenames (operating point lives
+in the input dir + titles), so a new run overwrites rather than orphaning.
 
-Default run writes one case to `injector/diags/main`; an optional power/phase scan
-writes `injector/diags/P<power>_<phase>` dirs (and a `P0_drift` baseline). This
-plotter reads `diags/main` plus any `diags/P*` cases present.
-
-The gun-exit bunch is short (σ_z ≈ a few mm vs the 214 MHz RF wavelength) and
-carries an intrinsic +1.4 keV/mm (debunching) energy chirp, and at ~1 nC it is
-space-charge dense. In a free drift it therefore *expands*. The prebunchers act as
-ballistic bunchers: at the zero-crossing they flip the chirp negative and compress
-the bunch — but space charge limits how far. The clearest way to show this is to
-compare each powered run against a **drift-only baseline** (P = 0):
-
-  * σ_z(z)        — bunch length along the line, cavity runs vs. the drift baseline
-  * ratio(z)      — σ_z,drift(z) / σ_z,cavity(z)  (>1 ⇒ cavity is bunching)
-  * I_peak(z)     — peak current (peak line density × beam velocity)
-  * z–KE space    — the chirp flipping/rotating through the cavities
-
-Per-case figures use CONFIG-INDEPENDENT filenames (the operating point lives in the
-diags/<case> input dir and the figure titles, not the filename) so a new run
-overwrites the same files instead of leaving orphans:
-
-  * injector_line.png          — σ_z(z) (vs. drift) and peak current / mean energy
-  * injector_phasespace.png    — z–KE at injection / cavity exit / best focus /
-                                 injector exit (the z≈2.03 m handoff plane)
-  * injector_cavity.png        — the RF DRIVE: on-axis Ez(z) of the scaled 1-J map(s)
-                                 in the lab frame, plus the cos/sin RF waveform vs time
-  * injector_bunch_profile.png — the real longitudinal line-charge density λ(z)
-  * compare_power_phase.png    — σ_z(z) for the baseline vs all powers (scan only)
-
-Run with (module form — the script uses a package-relative import, so
-`python injector/plot_injector.py` will not work):
-    conda run -n CBB python -m injector.plot_injector
+Run as a module (package-relative import): conda run -n CBB python -m injector.plot_injector
+See injector/README.md for physics, parameters, and gotchas.
 """
 
 import os
@@ -49,14 +24,8 @@ from openpmd_viewer import OpenPMDTimeSeries
 def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
     """Call an openPMD read, retrying a transient HDF5 "Inaccessible" open error.
 
-    NOTE: the production "OPEN_FILE failed ... Inaccessible" failure on this
-    stage was fd exhaustion (openpmd-viewer leaks an fd per get_particle vs
-    macOS's 256-fd default), now fixed by raising RLIMIT_NOFILE — see
-    _runner._raise_fd_limit. This retry does NOT help that case (the fds stay
-    spent); it is a backstop only for a genuinely transient open, e.g. the
-    in-sim handoff report opening a Series while WarpX's own diagnostic Series is
-    still releasing a just-flushed file. Re-raises after the last try so a
-    genuinely missing file (or unfixed fd exhaustion) still surfaces.
+    Backstop only for a genuinely transient open; does NOT rescue fd exhaustion
+    (that needs the raised RLIMIT_NOFILE). See README -> "openPMD fd-leak gotcha".
     """
     for i in range(tries):
         try:
@@ -66,9 +35,8 @@ def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
                 raise
             time.sleep(base * 2 ** i)
 
-# RF drive constants (F_RF, Q_L, V1J_KEV, gap centres) come from the single source of
-# truth in the build module so this figure's re-derived scale/phase cannot drift from
-# the actual run.
+# RF-drive constants imported from build module (single source of truth) so the
+# re-derived scale/phase cannot drift from the run.
 from .build_injector_field import (
     V1J_KEV, F_RF, Q_L_1, Z_GAP_CENTER_1, Z_GAP_CENTER_2, Z_HANDOFF)
 
@@ -78,13 +46,8 @@ Q_E = 1.602176634e-19            # elementary charge [C]
 DIAG_ROOT = "injector/diags"
 RESULTS = "injector/results"
 PREB1_FIELD = "injector/injector_field/preb1_EB.h5"
-# Cavity-1 gap lab-z (for marking plots) is imported from build_injector_field above.
 Z_GAP_CENTER = Z_GAP_CENTER_1
 
-# ── RF-drive constants ────────────────────────────────────────────────────────
-# The cavity map is stored 1-J-normalised; the run multiplies it by `scale` and
-# modulates E ∝ cos(ω t + φ), B ∝ sin(ω t + φ). To draw the field the beam actually
-# sees we re-derive scale and φ here from the same formulae the sim uses.
 OMEGA = 2.0 * np.pi * F_RF       # RF angular frequency [rad/s]
 Z_INJECT = 0.005                 # [m] lab z where the bunch tail (smallest z) is launched
 os.makedirs(RESULTS, exist_ok=True)
@@ -92,21 +55,16 @@ os.makedirs(RESULTS, exist_ok=True)
 
 def rf_scale(power, q_l=Q_L_1):
     """Field scale = sqrt(stored_energy / 1 J), stored_energy = 1e3·Q·P/(2π f_RF).
-
-    Same expression as injector_sim.py: at P=0 (drift baseline) there is no cavity
-    field, so the scale is 0.
-    """
+    Same expression as injector_sim.py; P=0 (drift baseline) gives scale 0."""
     if power <= 0:
         return 0.0
     return float(np.sqrt(1e3 * q_l * power / (2.0 * np.pi * F_RF)))
 
 
 def rf_phase(phase, t_gap):
-    """RF phase φ that puts the bunch-tail gap arrival at zero-crossing/crest.
-
-    Mirrors injector_sim.py make_cavity() base term (phi_off omitted here — the
-    waveform figure shows the zc/crest landing, not the GUI on-crest reference).
-    """
+    """RF phase φ putting the bunch-tail gap arrival at zero-crossing/crest.
+    Mirrors injector_sim make_cavity() base term (phi_off omitted: the waveform
+    figure shows the zc/crest landing, not the GUI on-crest reference)."""
     if phase == "crest":
         return -OMEGA * t_gap + np.pi
     return -OMEGA * t_gap + np.pi / 2.0
@@ -219,24 +177,14 @@ def load_cavity_axis_file(field_path):
 
 
 def cavity_phi(z_gap, v_at_gap, phi_off_deg, phase, rev_phase, t_offset=0.0):
-    """Re-derive a cavity's drive phase φ exactly as injector_sim.make_cavity does
-    (crest base for the GUI phi_off + the reversal phase), so the drawn waveform
-    matches the run (single source of truth)."""
+    """Re-derive a cavity's drive phase φ exactly as injector_sim.make_cavity
+    does (crest base + GUI phi_off + reversal phase), single source of truth."""
     t_gap = t_offset + (z_gap - Z_INJECT) / v_at_gap
     base = np.pi / 2.0 if phase == "zc" else np.pi
     return -OMEGA * t_gap + base + np.radians(phi_off_deg) + rev_phase, t_gap
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FIGURE A — injector_cavity.png : the RF DRIVE both prebunchers apply.
-#
-# Left  — on-axis Ez(z) of each scaled 1-J map placed at its lab gap (Preb 1 @ Z1,
-#         Preb 2 @ Z2), so the two bunching lobes are visible along the line.
-# Right — the temporal RF waveform E ∝ cos(ωt+φ) at each cavity's arrival, with the
-#         bunch-centre marker, showing where the bunch lands on each cavity's phase.
-# Preb-2's scale/phase are re-derived the SAME way the sim does (crest base + GUI
-# phi_off + PREB2_REV_PHASE) so the figure can't drift from the run.
-# ══════════════════════════════════════════════════════════════════════════════
+# FIGURE A — injector_cavity.png : the RF drive both prebunchers apply.
 def cavity_figure(name, rec, power, phase):
     from .injector_sim import (
         PREB1_KW, PREB1_Q, PREB1_PHI_OFF, PREB2_KW, PREB2_Q, PREB2_PHI_OFF,
@@ -257,7 +205,7 @@ def cavity_figure(name, rec, power, phase):
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.4), constrained_layout=True)
 
-    # ── Left: spatial Ez(z) lobes of both cavities in the lab frame ─────────────
+    # Left: spatial Ez(z) lobes of both cavities in the lab frame
     a1.plot(z1_lab * 1e3, ez1 * scale1 / 1e6, color="C3",
             label=f"Preb 1 ({PREB1_KW:g} kW, $V_g$≈{scale1*V1J_KEV:.0f} kV)")
     if have2:
@@ -274,7 +222,7 @@ def cavity_figure(name, rec, power, phase):
                  f"Preb 2 @ {Z_GAP_CENTER_2*1e3:.0f} mm)")
     a1.legend(fontsize=8)
 
-    # ── Right: temporal RF waveform at each cavity's bunch arrival ──────────────
+    # Right: temporal RF waveform at each cavity's bunch arrival
     T = 1.0 / F_RF
     tt = np.linspace(-1.0 * T, 1.0 * T, 800)
     a2.plot(tt * 1e9, np.cos(OMEGA * (t_gap1 + tt) + phi1), color="C3",
@@ -302,9 +250,7 @@ def cavity_figure(name, rec, power, phase):
     print(f"wrote {path}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FIGURE B — injector_bunch_profile.png : the REAL longitudinal bunch shape λ(z).
-# ══════════════════════════════════════════════════════════════════════════════
+# FIGURE B — injector_bunch_profile.png : the longitudinal bunch shape λ(z).
 def bunch_profile_figure(name, rec, base):
     snaps = rec["snaps"]
     picks, titles = snapshot_picks(rec, base)
@@ -379,16 +325,9 @@ def per_case_figure(name, rec, base):
 
     snaps, its = rec["snaps"], rec["it"]
     picks, titles = snapshot_picks(rec, base)
-    # Append the injector EXIT snapshot: the dump nearest the z≈Z_HANDOFF (2.03 m) handoff
-    # PLANE. The bunch re-expands past best focus, so the phase space at the physical handoff
-    # plane is a distinct, later state worth showing alongside the min-σ_z point. Skip if the
-    # exit dump duplicates a pick already shown (e.g. best focus IS the last dump).
-    # CAVEAT: this is the 2.03 m plane, NOT necessarily the dump linac_sec1 actually ingests —
-    # linac_sec1.load_injector_bunch applies an n≥0.8·nmax population gate BEFORE its nearest-⟨z⟩
-    # pick, so under heavy radial loss (when the near-handoff dumps drop below 0.8·nmax) the
-    # linac falls back to an earlier, off-plane dump. Re-converging that selector to the true
-    # handoff is the deferred operating-point re-tune (see injector/README.md); this panel shows
-    # the physical handoff plane regardless.
+    # Exit snapshot: dump nearest the physical z≈Z_HANDOFF (2.03 m) plane, NOT
+    # necessarily the dump linac_sec1 ingests (its 0.8·nmax population gate can
+    # fall back off-plane). See README -> "Capture / handoff result".
     it_exit = its[int(np.argmin(np.abs(rec["zmean"] - Z_HANDOFF)))]
     if it_exit not in picks:
         picks = picks + [it_exit]
@@ -421,11 +360,9 @@ def main(cases=None):
     With `cases=None`, plots `{DIAG_ROOT}/main` and every `{DIAG_ROOT}/P*` directory;
     pass a list of case dir names (e.g. ["main"]) to restrict.
     """
-    # Raise the fd limit before analyse_case loops the full ~280-dump series. The
-    # pipeline path (injector.plot() → Stage.plot()) already raises it, but this
-    # module is also a documented standalone entry (`python injector/plot_injector.py`),
-    # and openpmd-viewer leaks an fd per get_particle — enough to exhaust macOS's
-    # default 256-fd limit. See _runner._raise_fd_limit.
+    # Raise the fd limit before looping the full ~280-dump series (this module is
+    # also a standalone entry; openpmd-viewer leaks an fd per get_particle, which
+    # exhausts macOS's 256 default). See README -> "openPMD fd-leak gotcha".
     from pipeline._runner import _raise_fd_limit
     _raise_fd_limit()
     if cases:

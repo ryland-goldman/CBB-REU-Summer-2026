@@ -1,46 +1,21 @@
-"""End-to-end Cornell Linac beam simulation in WarpX.
+"""End-to-end Cornell Linac pipeline: cathode -> gun -> injector -> linac_sec1 -> linac_rest.
 
-Orchestrates the four stages in order from one driver process:
-
-    cathode -> gun -> injector -> linac_sec1
-
-Each stage's build/plot run in-process, but its WarpX simulation runs in a fresh
-Python subprocess (`pipeline._launch_sim`) to sidestep pywarpx's per-process
-geometry binding (cathode 2D -> gun/injector/linac_sec1 RZ would otherwise trip a
-diagnostic state assertion). Each stage exposes `config(**kwargs)` (override module-level
-constants) and `run()` (build field map if any, simulate, plot). Stage execution is
-wrapped by the shared runner in `pipeline/_runner.py`, which drives the tqdm bar from
-an afterstep callback and redirects WarpX's per-step stdout to the pipeline log file,
-writing a full DEBUG-level transcript to `pipeline/logs/pipeline_<ts>.log`.
-
-Run with:
-    conda activate CBB
-    python pipeline/run_pipeline.py
+Imports each stage facade and calls config()/run() in order, then renders the
+cross-stage figures. See pipeline/README.md for the run command, configuration,
+performance knobs, and the subprocess-isolation rationale.
 """
 
 import os
 import sys
 
-# Set OMP_NUM_THREADS BEFORE any pywarpx import (read by OpenMP at load time).
-# Default 1: these stages run fastest single-threaded — the grids are small and
-# the MLMG Poisson solve is memory-bandwidth bound, so OpenMP threads contend for
-# the same memory bus and add fork/join + barrier overhead without speeding up the
-# solve (measured: full chain ~1.1 min at OMP=1; OMP=14 showed only ~450% CPU and
-# no gain). Keep this single-threaded; only raise OMP_THREADS for the much larger
-# original-config grids, where per-thread work outgrows the overhead.
-# An explicitly-set OMP_THREADS always wins, even if OMP_NUM_THREADS was already
-# exported (otherwise setdefault would silently ignore OMP_THREADS); else default 1.
+# Set OMP_NUM_THREADS BEFORE any pywarpx import (OpenMP reads it at load time).
+# Explicit OMP_THREADS wins over an already-exported OMP_NUM_THREADS; else default 1.
 if "OMP_THREADS" in os.environ:
     os.environ["OMP_NUM_THREADS"] = os.environ["OMP_THREADS"]
 else:
     os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-# Disable HDF5 file locking before any openPMD/h5py import (HDF5 latches it at
-# library init). This is a minor mitigation only — the real cause of the
-# "IO Task OPEN_FILE failed ... Inaccessible" error is fd exhaustion (openpmd-
-# viewer leaks an fd per get_particle, overflowing macOS's default 256-fd soft
-# limit on a ~280-dump series), fixed by the fd-limit raise in
-# _runner._raise_fd_limit (called from _prepare_environment, before any read).
+# Set before any openPMD/h5py import (HDF5 latches locking at library init).
 os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 
 # Run from the repo root so each stage's hard-coded relative paths resolve.
@@ -58,44 +33,23 @@ import linac_rest
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 
 # ── Operating-point overrides (physics; defaults live in the stage modules) ──
-# Matched to the original LinacSim input files (reference/Linac Simulation
-# Documentation/input_files/): cathode_master.in + gpt_master.in (gun, injector,
-# section-1) GUI defaults.
-cathode.config(V_anode=60.0)                          # Vpulse = 60 V
-gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)    # total_charge = -1e-9 (1 nC)
-# Tan diss. Ch. 2 (The Injector): Preb 1 driven at phase NULL (zero-crossing —
-# earlier electrons slowed, later sped up → velocity bunching), Preb 2 at phase CREST.
-# In the crest-referenced convention (base=π, kick ∝ −cos(base+φ_off)): null = φ_off −90°,
-# crest = φ_off 0°. Power at the faithful LinacSim 8 kW / 10 kW point (prebuncher{1,2}_input_power).
+cathode.config(V_anode=60.0)
+gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)
+# Crest-referenced phase convention (base=π, kick ∝ −cos(base+φ_off)): null = φ_off −90°, crest = φ_off 0°.
 injector.config(PREB1_KW=8, PREB2_KW=10, PREB1_PHI_OFF=-90, PREB2_PHI_OFF=0, PHASE="crest")
-# Sol 0 (40 A) and Lens 0A/0E live on the injector now (I_SOL0/I_LENS0A/I_LENS0E, faithful
-# defaults in injector_sim) — the linac no longer has a solenoid, only RF power + phase.
-linac_sec1.config(POWER_MW=11.0)                      # sec1_input_power = 11 MW (PHASE_DEG=0 default)
-# linac_rest = Cornell Linac sections 2–8 (Impact-T): one power convention for the whole
-# linac (11 MW), √P-scaled per section. The captured-core cut (MIN_KE_MEV) drops the sec-1
-# low-energy un-captured tail so the injected beam has β > 0.999 (rigid-crest no-slip).
-linac_rest.config(POWER_MW=11.0)                      # one power convention across the linac
+linac_sec1.config(POWER_MW=11.0)
+linac_rest.config(POWER_MW=11.0)
 
-# ── Space charge (beam self-field) per stage. Each segment carries its own SPACE_CHARGE
-#    flag (default True for the four WarpX stages = on; linac_rest defaults False = the SC-off
-#    energy headline). Toggle a stage off for a no-self-field diagnostic run. WarpX stages use
-#    warpx_do_not_deposit (beam deposits no charge ⇒ only applied/boundary fields act); linac_rest
-#    sets Impact-T Bcurr = q_injected·Bfreq when on. Uncomment to override:
+# ── Space charge (beam self-field) per stage; see pipeline/README.md § Configuration.
+#    Uncomment to override the per-stage defaults:
 # cathode.config(SPACE_CHARGE=True)
 # gun.config(SPACE_CHARGE=True)
 # injector.config(SPACE_CHARGE=True)
 # linac_sec1.config(SPACE_CHARGE=True)
 # linac_rest.config(SPACE_CHARGE=True)   # turn ON Impact-T space charge (headline is OFF)
 
-# ── Performance knobs (accuracy ↔ speed). Full knob list, runtime split, and the
-#    reason the injector NZ must stay at 1664: see pipeline/README.md § Configuration. ──
-# Balanced profile: ACTIVE. Comment these 3 lines for the baseline. NOTE: the gun now defaults
-# to the realistic time-release beam (BEAM_RELEASE="timed") over the full 2 ns pulse on a
-# field-free-padded grid, plus the ~2×-per-step electromagnetostatic self-field — so the GUN
-# dominates the chain runtime (several minutes) regardless of this profile. nz=384 here is a
-# Balanced resolution over the padded 71.77 mm domain (dz≈0.19 mm); the default is 712. For a
-# quick smoke run use gun.config(BEAM_RELEASE="snapshot") (NOT realistic — over-states space
-# charge) and/or a coarser nz.
+# ── Performance knobs (accuracy ↔ speed); see pipeline/README.md § Configuration. ──
+# Balanced profile: ACTIVE. Comment these 3 lines for the baseline.
 cathode.config(PPC=6, REQUIRED_PRECISION=3e-5)
 gun.config(nz=384, MAX_PART=50000, REQUIRED_PRECISION=1e-4)
 injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
@@ -107,33 +61,25 @@ injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
 # gun.config(nz=192, MAX_PART=40000, REQUIRED_PRECISION=3e-4, N_DIAGS=20)
 # injector.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
 # linac_sec1.config(NZ=1024, CFL=0.6)   # coarser/faster linac run (default NZ=1664, ~40 s)
-# linac_rest (Impact-T, serial ImpactTexe): SC off ⇒ cheap (~tens of s incl. per-section
-# calibration). Np is the tracked macroparticle count; Ntstep is sized for the ~36 m line.
+# Np = tracked macroparticle count; Ntstep sized for the ~36 m line.
 linac_rest.config(Np=4000, Ntstep=200000)
-# Exploratory FODO (headline stays quads OFF): derives energy-scaled K1 from optics (nominal
-# μ=50°, A→T undocumented ⇒ placeholder strengths). Contains BOTH transverse planes (bounded,
-# oscillating σ_x/σ_y) — the deliverable is the bounded envelope, NOT transmission (which lands
-# ≈ the quads-OFF ~78% baseline, not above it). Leave commented for the headline run.
+# Exploratory FODO (headline stays quads OFF); see linac_rest/README.md. Leave commented.
 # linac_rest.config(QUADS_ON=True)                     # exploratory FODO
 
 
 def _beam_summary(diag, label, unit="keV"):
     """Report the final bunch from the last snapshot of `diag` (console + log).
 
-    `unit` selects the kinetic-energy scale ("keV" for the injector exit, "MeV"
-    for the linac exit). Also reports the charge fraction when a denominator is
-    available: "captured" against the sidecar's true injected charge, or
-    "transmitted" against the first snapshot (within-stage fallback).
+    `unit` is the KE scale ("keV"/"MeV"). Charge fraction is "captured" vs the
+    sidecar's true injected charge, else "transmitted" vs the first snapshot.
     """
     try:
         import numpy as np
         from openpmd_viewer import OpenPMDTimeSeries
         ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
         its = list(ts.iterations)
-        # Capture denominator: prefer the TRUE injected charge the sim records in
-        # injection_summary.json (the linac drops r>RMAX particles before the first dump, so
-        # the first-dump charge already hides the injection loss). Fall back to the first dump
-        # for stages without a sidecar (e.g. the injector exit).
+        # Prefer the TRUE injected charge from injection_summary.json: the linac drops
+        # r>RMAX particles before the first dump, so first-dump charge hides injection loss.
         q0 = None
         q0_label = "captured"
         summ_path = os.path.join(diag, "injection_summary.json")
@@ -186,15 +132,13 @@ def main():
     cathode.run()
     gun.run()
     injector.run()
-    linac_sec1.run()            # SLAC Section 1: ~26 MeV captured at 11 MW (~7% of true injected; γ² lower bound)
-    linac_rest.run()            # Sections 2–8 (Impact-T): captured core → ≈307 MeV at 11 MW
+    linac_sec1.run()
+    linac_rest.run()
 
     _beam_summary(injector.resolve_outdir(), "injector exit", "keV")
     _beam_summary(linac_sec1.resolve_outdir(), "linac_sec1 exit", "MeV")
     _beam_summary(linac_rest.resolve_outdir(), "linac exit (8 sections)", "MeV")
 
-    # Cross-stage figures (in-process, no pywarpx): one moment table per stage →
-    # chain_evolution / emittance_budget / transmission_waterfall / scorecard in results/.
     try:
         import pipeline.plot_chain as plot_chain   # submodule, not the pipeline.plot_chain() fn
         plot_chain.main()

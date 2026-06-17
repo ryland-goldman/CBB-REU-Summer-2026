@@ -1,39 +1,9 @@
-"""Interactive beam-properties explorer for the Cornell Linac pipeline.
+"""Standalone Tk + matplotlib beam-properties explorer over a run's openPMD dumps.
 
-A standalone GUI — modelled on GPT_tools' ``gpt_plot_gui.py`` / ``gpt_plot.py``
-(https://github.com/AdamCBartnik/GPT_tools) — for manually investigating the beam
-produced by ``run_pipeline.py``. It is a **separate** program: run the pipeline first
-to generate the openPMD dumps, then launch this to browse them.
-
-    conda activate CBB
-    python pipeline/beam_gui.py
-
-Unlike GPT_tools (ipywidgets, Jupyter-only) this is a Tkinter desktop window with an
-embedded matplotlib canvas, so it runs from a plain terminal after the pipeline. It
-reads each stage's existing openPMD particle series — nothing is re-simulated — and
-loads every dump into a ``pmd_beamphysics.ParticleGroup`` so the rich derived
-quantities (emittance, σ, energy, …) come for free, exactly as GPT_tools leans on its
-ParticleGroup.
-
-Three plot modes mirror the GPT GUI:
-  * Trends         — a beam statistic vs dump ⟨z⟩ across every dump of a stage.
-
-NOTE ON THE z AXIS: each dump is placed at its raw openPMD charge-weighted ⟨z⟩. For cathode/gun/
-injector that ⟨z⟩ is already lab-frame; for linac_sec1 and linac_rest the openPMD z is STAGE-LOCAL
-(linac_sec1 writes z−z.min()+Z_INJECT; linac_rest zeroes z at injection), so their ⟨z⟩ is offset
-from lab z by ~1.9 m / ~5.1 m respectively. `plot_chain` applies those per-stage z0 shifts to stitch
-the chain in true lab z; this explorer does NOT — it shows each stage one at a time, so the absolute
-axis is labelled "dump ⟨z⟩ (stage-local for the two linac sections)". Every derived quantity (σ,
-emittance, ⟨KE⟩, σ_E, charge) is z-offset-invariant, so only the absolute z position is affected.
-  * 1D Distribution — a weighted histogram of one coordinate on one dump (screen).
-  * 2D Distribution — a phase-space view (hist2d or scatter) of two coordinates.
-
-ADAPTATION TO WARPX DATA (vs GPT screens): the pipeline's WarpX dumps are time
-snapshots — every particle in a dump shares one simulation time t, so σ_t ≈ 0 and the
-longitudinal spread lives in z. GPT "screens" are z-plane crossings (σ_t meaningful).
-So here a "screen" is one dump, ordered by its charge-weighted ⟨z⟩, and bunch length
-is reported as σ_z (not σ_t). Momenta are openPMD u = γβ → converted to eV/c for the
-ParticleGroup; positions are lab-frame metres.
+Trends / 1D / 2D distribution modes over each stage's existing particle series
+(nothing re-simulated). A "screen" is one WarpX dump ordered by ⟨z⟩.
+See pipeline/README.md -> "Interactive beam explorer" for usage and the
+stage-local-z / σ_z-vs-σ_t conventions.
 """
 
 import os
@@ -44,17 +14,14 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-# Run from the repo root so the stage-relative diagnostic paths below resolve, exactly
-# like run_pipeline.py does. (This file lives in pipeline/, so the root is its parent's
-# parent.)
+# Run from the repo root so the stage-relative diagnostic paths resolve.
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(_ROOT)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-# fd-limit raise: the injector series is ~290 dumps and openpmd-viewer leaks an fd per
-# get_particle, so browsing a full stage would exhaust macOS's 256-fd soft limit. Reuse
-# the pipeline's helper (same reason as plot_chain.py). Best-effort — skip if unavailable.
+# openpmd-viewer leaks an fd per get_particle; raise RLIMIT_NOFILE so a full-stage browse
+# doesn't hit the 256-fd wall. Best-effort.
 try:
     from pipeline._runner import _raise_fd_limit
     _raise_fd_limit()
@@ -77,9 +44,8 @@ from pmd_beamphysics import ParticleGroup
 MC2_EV = 0.51099895e6          # electron rest energy [eV]
 Q_E = 1.602176634e-19          # elementary charge [C]
 
-# ── Stages, in chain order (mirrors pipeline/plot_chain.py STAGES) ───────────
-# Each WarpX dump in these series stores positions [m] and momenta u = γβ for the
-# `electrons` species. The cathode is 2D (x–z, no y); the rest are RZ.
+# ── Stages, in chain order ───────────────────────────────────────────────────
+# Dumps store positions [m] and momenta u = γβ. The cathode is 2D (x–z, no y); rest RZ.
 STAGES = [
     {"name": "cathode",     "path": "cathode/diags/particles",          "geom": "2d"},
     {"name": "gun",         "path": "gun/diags/particles",              "geom": "rz"},
@@ -88,9 +54,7 @@ STAGES = [
     {"name": "linac_rest",  "path": "linac_rest/diags/main/particles",  "geom": "rz"},
 ]
 
-# ── Per-particle variables: ParticleGroup key → (label, display scale) ───────
-# The 2D cathode has no y/py, so y-derived keys are hidden for that stage (see
-# BeamGUI._var_list). Scales convert SI ParticleGroup units to readable display units.
+# ── Per-particle variables: ParticleGroup key → (label, SI→display scale) ────
 VARS = {
     "x":              ("x [mm]",            1e3),
     "y":              ("y [mm]",            1e3),
@@ -108,9 +72,8 @@ VARS = {
 }
 VARS_2D_ONLY = {"y", "py", "yp"}   # hidden when the active stage is the 2D cathode
 
-# ── Trend Y options: label → (ParticleGroup stat key(s), axis label, scale) ──
-# Multiple keys (e.g. σ_x and σ_y) plot as several lines on one axis. Bunch length is
-# σ_z (NOT σ_t — WarpX dumps are time snapshots; see module docstring).
+# ── Trend Y options: label → (stat key(s), axis label, scale) ────────────────
+# Bunch length is σ_z (NOT σ_t — WarpX dumps are time snapshots).
 TRENDS = {
     "Beam size σ_x, σ_y":   (["sigma_x", "sigma_y"],          "σ [mm]",         1e3),
     "Bunch length σ_z":     (["sigma_z"],                     "σ_z [mm]",       1e3),
@@ -126,12 +89,7 @@ TRENDS = {
 # Data layer: lazy per-stage loader with caching.
 # ═════════════════════════════════════════════════════════════════════════════
 class StageData:
-    """One stage's openPMD series, with cached ParticleGroups and a z-ordered screen list.
-
-    `screens` is the list of (iteration, mean_z) sorted by mean_z — the "screens" the GUI
-    browses. Building it reads only z/w per dump (cheap-ish); full ParticleGroups are built
-    on demand and cached by iteration.
-    """
+    """One stage's openPMD series: cached ParticleGroups and a ⟨z⟩-ordered screen list."""
 
     def __init__(self, stage):
         self.name = stage["name"]
@@ -145,12 +103,10 @@ class StageData:
         self._trend_cache = {}       # trend-label -> (z[N], {key: vals[N]})
         self._range_cache = {}       # var key -> (lo, hi) raw-unit data range over ALL screens
 
-    # ── screen (dump) index, ordered by ⟨z⟩ (stage-local for linac_sec1/linac_rest) ──
     def build_screen_list(self, progress=None):
         """Populate `self.screens` = [(iteration, mean_z), …] sorted by ⟨z⟩.
 
-        Reads only z and w per dump. `progress(done, total)` is called for a status bar.
-        Dumps with <2 particles are skipped (boundary/empty dumps).
+        Reads only z/w per dump. Dumps with <2 particles are skipped (boundary/empty).
         """
         if self.screens is not None:
             return self.screens
@@ -169,7 +125,6 @@ class StageData:
         self.screens = out
         return out
 
-    # ── full ParticleGroup for one dump (cached) ─────────────────────────────
     def particle_group(self, iteration):
         if iteration in self._pg_cache:
             return self._pg_cache[iteration]
@@ -189,14 +144,12 @@ class StageData:
             weight=w * Q_E,                                   # macro-weight → charge [C]
             species="electron",
         ))
-        # Bounded cache: keep the 16 most-recently-used dumps so trend sweeps over a
-        # 290-dump stage don't pin all of them in RAM.
+        # Bounded LRU: keep 16 most-recent dumps so a full-stage sweep doesn't pin RAM.
         if len(self._pg_cache) > 16:
             self._pg_cache.pop(next(iter(self._pg_cache)))
         self._pg_cache[iteration] = P
         return P
 
-    # ── trend: one stat (or several) vs ⟨z⟩ across every screen ──────────────
     def trend(self, label, progress=None):
         """Return (z[N], {stat_key: values[N]}) for a TRENDS entry, cached per label."""
         if label in self._trend_cache:
@@ -219,12 +172,10 @@ class StageData:
         self._trend_cache[label] = result
         return result
 
-    # ── global data range of one variable across every screen (cached) ───────
     def var_range(self, key, progress=None):
-        """Return (lo, hi) of `key` in raw ParticleGroup units across ALL screens.
+        """Return (lo, hi) of `key` in raw units across ALL screens (locks fixed axes).
 
-        Used to lock a plot's axis to a fixed window so an animation's scaling does
-        not jump frame-to-frame. Zero/negative-weight macroparticles are ignored.
+        Zero/negative-weight macroparticles are ignored.
         """
         if key in self._range_cache:
             return self._range_cache[key]
@@ -255,9 +206,6 @@ class StageData:
         return self._range_cache.get(key)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Postprocessing on a ParticleGroup (a faithful subset of GPT_tools' options).
-# ═════════════════════════════════════════════════════════════════════════════
 def postprocess(P, *, kill_zero_weight=False, r_cut=None, z_slice=None):
     """Return a (possibly filtered) copy of P.
 
@@ -283,9 +231,6 @@ def postprocess(P, *, kill_zero_weight=False, r_cut=None, z_slice=None):
     return ParticleGroup(data=data)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# The GUI.
-# ═════════════════════════════════════════════════════════════════════════════
 class BeamGUI:
     def __init__(self, root):
         self.root = root
@@ -293,14 +238,9 @@ class BeamGUI:
         self.stage_data = {}          # name -> StageData (lazy)
         self.q = queue.Queue()        # worker-thread → main-thread results
         self._busy = False
-        self._gen = 0                 # monotonic token: a newer _run_async supersedes older ones,
-                                      # so an in-flight worker's payload can't be mis-delivered to a
-                                      # later request's `done` callback (see _run_async / _drain).
-        self._progress_text = ""      # written by worker threads, reflected to the
-                                      # status label only on the main thread (Tk is not
-                                      # thread-safe — see _run_async / _drain).
+        self._gen = 0                 # monotonic token; a newer _run_async supersedes older (see _drain)
+        self._progress_text = ""      # worker-written; reflected to Tk only on the main thread (Tk not thread-safe)
 
-        # Discover which stages actually have data on disk.
         self.available = [st for st in STAGES if os.path.isdir(st["path"])]
         if not self.available:
             messagebox.showerror(
@@ -351,10 +291,7 @@ class BeamGUI:
         self.screen_label = ttk.Label(self.screen_frame, text="—")
         self.screen_label.pack(anchor=tk.W)
 
-        # Play/pause animation through the screens (1D / 2D modes). The animation
-        # advances the screen slider on a `root.after` timer; the slider's own
-        # callback (_on_screen_slide) does the redraw, so playback reuses the
-        # normal per-screen plotting path. `loop` wraps back to the first screen.
+        # Play/pause: a root.after timer advances the screen slider, whose own callback redraws.
         pf = ttk.Frame(self.screen_frame)
         pf.pack(fill=tk.X, pady=(4, 0))
         self._playing = False
@@ -472,8 +409,7 @@ class BeamGUI:
                 self._key_by_label[self.y_var.get()]]
 
     def _on_var_change(self):
-        # Changing the plotted variable changes which ranges the locked window needs,
-        # so recompute them (off-thread) before redrawing; otherwise just redraw.
+        # New variable ⇒ new locked-window ranges, so recompute off-thread before redraw.
         if self._fixaxes_on():
             self._compute_ranges_async()
         else:
@@ -486,11 +422,7 @@ class BeamGUI:
             self.replot()                  # back to per-frame autoscale
 
     def _compute_ranges_async(self):
-        """Compute the global data range of the current 2D axes over every screen.
-
-        Done once off-thread (it loads every dump) and cached on the StageData, so
-        playback only reads the cache and the axes stay put frame-to-frame.
-        """
+        """Compute & cache the global 2D-axis range over every screen (off-thread, once)."""
         d = self._data()
         keys = list(dict.fromkeys(self._needed_range_keys()))
 
@@ -536,9 +468,8 @@ class BeamGUI:
     def _on_stage_change(self):
         self._stop_play()
         self._refresh_controls()
-        # Resolve the StageData on the MAIN thread (it reads the Tk stage_var and is cheap —
-        # just opens the series). Only the heavy screen indexing (reading z/w over ~hundreds
-        # of dumps) goes off-thread, so the worker never touches Tk.
+        # Resolve StageData on the MAIN thread (it reads Tk stage_var); only the heavy
+        # screen indexing goes off-thread, so the worker never touches Tk.
         d = self._data()
         self._run_async(lambda: self._load_screens(d), self._screens_ready)
 
@@ -562,7 +493,6 @@ class BeamGUI:
         if not self._busy:
             self.replot()
 
-    # ── animation: step the screen slider on a timer ─────────────────────────
     def _toggle_play(self):
         if self._playing:
             self._stop_play()
@@ -610,19 +540,13 @@ class BeamGUI:
         delay = max(20, int(self.play_delay.get()))
         self._play_job = self.root.after(delay, self._play_tick)
 
-    # ── async machinery (worker thread + main-thread queue drain) ────────────
     def _run_async(self, work, done):
         """Run `work()` off-thread; call `done(result)` on the main thread when finished.
 
-        `work` may report progress by assigning to `self._progress_text` (a plain string —
-        NEVER touch Tk widgets from the worker). `_drain`, which runs on the main thread via
-        `root.after`, reflects that string to the status label.
-
-        Re-entrant by design: each call bumps `self._gen` and stamps its worker payload with that
-        token. If the user triggers a second `_run_async` (e.g. switches stage while a Trends
-        computation is still running), the older drain loop sees `gen != self._gen` and stops
-        WITHOUT delivering — so a stale worker's result is never routed to the newer request's
-        `done`, and the orphaned 60 ms poll loop is not left rescheduling forever.
+        `work` reports progress only via `self._progress_text` (NEVER touch Tk from the
+        worker). Re-entrant: each call bumps `self._gen` and stamps its payload; a later
+        call supersedes earlier ones so a stale worker's result is never delivered to the
+        newer request's `done` (see _drain).
         """
         self._gen += 1
         gen = self._gen
@@ -657,8 +581,7 @@ class BeamGUI:
             done(payload)
 
     def _load_screens(self, d):
-        # Runs on the worker thread — `d` was resolved on the main thread. Progress callback
-        # sets the plain string only (no Tk).
+        # Worker thread — `d` resolved on the main thread; progress sets the string only.
         d.build_screen_list(progress=lambda i, n: setattr(self, "_progress_text",
                                                            f"Indexing dumps {i}/{n}…"))
         return d

@@ -1,37 +1,12 @@
 """
 Finite thermionic cathode at the space-charge (Child–Langmuir) limit — WarpX 2D.
 
-This demo models the *electron source* of the Cornell Linac: Adam Bartnik's
-"Region 1" is a thermionic cathode held a short distance from a positively biased
-grid/anode, operating in the **space-charge-limited (SCL)** regime where the
-emitted current saturates at the Child–Langmuir value regardless of how many
-electrons the hot cathode could supply (see
-`reference/Linac Simulation Documentation/details.md`).
+Over-injects at 2×J_CL and lets WarpX's self-consistent fields build a virtual
+cathode that self-limits the transmitted current to J_CL. See cathode/README.md
+for physics, parameters, and gotchas.
 
-Unlike the canonical 1D Pierce-diode example
-(`reference/WarpX Documentation/usage/examples/pierce_diode/`), here the cathode
-has a **finite transverse extent**, simulated in 2D (x–z). This lets us see two
-things at once:
-
-  1. On axis (center of the cathode, far from the edges) the potential and field
-     reproduce the 1D Child–Langmuir laws  φ(z) = V (z/d)^{4/3},
-     Ez(z) = -(4V/3d)(z/d)^{1/3}.
-  2. Near the cathode *edges* the equipotentials crowd together, enhancing the
-     local field — a genuinely 2D effect absent from the planar theory.
-
-Physics setup (electrostatic lab frame):
-  - cathode plane at z = 0 held at 0 V, anode plane at z = d held at +V
-  - electrons emitted from the cathode patch |x| < R via continuous flux injection
-    (PICMI `UniformFluxDistribution`).  We deliberately *over-inject* at 2 × the Child–Langmuir
-    current; WarpX's self-consistent self-fields build a virtual cathode that
-    reflects the excess, so the transmitted current self-limits to J_CL.
-
-Run with (from the repo root, with `conda activate CBB`):
-    python -c "import cathode; cathode.run()"            # sim + plots
-    python -c "import cathode; cathode.run(plots=False)" # sim only
-Direct script invocation (`python cathode/cathode_diode.py`) does NOT work —
-this module imports `pipeline._runner`, which is only on sys.path when launched
-from the repo root (either via the facade above or `python -m cathode.cathode_diode`).
+Run from the repo root (the module imports pipeline._runner, only on sys.path
+from there): python -c "import cathode; cathode.run()".
 """
 
 import os
@@ -48,44 +23,24 @@ q_e  = picmi.constants.q_e          # = +1.602e-19 C (elementary charge)
 ep0  = picmi.constants.ep0
 kb   = 1.380649e-23                  # Boltzmann constant [J/K]
 
-# ── Diode parameters (Adam's Region-1 thermionic cathode) — matched to the
-#    original LinacSim inputs (reference/.../input_files/cathode_master.in +
-#    gpt_master.in): cathode-grid distance l=0.2 mm, pulse voltage Vpulse=60 V,
-#    cathode diameter egun_cath_diam=16 mm, cathode temperature egun_cath_T=1425 K.
-V_anode   = 60.0         # anode (grid) bias [V] — cathode at 0 V (Vpulse)
-gap_d     = 200.0e-6     # cathode→anode gap [m] (l = 0.2 mm)
-R_cathode = 8.0e-3       # cathode half-width [m] (16 mm diameter)
-T_cathode = 1425.0       # cathode temperature [K] → small thermal emittance
+V_anode   = 60.0         # anode (grid) bias [V] — cathode at 0 V
+gap_d     = 200.0e-6     # cathode→anode gap [m]
+R_cathode = 8.0e-3       # cathode half-width [m]
+T_cathode = 1425.0       # cathode temperature [K]
 
 over_inject = 2.0        # inject this multiple of the Child–Langmuir current
 
-# ── Grid (2D x–z) ──────────────────────────────────────────────────────────────
-W = 16.0e-3              # transverse half-width of the domain [m] (2× cathode half-width)
+W = 16.0e-3              # transverse half-width of the domain [m]
 nx, nz = 128, 64         # both divisible by the blocking factor (8)
 
-# ── Diagnostics output directory ───────────────────────────────────────────────
 DIAG_DIR = "cathode/diags"
 
-# ── Run length ─────────────────────────────────────────────────────────────────
-MAX_STEPS = 2000                     # ~4× the gap-fill time → reaches steady state
+MAX_STEPS = 2000
 
-# ── Performance knobs (tunable via cathode.config(...); see pipeline/run_pipeline.py) ─
-# Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
 REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
 MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
-SPACE_CHARGE = True                  # beam self-field (space charge) on/off. KEEP TRUE — unlike the
-                                     # downstream stages (where SC is a correction on an applied-field
-                                     # beam), space charge is the SOLE current-limiting mechanism of
-                                     # THIS stage. False → warpx_do_not_deposit zeros the beam ρ, so
-                                     # there is no virtual cathode, no field suppression at the cathode
-                                     # surface, and NO Child–Langmuir limiting: the diode then passes
-                                     # the full 2×J_CL over-injection unreflected (≈double the physical
-                                     # current) and the validation figures (child_langmuir.png,
-                                     # current_saturation.png, rho_z_time.png — the latter two read the
-                                     # now-zeroed ρ/j) are invalid. So SPACE_CHARGE=False is NOT a
-                                     # meaningful cathode operating point — it removes the very effect
-                                     # the stage exists to demonstrate (provided only for parity with
-                                     # the other stages' toggle / a forces-off sanity check).
+SPACE_CHARGE = True                  # KEEP TRUE — space charge is the SOLE current-limiting
+                                     # mechanism here; False disables Child–Langmuir (see README).
 PPC = 10                             # macroparticles per cell (PseudoRandomLayout)
 CFL = 0.4                            # dt = CFL · dz / v_final
 DIAG_PERIOD = None                   # None → dense-early union slice (keeps figs 3,4);
@@ -93,16 +48,12 @@ DIAG_PERIOD = None                   # None → dense-early union slice (keeps f
 
 
 def main():
-    # Child–Langmuir current density for electrons across a planar gap:
-    #   J_CL = (4/9) eps0 sqrt(2 e / m_e) V^{3/2} / d^2
+    # Child–Langmuir current density (electrons, planar gap)
     J_CL = (4.0 / 9.0) * ep0 * np.sqrt(2.0 * q_e / m_e) * V_anode**1.5 / gap_d**2
     flux = over_inject * J_CL / q_e      # particle flux [# / m^2 / s]
 
-    # Thermal velocity spread of emitted electrons (sets the intrinsic emittance):
-    v_th = np.sqrt(kb * T_cathode / m_e)
-
-    # Characteristic final velocity (cold electron falling through the full bias):
-    v_final = np.sqrt(2.0 * q_e * V_anode / m_e)
+    v_th = np.sqrt(kb * T_cathode / m_e)            # thermal velocity spread
+    v_final = np.sqrt(2.0 * q_e * V_anode / m_e)    # cold final velocity through full bias
 
     print(f"Diode : V = {V_anode:.0f} V, gap d = {gap_d*1e3:.1f} mm, "
           f"cathode 2R = {2*R_cathode*1e3:.1f} mm")
@@ -114,7 +65,7 @@ def main():
         number_of_cells=[nx, nz],
         lower_bound=[-W, 0.0],
         upper_bound=[ W, gap_d],
-        # x walls: insulating (zero normal field); z plates: fixed potentials
+        # x walls neumann (insulating); z plates dirichlet (fixed potential)
         lower_boundary_conditions=["neumann", "dirichlet"],
         upper_boundary_conditions=["neumann", "dirichlet"],
         lower_boundary_conditions_particles=["absorbing", "absorbing"],
@@ -138,12 +89,10 @@ def main():
         flux_normal_axis="z",
         surface_flux_position=0.0,                 # emit from the z = 0 plane
         flux_direction=+1,                          # into the gap (+z)
-        lower_bound=[-R_cathode, None, None],       # finite cathode patch in x …
-        upper_bound=[ R_cathode, None, None],       # … emission is zero outside |x|<R
-        rms_velocity=[v_th, v_th, v_th],            # thermal spread (the y component is
-                                                    # inert in this 2D x–z run, but the gun
-                                                    # reuses cathode uy as the RZ azimuthal
-                                                    # thermal momentum — keep it)
+        lower_bound=[-R_cathode, None, None],       # finite cathode patch: emission zero outside |x|<R
+        upper_bound=[ R_cathode, None, None],
+        rms_velocity=[v_th, v_th, v_th],            # y component inert in 2D, but gun reuses uy as
+                                                    # the RZ azimuthal thermal momentum — keep it
         directed_velocity=[0.0, 0.0, 0.0],          # emitted ~at rest, field-accelerated
         gaussian_flux_momentum_distribution=True,   # half-Maxwellian normal to surface
     )
@@ -160,24 +109,16 @@ def main():
         warpx_do_not_deposit=not SPACE_CHARGE,   # SPACE_CHARGE=False → no beam self-field
     )
 
-    # ── Time step / duration ────────────────────────────────────────────────────
     dt = CFL * dz / v_final
 
-    # ── Diagnostics (openPMD) ───────────────────────────────────────────────────
-    # Fresh diags: the h5 backend appends one file per dump, so re-running with a
-    # different step count/period would leave stale files that interleave with the
-    # new ones and corrupt the plots (a fan of overlapping curves). diags are
-    # git-ignored and regenerated, so clearing is safe. (Mirrors the other stages.)
+    # Fresh diags: the h5 backend appends one file per dump, so stale files from a
+    # prior run with a different step count/period would interleave and corrupt the plots.
     if os.path.isdir(DIAG_DIR):
         shutil.rmtree(DIAG_DIR)
 
-    # Sample densely through the gap-fill transient (≤ 0.13 ns ≈ step 470, since
-    # dt ≈ 2.7e-13 s) and sparsely once the diode reaches steady state.  WarpX's
-    # interval syntax unions the slices: every 5 steps to 470, then every 80.
-    # DIAG_PERIOD=None keeps the dense-early union slice (figs 3/4 need it); an int
-    # override applies one uniform period (the field-diag period must be a string).
-    # max(MAX_STEPS, 471) guards the second slice against inverting if a caller sets
-    # MAX_STEPS ≤ 470 (the default is 2000, so this is defensive only).
+    # Union slice: dense through the gap-fill transient (every 5 steps to 470), sparse after.
+    # The field-diag period must be a string. max(MAX_STEPS, 471) guards the second slice
+    # against inverting if a caller sets MAX_STEPS ≤ 470 (defensive; default is 2000).
     field_period = (str(DIAG_PERIOD) if DIAG_PERIOD
                     else f"0:470:5, 470:{max(MAX_STEPS, 471)}:80")
     field_diag = picmi.FieldDiagnostic(
@@ -187,8 +128,8 @@ def main():
         data_list=["phi", "rho", "E", "J"],
         write_dir=DIAG_DIR,
         warpx_format="openpmd",
-        # HDF5 writes one clean file per iteration; the ADIOS2 BP5 default clobbers
-        # files under the rapid successive flushes our dense early sampling produces.
+        # h5: one clean file per iteration; ADIOS2 BP5 default clobbers files under the
+        # rapid successive flushes the dense early sampling produces.
         warpx_openpmd_backend="h5",
     )
     part_diag = picmi.ParticleDiagnostic(

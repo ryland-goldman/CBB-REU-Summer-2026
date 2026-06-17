@@ -1,24 +1,10 @@
 """
-Figures for the WarpX RZ CESR-gun simulation (gun_sim.py).
+Figures for the WarpX RZ CESR-gun simulation: reads gun/gun_field/gun_E.h5,
+gun/diags/fields/ (phi, rho) and gun/diags/particles/, and writes six PNGs to
+gun/results/ (field, r-z transport, energy gain, exit phase space, envelope,
+self-field).
 
-Reads the applied gun field (gun/gun_field/gun_E.h5), the dumped beam
-self-field (gun/diags/fields/: phi, rho), and the openPMD beam output
-(gun/diags/particles/), and writes six figures to gun/results/:
-
-  1. gun_field.png     — on-axis Ez(z) and implied potential of the scaled
-                         CESR_gun.gdf map: the accelerating field the beam sees.
-  2. beam_rz.png       — r–z distribution of the beam at three snapshots
-                         (launch, mid-gun, exit): transport through the gun.
-  3. energy_gain.png   — mean/max kinetic energy of the beam vs. ⟨z⟩, climbing
-                         toward the ~150 keV gun voltage.
-  4. exit_phase_space.png — longitudinal (z–KE) and the final energy spectrum.
-  5. beam_envelope.png — per-plane RMS size σ_x and normalized transverse emittance
-                         εn,x vs. ⟨z⟩: the near-cathode focusing, quantified.
-  6. space_charge.png  — r–z maps of the beam self charge density ρ and its
-                         space-charge potential well φ at a near-launch snapshot.
-
-Run with:
-    conda run -n CBB python gun/plot_gun.py
+See gun/README.md for physics, parameters, and gotchas.
 """
 
 import os
@@ -30,17 +16,16 @@ from matplotlib.colors import LogNorm
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-from pipeline.beam_metrics import rms_emit   # shared normalized-rms-emittance helper
+from pipeline.beam_metrics import rms_emit
 
 MC2 = 0.51099895e3           # electron rest energy [keV]
 GUN_FIELD = "gun/gun_field/gun_E.h5"
-GUN_VOLTAGE = 150.0e3        # [V]; module-level so gun.config(GUN_VOLTAGE=...) is reflected
-                             # in the energy-gain reference line (mirrors gun_sim.py)
+GUN_VOLTAGE = 150.0e3        # [V]; config()-overridable, mirrors gun_sim.py
 RESULTS = "gun/results"
 
 
 def gamma_of(ux, uy, uz):
-    """Lorentz γ from openPMD normalized momenta (γβ)."""
+    """Lorentz γ from openPMD normalized momenta (u = γβ)."""
     return np.sqrt(1.0 + ux**2 + uy**2 + uz**2)
 
 
@@ -57,10 +42,7 @@ def main():
     nz_map = ez_map.shape[1]
     z_map = np.arange(nz_map) * dz_map
     ez_axis = ez_map[0]                                  # r = 0 row
-    # Implied on-axis potential, exit-referenced (V(exit) = 0):
-    #   V(z) = -∫_exit^z Ez dz' = +∫_z^exit Ez dz'.
-    # With the accelerating field (Ez < 0 on axis) this gives V ≈ -GUN_VOLTAGE at the
-    # cathode rising to 0 at the exit — the physical negative-cathode potential.
+    # Implied on-axis potential, exit-referenced (V(exit)=0): V(z) = +∫_z^exit Ez dz'.
     V_axis = np.cumsum(ez_axis[::-1])[::-1] * dz_map
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.3), constrained_layout=True)
@@ -79,14 +61,9 @@ def main():
     iters = ts.iterations
 
     t_ns, zmean, ke_mean, ke_max, n_live = [], [], [], [], []
-    sig_r, emit_nx = [], []           # for beam_envelope.png (filled in the same loop)
-    # Pooled (all-dump) particle columns for the per-z PROFILE used by energy_gain /
-    # beam_envelope. A per-DUMP ⟨z⟩ aggregate traces a compact bunch but is meaningless for
-    # the timed quasi-DC stream — every dump then holds the whole 0→exit stream, so ⟨z⟩ is
-    # pinned mid-domain and the per-dump εn,x is the whole-stream chromatic mix (~50 mm·mrad,
-    # NOT the exit emittance). Binning every dump's particles by their ACTUAL z instead gives
-    # the physical steady-state profile KE(z)/σ_x(z)/εn,x(z), and reduces to the bunch
-    # trajectory for the compact snapshot beam (see beam_envelope/energy_gain below).
+    sig_r, emit_nx = [], []
+    # Pooled (all-dump) columns binned by ACTUAL z for the per-z profile: a per-dump ⟨z⟩
+    # aggregate is meaningless for the timed quasi-DC stream (see README -> "Beam representation").
     z_pool, ke_pool, x_pool, ux_pool, w_pool = [], [], [], [], []
     for i, it in enumerate(iters):
         z, x, ux, uy, uz, w = ts.get_particle(
@@ -101,19 +78,10 @@ def main():
         zmean.append(z.mean() * 1e3)
         ke_mean.append(ke.mean()); ke_max.append(ke.max())
         z_pool.append(z); ke_pool.append(ke); x_pool.append(x); ux_pool.append(ux); w_pool.append(w)
-        # ── Envelope diagnostics (one transverse plane; RZ ⇒ x and y are equivalent) ──
-        # Per-plane RMS size σ_x = sqrt(⟨(x−⟨x⟩)²⟩), reported in mm — weighted and
-        # mean-centered, matching pipeline/plot_chain.py so the two figures agree on the
-        # same dump. This is the SINGLE-PLANE RMS (the convention paired with εn,x below
-        # and used by plot_chain / linac), NOT the radial RMS: for an axisymmetric beam
-        # √⟨r²⟩ = √2·σ_x, so do not label this σ_r.
+        # Single-plane RMS σ_x = sqrt(⟨(x−⟨x⟩)²⟩) [mm] (pairs with εn,x); radial RMS is √2·σ_x.
         xm = np.average(x, weights=w)
         sig_r.append(np.sqrt(np.average((x - xm) ** 2, weights=w)) * 1e3)
-        # Normalized transverse emittance εn,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²): a phase-space
-        # area that is invariant under linear (and acceleration) forces; growth ⇒ nonlinear
-        # space-charge / field aberrations. ux is the normalized momentum γβx, so x[m]·ux
-        # gives [m·rad]; ×1e6 → mm·mrad. Computed via the shared weighted, mean-centered
-        # helper (same as plot_chain).
+        # εn,x [mm·mrad]: ux is normalized momentum γβx, so x[m]·ux is [m·rad], ×1e6.
         emit_nx.append(rms_emit(x, ux, w) * 1e6)
 
     t_ns = np.array(t_ns); zmean = np.array(zmean)
@@ -123,8 +91,6 @@ def main():
           f"peak ⟨KE⟩ {np.nanmax(ke_mean):.1f} keV, max KE {np.nanmax(ke_max):.1f} keV")
 
     # ── Per-z PROFILE (pooled over all dumps), binned by actual z ──────────────
-    # See the pooling note above: this is the physically meaningful aggregation for the
-    # timed quasi-DC stream (and equivalent to the trajectory for the snapshot bunch).
     zc = kez = kezmax = sxz = enz = np.array([])
     if z_pool:
         zP = np.concatenate(z_pool); keP = np.concatenate(ke_pool)
