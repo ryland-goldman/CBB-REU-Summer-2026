@@ -284,9 +284,12 @@ def main():
     v_exit = c * np.sqrt(1.0 - 1.0 / gamma**2)
     dz = ZMAX / nz
     dt = CFL * dz / v_exit
-    # Run length is sized on the time to clear the FIELD region (ZMAX_FIELD), NOT the padded
-    # domain: the run must stop while the beam is still in the pad, before it drains out ZMAX —
-    # an empty domain aborts the MLMG solve (`MLMG failed`). MAX_STEPS (0 = auto) overrides.
+    # Run length is sized on the time the LAST-released particle takes to clear the FIELD region
+    # (ZMAX_FIELD), NOT the padded domain. In snapshot mode this also keeps the beam in-domain
+    # (it stops before draining out ZMAX). In timed mode early particles DO reach the z=ZMAX plate
+    # and get absorbed well before run-end — the domain avoids the MLMG charge-starvation abort
+    # (`MLMG failed`) only because continuous emission keeps re-supplying charge until PULSE_WIDTH,
+    # not because any one particle stays in-domain. MAX_STEPS (0 = auto) overrides.
     transit_field = ZMAX_FIELD / (AVG_SPEED_FRAC * v_exit)
     run_time = (PULSE_WIDTH if timed else 0.0) + TRANSIT_MARGIN * transit_field
     max_steps = MAX_STEPS or int(run_time / dt)
