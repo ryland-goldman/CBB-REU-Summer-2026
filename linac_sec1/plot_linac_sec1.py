@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
+from pipeline.beam_metrics import screen_profile
 from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R
 from . import DEFAULT_OUTDIR
 
@@ -63,10 +64,11 @@ def beam_track(diag):
         return None
     rec = dict(z=[], ke=[], kemax=[], beta=[], sigx=[], q=[])
     snaps = {}
+    pool = {k: [] for k in ("id", "z", "x", "w")}   # pooled (id, dump) rows → screen envelope
     q_entered = None                              # charge in the FIRST dump (already post-scrape)
     for it in its:
-        x, y, z, ux, uy, uz, w = ts.get_particle(   # species plural "electrons"
-            ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
+        idp, x, y, z, ux, uy, uz, w = ts.get_particle(   # species plural "electrons"
+            ["id", "x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
         if q_entered is None:
             q_entered = w.sum()
         if len(z) < 5:
@@ -80,8 +82,19 @@ def beam_track(diag):
         rec["sigx"].append(wstat(x, w)[1])        # centered weighted RMS
         rec["q"].append(w.sum())
         snaps[it] = (z, ke, w)
+        pool["id"].append(idp.astype(np.int64))
+        pool["z"].append(z); pool["x"].append(x); pool["w"].append(w)
     for k in rec:
         rec[k] = np.asarray(rec[k])
+    # Local-in-z envelope on fixed virtual screens (id-tracked plane crossings): a local σ_x(z)
+    # rather than the per-dump PROJECTED σ_x (which mixes the beam's whole z-extent at each dump).
+    # See pipeline/beam_metrics.screen_profile and linac_sec1/README.md → beam_envelope.
+    if pool["id"]:
+        screens, prof = screen_profile(
+            np.concatenate(pool["id"]), np.concatenate(pool["z"]),
+            np.concatenate(pool["w"]), {"x": np.concatenate(pool["x"])})
+        rec["z_screen"] = screens
+        rec["sigx_screen"] = prof["rms"]["x"]
     if not rec["z"].size:
         return None
     if not q_entered:
@@ -184,7 +197,12 @@ def main():
 
     # Fig 4: transverse envelope + survival
     fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.2, 6.4), constrained_layout=True, sharex=True)
-    a1.plot(rec["z"] * 1e3, rec["sigx"] * 1e3, "o-", color="C0", ms=3)
+    # Local σ_x(z) on fixed virtual screens (id-tracked crossings) — smooth, local-in-z,
+    # vs the per-dump projected σ_x. Falls back to per-dump if the screen profile is absent.
+    if "z_screen" in rec:
+        a1.plot(rec["z_screen"] * 1e3, rec["sigx_screen"] * 1e3, "o-", color="C0", ms=3)
+    else:
+        a1.plot(rec["z"] * 1e3, rec["sigx"] * 1e3, "o-", color="C0", ms=3)
     a1.axhline(BORE_R * 1e3, color="k", ls=":", lw=1, label="structure bore")
     a1.axhline(RMAX * 1e3, color="0.5", ls=":", lw=1, label="domain wall")
     a1.set_ylabel(r"RMS size  $\sigma_x$  [mm]")

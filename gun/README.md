@@ -256,13 +256,20 @@ recipe, not just a WarpX convention.
    accelerating field the beam sees (Ez < 0, 150 kV total drop).
 2. **`beam_rz.png`** — `r–z` beam distribution at launch / mid-gun / exit: transport through
    the gun, including the near-cathode radial focusing.
-3. **`energy_gain.png`** — mean and max kinetic energy vs. ⟨z⟩, climbing toward ~150 keV.
+3. **`energy_gain.png`** — mean and max kinetic energy vs. z, climbing toward ~150 keV.
 4. **`exit_phase_space.png`** — longitudinal `z–KE` phase space and the energy spectrum at the
    last dump.
 5. **`beam_envelope.png`** — per-plane RMS size `σ_x = √⟨x²⟩` and normalized transverse emittance
-   `εn,x` vs. `⟨z⟩`: the near-cathode radial focusing of `beam_rz.png` made quantitative, plus the
+   `εn,x` vs. `z`: the near-cathode radial focusing of `beam_rz.png` made quantitative, plus the
    space-charge / aberration emittance growth along the gun. (`σ_x` is the single-plane RMS that
-   pairs with `εn,x`; the radial RMS is `√⟨r²⟩ = √2·σ_x`.)
+   pairs with `εn,x`; the radial RMS is `√⟨r²⟩ = √2·σ_x`.) The profile is reconstructed on **fixed-z
+   virtual screens** (`pipeline/beam_metrics.screen_profile`), NOT a z-histogram: each macroparticle's
+   id-trajectory across the volumetric dumps is interpolated to every z-plane it crosses (gun motion
+   is forward/monotonic-z, so each particle hits each screen exactly once), and the charge-weighted
+   moments are accumulated per screen. This is a true local phase space — no z-binning and no
+   pooling-stream assumption — so `εn,x` (a small difference of large moments) is smooth in z rather
+   than carrying the bin-to-bin sampling jitter a z-histogram of the pooled quasi-DC stream produces.
+   `energy_gain.png` shares the same screen reconstruction.
 6. **`space_charge.png`** — `r–z` maps of the beam **self-field** (`ρ` and the space-charge
    potential well `φ`, ≈ −250 V) at a near-launch snapshot — the dumped self-field nothing else
    plots, and the well that motivates renormalizing the bunch to 1 nC.

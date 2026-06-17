@@ -16,7 +16,7 @@ from matplotlib.colors import LogNorm
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-from pipeline.beam_metrics import rms_emit
+from pipeline.beam_metrics import rms_emit, screen_profile
 
 MC2 = 0.51099895e3           # electron rest energy [keV]
 GUN_FIELD = "gun/gun_field/gun_E.h5"
@@ -62,12 +62,14 @@ def main():
 
     t_ns, zmean, ke_mean, ke_max, n_live = [], [], [], [], []
     sig_r, emit_nx = [], []
-    # Pooled (all-dump) columns binned by ACTUAL z for the per-z profile: a per-dump ⟨z⟩
-    # aggregate is meaningless for the timed quasi-DC stream (see README -> "Beam representation").
-    z_pool, ke_pool, x_pool, ux_pool, w_pool = [], [], [], [], []
+    # Pooled (all-dump) columns for the per-z profile, kept WITH the particle id so the profile
+    # is reconstructed as fixed-z virtual SCREENS (id-track each particle's crossing of every
+    # z-plane), not a z-histogram: a per-dump ⟨z⟩ aggregate is meaningless for the timed quasi-DC
+    # stream (see README -> "Beam representation"). See screen_profile().
+    id_pool, z_pool, ke_pool, x_pool, ux_pool, w_pool = [], [], [], [], [], []
     for i, it in enumerate(iters):
-        z, x, ux, uy, uz, w = ts.get_particle(
-            ["z", "x", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
+        idp, z, x, ux, uy, uz, w = ts.get_particle(
+            ["id", "z", "x", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
         n_live.append(len(z))
         t_ns.append(ts.t[i] * 1e9)
         if len(z) == 0:
@@ -77,6 +79,7 @@ def main():
         ke = (gamma_of(ux, uy, uz) - 1.0) * MC2
         zmean.append(z.mean() * 1e3)
         ke_mean.append(ke.mean()); ke_max.append(ke.max())
+        id_pool.append(idp.astype(np.int64))
         z_pool.append(z); ke_pool.append(ke); x_pool.append(x); ux_pool.append(ux); w_pool.append(w)
         # Single-plane RMS σ_x = sqrt(⟨(x−⟨x⟩)²⟩) [mm] (pairs with εn,x); radial RMS is √2·σ_x.
         xm = np.average(x, weights=w)
@@ -90,26 +93,18 @@ def main():
     print(f"beam: {n_live[0]} launched, {n_live[-1]} at last dump; "
           f"peak ⟨KE⟩ {np.nanmax(ke_mean):.1f} keV, max KE {np.nanmax(ke_max):.1f} keV")
 
-    # ── Per-z PROFILE (pooled over all dumps), binned by actual z ──────────────
+    # ── Per-z PROFILE via fixed-z virtual SCREENS (id-tracked plane crossings) ──
     zc = kez = kezmax = sxz = enz = np.array([])
     if z_pool:
-        zP = np.concatenate(z_pool); keP = np.concatenate(ke_pool)
-        xP = np.concatenate(x_pool); uxP = np.concatenate(ux_pool); wP = np.concatenate(w_pool)
-        nbin = 60
-        edges = np.linspace(0.0, zP.max(), nbin + 1)
-        idx = np.clip(np.digitize(zP, edges) - 1, 0, nbin - 1)
-        zc = 0.5 * (edges[:-1] + edges[1:]) * 1e3      # bin centers [mm]
-        kez = np.full(nbin, np.nan); kezmax = np.full(nbin, np.nan)
-        sxz = np.full(nbin, np.nan); enz = np.full(nbin, np.nan)
-        for b in range(nbin):
-            m = idx == b
-            if m.sum() < 20:                            # ignore sparse edge bins
-                continue
-            xb, uxb, wb, keb = xP[m], uxP[m], wP[m], keP[m]
-            kez[b] = np.average(keb, weights=wb); kezmax[b] = keb.max()
-            xm = np.average(xb, weights=wb)
-            sxz[b] = np.sqrt(np.average((xb - xm) ** 2, weights=wb)) * 1e3
-            enz[b] = rms_emit(xb, uxb, wb) * 1e6
+        idP = np.concatenate(id_pool); zP = np.concatenate(z_pool)
+        xP = np.concatenate(x_pool); uxP = np.concatenate(ux_pool)
+        keP = np.concatenate(ke_pool); wP = np.concatenate(w_pool)
+        screens, prof = screen_profile(
+            idP, zP, wP, {"x": xP, "ux": uxP, "ke": keP}, emit_pairs=[("x", "ux")])
+        zc = screens * 1e3                                  # [mm]
+        sxz = prof["rms"]["x"] * 1e3                        # σ_x [mm]
+        enz = prof["emit"][("x", "ux")] * 1e6              # εn,x [mm·mrad]
+        kez = prof["mean"]["ke"]; kezmax = prof["max"]["ke"]
 
     # ── Fig 2: r–z at launch / mid / exit ─────────────────────────────────────
     live = [it for it, n in zip(iters, n_live) if n > 0]

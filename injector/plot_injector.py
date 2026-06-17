@@ -352,6 +352,15 @@ def per_case_figure(name, rec, base):
         h = ax.hist2d(zc, kc, bins=120, weights=w * Q_E * 1e9, cmap="inferno",
                       cmin=np.finfo(float).tiny)
         fig.colorbar(h[3], ax=ax, label="charge  [nC/bin]", fraction=0.046, pad=0.02)
+        # Tighten each panel to its beam: trim the sparse tails (0.1–99.9 charge-
+        # weighted percentile) + a 5% pad so the density fills the panel.
+        def _wpct(v, q):
+            o = np.argsort(v); vs, cw = v[o], np.cumsum(w[o]); cw /= cw[-1]
+            return np.interp(q, cw, vs)
+        for lim, vals in ((ax.set_xlim, zc), (ax.set_ylim, kc)):
+            lo, hi = _wpct(vals, 1e-3), _wpct(vals, 1 - 1e-3)
+            pad = 0.05 * (hi - lo) or 1.0
+            lim(lo - pad, hi + pad)
         zi = rec["it"].index(it)
         ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("KE − ⟨KE⟩  [keV]")
         ax.set_title(f"{ti}  (⟨z⟩={rec['zmean'][zi]*1e3:.0f} mm)")

@@ -196,8 +196,13 @@ writing five figures to `results/`:
 - `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~220 keV → ~25 MeV mean / ~32 MeV max for the
   captured slice) with β → 1; the structure shaded.
 - `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
-- `beam_envelope.png` — σ_x and surviving charge vs ⟨z⟩ with the bore line. The survival panel is
-  normalised to the **injected** charge and shows the iris-collimation drop at the first dump
+- `beam_envelope.png` — σ_x and surviving charge vs z with the bore line. σ_x is the **local**
+  envelope reconstructed on fixed-z virtual screens (`pipeline/beam_metrics.screen_profile`):
+  each macroparticle's id-trajectory across the volumetric dumps is interpolated to every z-plane
+  it crosses (forward/monotonic z), so σ_x(z) is local rather than the per-dump **projected** RMS
+  (which mixes the beam's whole z-extent at each dump). Real envelope oscillation from the
+  injection mismatch survives; the projection smear does not. The survival panel is per-dump,
+  normalised to the **injected** charge, showing the iris-collimation drop at the first dump
   (r > RMAX = 9.547 mm scrape) followed by the RF-capture loss.
 - `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured fraction **of the
   true injected charge** (~7 % at the faithful 11 MW point), annotated with how much charge
