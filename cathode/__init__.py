@@ -1,13 +1,7 @@
-"""Cornell Linac cathode stage — WarpX 2D Child–Langmuir diode.
+"""Cornell Linac cathode stage facade — WarpX 2D Child–Langmuir diode.
 
-Usage:
-    import cathode
-    cathode.config(V_anode=50.0, gap_d=100e-6)   # optional overrides
-    cathode.run()                                  # sim + plots
-    cathode.run(plots=False)                       # sim only
-    cathode.plot()                                 # plots only
-
-Parameter names match the module-level constants at the top of `cathode/cathode_diode.py`.
+Exposes config()/run()/plot() over the Stage runner.
+See cathode/README.md for physics, parameters, and gotchas.
 """
 
 from pipeline._runner import Stage

@@ -2,45 +2,10 @@
 Cross-stage beam-evolution figures for the whole Cornell Linac chain.
 
 In-process (no pywarpx): reads each stage's existing openPMD particle series, builds
-ONE per-dump moment table per stage (placed at each dump's own lab ⟨z⟩), and renders
-four figures — all views of that single table:
+ONE per-dump moment table per stage, and renders four figures into the repo-root
+results/ (chain_evolution, emittance_budget, transmission_waterfall, chain_scorecard).
 
-  * results/chain_evolution.png      — 3×2 panels vs lab ⟨z⟩ across cathode→gun→
-                                       injector→linac: ⟨KE⟩ (log-y), ε_n,x, σ_x,
-                                       σ_z (log-y), within-stage charge fraction, I_peak.
-  * results/emittance_budget.png     — ε_n,x entry vs exit per stage (waterfall).
-  * results/transmission_waterfall.png — the end-to-end charge chain with the TWO
-                                       distinct loss stages (enters bore vs captured).
-  * results/chain_scorecard.png      — per-stage entry/exit table (also printed to stdout).
-
-Output lands in the repo-root `results/` (git-ignored by the existing `results/` line;
-PNGs are committed with `git add -f results/*.png`).
-
-Run with:
-    conda run -n CBB python -c "import pipeline; pipeline.plot_chain()"
-or it is called automatically at the end of pipeline/run_pipeline.py:main().
-
-PHYSICS / UNITS NOTES (reviewer-flagged):
-  - Transverse ε_n,x = sqrt(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²)·1e6 [mm·mrad]. openPMD u = γβ already
-    carries γ — NO extra γ multiply. The ×1e6 is the m·rad → mm·mrad scaling.
-  - Longitudinal ε_n,z = sqrt(⟨z²⟩⟨uz²⟩ − ⟨z·uz⟩²) is mm·(dimensionless), NOT mm·mrad —
-    so it gets a DIFFERENT scaling (×1e3 for the z[m]→mm only, uz is dimensionless γβ_z).
-    Labelled as the z–(γβ_z) longitudinal emittance in mm.
-  - The cathode is 2D x–z (no y/uy); its ε_n,x is the slab x-emittance. The cathode→gun
-    seam on the ε_n panel is a 2D→RZ DEFINITIONAL discontinuity, NOT physical growth —
-    annotated as such (downstream RZ ε_n,x is the projected emittance from reconstructed
-    Cartesian x,y).
-  - Capture is reported vs the TRUE injected charge (linac injection_summary.json q_inj),
-    never the post-scrape first-dump charge. Absolute charge resets at each handoff
-    (gun/injector downsample-reweight), so panel (5) shows WITHIN-stage transmission and the
-    waterfall stitches the true end-to-end chain via the recorded denominators.
-  - Lab-frame ES self-field overestimates transverse space charge by ~γ²; the GUN and INJECTOR
-    now use the electromagnetostatic solver (self-B pinch ⇒ net qE_r/γ²), so they carry no γ²
-    overestimate. Only **linac_sec1** is still lab-frame ES — but at its ~25 MeV the beam is
-    stiff and space charge is small, so the residual γ² effect there is minor (not the
-    SC-dominant low-energy regime the injector was). NOTE: these cross-stage figures regenerate
-    from a full-chain run; after the injector solver switch they should be re-run (pending the
-    time-release operating-point re-tune — see injector/README.md).
+See pipeline/README.md for the figures, units conventions, and z0/frame handling.
 """
 
 import os
@@ -59,24 +24,15 @@ MC2_KEV = 0.51099895e3           # electron rest energy [keV]
 Q_E = 1.602176634e-19           # elementary charge [C]
 RESULTS = "results"             # repo-root results/ (git-ignored; git add -f)
 
-# Each stage's openPMD particle series, in chain order. z0 is a lab-z shift applied to
-# each dump's ⟨z⟩. The cathode/gun/injector diagnostics are already lab-frame and abut
-# naturally (cathode ~0, gun ~0, injector 0.06–2.1 m), so z0=0. The LINAC is the
-# exception: its sim resets the imported beam to a linac-LOCAL frame
-# (linac_sec1_sim.py: `z = z - z.min() + Z_INJECT`), so its openPMD z runs ~0→3.3 m in
-# that local frame, NOT lab-frame. Its z0 is filled in at runtime from the injection
-# summary (z_handoff_m − z_inject_mean_m ≈ 1.91 m) so the linac segment lands at the true
-# 2.03 m handoff plane instead of overlapping the injector — see _apply_linac_z0().
-# The cathode is 2D x–z (no y/uy); the rest are RZ.
+# z0 = lab-z shift per dump. cathode/gun/injector are already lab-frame (z0=0); linac
+# stages are sim-LOCAL frame and get z0 filled at runtime (see _apply_linac*_z0).
 STAGES = [
     {"name": "cathode",    "path": "cathode/diags/particles",         "z0": 0.0, "geom": "2d", "color": "C0"},
     {"name": "gun",        "path": "gun/diags/particles",             "z0": 0.0, "geom": "rz", "color": "C1"},
     {"name": "injector",   "path": "injector/diags/main/particles",   "z0": 0.0, "geom": "rz", "color": "C2"},
     {"name": "linac",      "path": "linac_sec1/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C3"},
-    # linac_rest = Cornell Linac sections 2–8 (Impact-T). Its openPMD z is the Impact-T
-    # LOCAL frame (~0 at section-2 zedge), so z0 is filled at runtime from the recorded
-    # z_inject_lab_m − z_inject_local_m (see _apply_linac_rest_z0). Color C5 (NOT C4 —
-    # C4 is the iris bar in the transmission waterfall).
+    # linac_rest (sections 2–8, Impact-T): local-frame z0 filled at runtime. Color C5 NOT
+    # C4 — C4 is the iris bar in the transmission waterfall.
     {"name": "linac_rest", "path": "linac_rest/diags/main/particles", "z0": 0.0, "geom": "rz", "color": "C5"},
 ]
 LINAC_INJ_SUMMARY = "linac_sec1/diags/main/injection_summary.json"
@@ -85,15 +41,11 @@ Z_HANDOFF = 2.03                # [m] linac entrance (Z_acc_1); the injector→l
 
 
 def _apply_linac_z0(linac_inj):
-    """Set the linac stage's lab-z offset from the injection summary.
+    """Set the linac stage's lab-z offset (local frame → lab).
 
-    The linac sim imports the injector beam at the 2.03 m handoff and resets it to a
-    linac-LOCAL frame (`z = z - z.min() + Z_INJECT`), so its openPMD z is NOT lab-frame.
-    The offset that maps local z back to lab z is the difference between the lab ⟨z⟩ of the
-    handoff dump and the local ⟨z⟩ the beam was placed at: z_handoff_m − z_inject_mean_m
-    (≈ 2.03 − 0.12 = 1.91 m). Both are recorded in injection_summary.json. Falls back to
-    Z_HANDOFF if the summary lacks the fields (older runs), so the segment still lands near
-    the handoff plane rather than overlapping the injector.
+    The linac sim resets the imported beam to a linac-LOCAL frame, so its openPMD z is NOT
+    lab-frame. Offset = z_handoff_m − z_inject_mean_m (both recorded). Falls back to
+    Z_HANDOFF (older runs lacking the fields).
     """
     linac = next(st for st in STAGES if st["name"] == "linac")
     if linac_inj and "z_handoff_m" in linac_inj and "z_inject_mean_m" in linac_inj:
@@ -103,31 +55,16 @@ def _apply_linac_z0(linac_inj):
 
 
 def _apply_linac_rest_z0(rest_inj, tables=None):
-    """Set the linac_rest (sections 2–8, Impact-T) stage's lab-z offset.
+    """Set the linac_rest (sections 2–8, Impact-T) stage's lab-z offset (local → lab).
 
-    Impact-T output z is the deck-LOCAL frame (≈0 at section-2's zedge), exactly like
-    the linac_sec1 local-frame case — so its dumps must be shifted to lab z to abut
-    linac_sec1 without overlap. The offset that maps Impact-T local z to lab z is
-
-        z0 = z_inject_lab_m − z_inject_local_m
-
-    where z_inject_lab_m is RECORDED in linac_rest/diags/main/injection_summary.json
-    (= the lab-z the sim injected the linac_sec1 exit beam at = linac_sec1's exit lab-z),
-    and z_inject_local_m is the Impact-T local z the beam was placed at. The sim zeroes z
-    at injection (`Pc.z -= mean_z`), so z_inject_local_m defaults to 0 when the summary
-    omits it. This is computed from RECORDED values, NOT a literal ~5.1 m, so it tracks the
-    real handoff plane if upstream geometry shifts.
-
-    Fallback (no summary at all): derive linac_sec1's exit lab-z from the moment tables —
-    the linac stage's already-applied z0 (from _apply_linac_z0) plus its EXIT dump's local
-    ⟨z⟩. Falls back further to the linac stage's z0 if no linac table is available, so the
-    segment still lands downstream of the injector rather than overlapping it.
+    Offset = z_inject_lab_m − z_inject_local_m (recorded; z_inject_local_m defaults to 0
+    since the sim zeroes z at injection). Fallback (no summary): linac_sec1's exit lab-z
+    from the tables (its z0 + EXIT dump local ⟨z⟩), then the linac stage's z0.
     """
     rest = next(st for st in STAGES if st["name"] == "linac_rest")
     if rest_inj and "z_inject_lab_m" in rest_inj:
         rest["z0"] = rest_inj["z_inject_lab_m"] - rest_inj.get("z_inject_local_m", 0.0)
         return
-    # Fallback: linac_sec1 exit lab-z from the tables (z0 already applied to those rows).
     linac_rows = (tables or {}).get("linac") or []
     if linac_rows:
         rest["z0"] = linac_rows[-1]["z_mean"]    # z_mean already carries the linac z0
@@ -139,12 +76,10 @@ def _apply_linac_rest_z0(rest_inj, tables=None):
 def _exit_row(name, rows):
     """The row representing a stage's EXIT.
 
-    For the injector, the domain extends past the 2.03 m handoff to ZMAX=2.10 m and the run
-    stops while the bunch is partially draining through the absorbing exit, so the
-    largest-⟨z⟩ dump (rows[-1], ~2.076 m) is depleted and NOT what the linac ingests. The
-    linac reader selects the dump nearest the 2.03 m handoff, so the cross-stage figures
-    must use the SAME plane — otherwise the 'injector exit' charge disagrees with the linac
-    input. Other stages end at their physical exit, so rows[-1] is correct there.
+    Injector exit = dump nearest the 2.03 m handoff, NOT rows[-1]: the domain extends to
+    ZMAX=2.10 m and the run stops mid-drain, so the largest-⟨z⟩ dump is depleted and the
+    linac reader (which selects the 2.03 m dump) ingests a different one. Other stages end
+    at their physical exit, so rows[-1] is correct.
     """
     if name == "injector":
         return min(rows, key=lambda r: abs(r["z_mean"] - Z_HANDOFF))
@@ -236,16 +171,10 @@ def render_chain_evolution(tables):
         a_ke.fill_between(z, np.maximum(ke - dke, 1e-3), ke + dke, color=col, alpha=0.18)
         a_ex.plot(z, _arr(rows, "emit_nx"), "-", color=col, label=nm)
         a_sx.plot(z, _arr(rows, "sig_x") * 1e3, "-", color=col, label=nm)
-        # σ_z + I_peak: EXCLUDE linac_rest. Impact-T writes only TWO particle dumps
-        # (injected core, z-zeroed via drift_to_t, + exit), so these evolution traces
-        # would be a meaningless 2-point straight line across the ~30 m sections-2–8
-        # span. Its endpoint values stay on the KE/ε/σ_x/charge panels.
+        # σ_z + I_peak exclude linac_rest (only 2 Impact-T dumps → meaningless 2-point line).
         if nm != "linac_rest":
             a_sz.plot(z, np.maximum(_arr(rows, "sig_z") * 1e3, 1e-3), "-", color=col, label=nm)
-        # within-stage charge fraction + I_peak: EXCLUDE the cathode. The cathode is an
-        # emitter (q grows over time → a within-stage "transmission" rises >1, misleading)
-        # and its 2D-slab pre-renorm I_peak is ~10 kA (non-physical), which on a linear axis
-        # flatlines every real stage. Both panels start at the gun.
+        # charge-fraction + I_peak exclude the cathode (emitter q grows >1; 2D-slab I_peak non-physical).
         if nm != "cathode":
             q = _arr(rows, "q")
             a_q.plot(z, q / q[0] if q[0] > 0 else q, "-", color=col, label=nm)
@@ -333,42 +262,24 @@ def render_emittance_budget(tables):
 # FIGURE 3 — transmission_waterfall.png : the end-to-end charge chain, two loss stages.
 # ══════════════════════════════════════════════════════════════════════════════
 def render_transmission_waterfall(tables, linac_inj):
-    """Charge milestones along the chain. Absolute charge resets at each downsample/
-    handoff, so we show the within-stage-transmission-scaled end-to-end picture and,
-    crucially, separate the injector's TWO loss stages: 'enters bore' (the 9.547 mm iris
-    scrape) and 'captured' (the linac RF-bucket loss) — the separation that motivates the
-    solenoids. Capture denominator = TRUE injected charge (linac injection_summary.json).
-
-    The waterfall starts at GUN EXIT, where the beam carries its physical charge (the gun
-    renormalizes to the 1 nC bunch). The CATHODE dump's weight sum (~82 nC of raw
-    macroparticle weight, pre-renorm) is NOT a physical charge and is excluded — plotting it
-    would dwarf the physical ≤1 nC bars on one axis; it's noted in the caption instead.
-
-    The 'injector exit' bar uses the linac's recorded handoff charge (q_injected_C) when
-    the sidecar exists; the fallback is the dump at the 2.03 m HANDOFF plane (via
-    _exit_row), NOT the largest-⟨z⟩ dump (which is partially drained through the 2.10 m
-    absorbing exit and under-counts what the linac actually ingests)."""
+    """Charge milestones along the chain, separating the two loss stages (iris scrape vs
+    captured). Capture denominator = TRUE injected charge. Starts at gun exit (physical
+    charge); cathode pre-renorm weight is excluded. Injector-exit bar uses the recorded
+    handoff q_injected_C (fallback: the 2.03 m _exit_row, NOT the drained largest-⟨z⟩ dump)."""
     bars, vals = [], []
     gun = tables.get("gun") or []
     inj = tables.get("injector") or []
     if gun:
         bars.append("gun exit\n(renorm ~1 nC)"); vals.append(_exit_row("gun", gun)["q"] * 1e9)
     if inj:
-        # Prefer the linac's RECORDED handoff charge (q_injected_C from load_injector_bunch)
-        # so this bar and the iris/injected bars share one source: plot_chain's own
-        # nearest-2.03m _exit_row selector differs from the reader's (population-gated
-        # nearest-z) and can pick a different dump. Recompute only for old runs without
-        # the sidecar.
+        # Prefer the recorded handoff q_injected_C (one source w/ the iris/injected bars;
+        # _exit_row's nearest-2.03m selector differs from the reader's population-gated pick).
         bars.append("injector exit\n(@2.03m handoff)")
         if linac_inj and "q_injected_C" in linac_inj:
             vals.append(linac_inj["q_injected_C"] * 1e9)
         else:
             vals.append(_exit_row("injector", inj)["q"] * 1e9)
-    # The two distinct downstream losses, anchored on the linac's recorded true-injected
-    # breakdown (q_injected_C at the handoff, q_in_domain_C = the multi-plane survivors of the
-    # 9.547 mm iris/pipe) and the captured charge from the last linac dump. Use q_in_domain_C
-    # (the 9.547 mm iris radius), NOT q_in_bore_C (the 9.55 mm RF bore) — the bar is labelled
-    # for the iris.
+    # Iris bar uses q_in_domain_C (9.547 mm multi-plane iris scrape), NOT q_in_bore_C (9.55 mm RF bore).
     if linac_inj:
         bars.append("passes iris\n(9.547mm)"); vals.append(linac_inj["q_in_domain_C"] * 1e9)
         lin = tables.get("linac") or []
@@ -478,12 +389,8 @@ def render_scorecard(tables, linac_inj):
 
 def main():
     """Build the moment table once per stage, then render all cross-stage figures."""
-    # Raise the fd limit before the per-stage get_particle loops below. When run
-    # via run_pipeline the stages already raised it in-process, but this module
-    # is also a standalone entry point (`python -m pipeline.plot_chain`), and
-    # build_moment_table loops the full ~280-dump injector series — enough to
-    # exhaust macOS's default 256-fd limit (openpmd-viewer leaks an fd per
-    # get_particle). See _runner._raise_fd_limit.
+    # Raise the fd limit: openpmd-viewer leaks an fd per get_particle and the per-stage
+    # loops exhaust macOS's 256-fd default (standalone entry point — no in-process raise).
     from pipeline._runner import _raise_fd_limit
     _raise_fd_limit()
     linac_inj = None
@@ -494,13 +401,11 @@ def main():
     if os.path.isfile(LINAC_REST_INJ_SUMMARY):
         with open(LINAC_REST_INJ_SUMMARY) as fh:
             rest_inj = json.load(fh)
-    _apply_linac_z0(linac_inj)   # linac diagnostics are linac-local; shift to lab frame
-    # Build every stage EXCEPT linac_rest first; linac_rest (Impact-T) is local-frame and
-    # needs its lab z0 resolved before its rows are built, so build it once below (not twice).
+    _apply_linac_z0(linac_inj)
+    # Build all but linac_rest first: its lab z0 (fallback) derives from the linac table, so
+    # resolve z0 then build its rows ONCE (so they carry the offset).
     tables = {st["name"]: build_moment_table(st)
               for st in STAGES if st["name"] != "linac_rest"}
-    # linac_rest: resolve the lab offset from its recorded inject z (fallback derives it from
-    # the just-built linac table), then build its rows ONCE so they carry the lab offset.
     _apply_linac_rest_z0(rest_inj, tables)
     rest_stage = next(st for st in STAGES if st["name"] == "linac_rest")
     tables["linac_rest"] = build_moment_table(rest_stage)

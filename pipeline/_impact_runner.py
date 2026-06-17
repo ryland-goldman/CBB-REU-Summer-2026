@@ -1,39 +1,12 @@
 """In-process stage shim for the Impact-T `linac_rest/` stage.
 
-`ImpactStage` mirrors the public surface of `pipeline._runner.Stage`
-(`config`/`run`/`plot`/`_params`/`_warn_unknown_params`) but runs **entirely
-in-process** — `build.main()`, `sim.main()`, `plot.main()` are plain function
-calls, NOT a `_launch_sim` subprocess with a `run_step`/`afterstep` tqdm bar.
-Impact-T has no per-step Python callback to drive a bar from, so `sim.main()`
-uses the `terminal_progress` helper here (a calibrate bar ticked per section, a
-final-run bar driven by a fort.18 watcher); `_run_step` exposes the saved
-terminal fd as `_TERMINAL_FD` so those bars survive the sim-phase stdout
-redirect, mirroring `run_step`'s saved-fd trick.
+`ImpactStage` mirrors `pipeline._runner.Stage`'s public surface but runs
+build/sim/plot in-process (no `_launch_sim` subprocess): Impact-T is an external
+exe with no pywarpx global-geometry binding to isolate. It reuses `_runner`'s
+`_prepare_environment()` (repo-root chdir + RLIMIT_NOFILE raise) and
+`setup_logging()`, and redirects the sim phase's stdout into the pipeline log.
 
-Why no subprocess (unlike every WarpX stage): the WarpX stages each spawn a
-fresh interpreter because pywarpx binds globally to one geometry (2D/RZ/3D) at
-first `.so` load. Impact-T has no such global — it is an external serial exe
-(`ImpactTexe`) driven through lume-impact, which runs its OWN child process and
-captures the exe's stdout into `Impact.log`. So `linac_rest` can run in the
-parent interpreter without tripping the diagnostic-consistency assertion.
-
-What it STILL reuses from `_runner` (the integration contract — do not drop):
-  * `_prepare_environment()` — chdir to repo root (the stage's relative paths
-    `linac_rest/diags`, `linac_rest/rfdata` resolve from there) AND raise
-    RLIMIT_NOFILE to 16384. The fd raise matters here too: `impact_io` loops
-    openPMD dumps on the handoff IN/OUT and `plot_chain` already hit the macOS
-    256-fd wall (openpmd-viewer leaks an fd per `get_particle`).
-  * `setup_logging()` — the shared pipeline log.
-  * an fd-level stdout/stderr redirect around `sim.main()` so any lume-impact /
-    `ImpactTexe` chatter (lume prints the run script + an interactive progress
-    line when `verbose`; the exe banner) lands in the pipeline log rather than
-    the parent terminal mid-pipeline. Our own `_cl` status lines bypass it via a
-    saved duplicate fd, exactly like `run_step`'s tqdm bar.
-
-`_warn_unknown_params` matches `Stage` exactly: live-check the build + plot
-modules (imported here) AND AST-introspect the sim module's top-level names
-(without importing it — keeps a `config()` key that targets a build/sim-module
-section-table constant from spuriously warning).
+See linac_rest/README.md and pipeline/README.md for the design rationale.
 """
 
 import contextlib
@@ -48,12 +21,8 @@ from pipeline._runner import (
     _cl, log, _BOLD, _GREEN, _YELLOW, _RESET, _TTY,
 )
 
-# A dup of the real terminal's fd 1, set by `_run_step` for the duration of the
-# redirected sim phase (where fd 1/2 point at the capture file). `terminal_progress`
-# reads it so a tqdm bar reaches the terminal even while the exe's stdout is captured
-# — the same saved-fd trick `pipeline._runner.run_step` uses for the WarpX bar. None
-# outside a redirected step (e.g. a direct `python -m linac_rest.linac_rest_sim`), in
-# which case the bar falls back to fd 1.
+# Dup of the real terminal's fd 1 during a redirected sim phase, so a tqdm bar can
+# reach the terminal while fd 1/2 point at the capture file. None outside a redirect.
 _TERMINAL_FD = None
 
 
@@ -61,12 +30,7 @@ _TERMINAL_FD = None
 def terminal_progress(total=None, desc="", unit="it"):
     """A tqdm bar that reaches the real terminal even while the sim phase has fd 1/2
     redirected to the capture file (see `_run_step(redirect=True)` / `_TERMINAL_FD`).
-
-    Used by the Impact-T `linac_rest` stage to show progress (calibration sections,
-    final-run z) the way the WarpX stages' `run_step` bar does — they install an
-    `afterstep` callback, but Impact-T is an opaque external exe, so the bars here are
-    driven by the calibration loop (per section) and a fort.18 watcher (final run).
-    Disabled on a non-TTY (matches `run_step`). Closes its own fd on exit.
+    Disabled on a non-TTY. Closes its own fd on exit.
     """
     from tqdm import tqdm as _tqdm
     fd = _TERMINAL_FD if _TERMINAL_FD is not None else 1
@@ -87,11 +51,8 @@ def terminal_progress(total=None, desc="", unit="it"):
 
 
 class ImpactStage:
-    """In-process facade for the Impact-T `linac_rest/` stage.
-
-    Same public surface as `pipeline._runner.Stage`; see this module's docstring
-    for why it does NOT use the subprocess launcher.
-    """
+    """In-process facade for the Impact-T `linac_rest/` stage (mirrors
+    `pipeline._runner.Stage`'s public surface; see this module's docstring)."""
 
     def __init__(self, name, build_module, sim_module, plot_module):
         self.name = name
@@ -104,20 +65,14 @@ class ImpactStage:
     def config(self, **kwargs):
         """Cumulative parameter overrides applied at the next run()/plot().
 
-        Same semantics as `Stage.config`: keys accumulate (`dict.update`) and
-        persist into later runs until overwritten — a scan loop must set OUTDIR
-        every iteration or the stale value leaks.
+        Keys accumulate (`dict.update`) and persist until overwritten — a scan
+        loop must set OUTDIR every iteration or the stale value leaks.
         """
         self._params.update(kwargs)
 
     def run(self, plots=True):
-        """Build the deck, run Impact-T, then plot (unless plots=False).
-
-        All in-process. build/sim/plot modules are imported here (no subprocess
-        isolation needed — no pywarpx global geometry). Config overrides are
-        applied to all three; unknown keys are warned about (build/plot live-
-        checked, sim AST-checked).
-        """
+        """Build the deck, run Impact-T, then plot (unless plots=False), all
+        in-process. Config overrides apply to build/sim/plot; unknown keys warn."""
         _prepare_environment()
         setup_logging()
         build = self._load(self._build_path)
@@ -146,10 +101,9 @@ class ImpactStage:
 
     def _apply_params(self, *modules):
         """Soft-apply config kwargs onto the given modules (no-op when a key is
-        absent on a module). Unlike `Stage`, the sim module IS imported here, so
-        sim-targeting keys are applied directly (not just AST-recognised) — but
-        we still AST-check in `_warn_unknown_params` so the warning logic matches
-        `Stage` and tolerates a sim that fails to import in `plot()`-only mode."""
+        absent). Unlike `Stage`, the sim module IS imported here, so sim keys are
+        applied directly — but still AST-checked in `_warn_unknown_params` to
+        match `Stage` and tolerate a sim that won't import in `plot()`-only mode."""
         recognized = set()
         for mod in modules:
             if mod is None:
@@ -161,12 +115,9 @@ class ImpactStage:
         return recognized
 
     def _warn_unknown_params(self, recognized):
-        """Warn about config() keys that matched no attribute on build/plot (and,
-        when imported, sim) AND no top-level name in the sim module's source.
-
-        AST-checking the sim source (in addition to the live `hasattr` in
-        `_apply_params`) mirrors `Stage` exactly and covers `plot()`-only calls
-        where the sim module isn't imported."""
+        """Warn about config() keys matching no attribute on build/sim/plot AND no
+        top-level name in the sim source. The AST check (vs the live `hasattr` in
+        `_apply_params`) matches `Stage` and covers `plot()`-only calls."""
         unknown = set(self._params) - set(recognized)
         if not unknown:
             return
@@ -178,26 +129,19 @@ class ImpactStage:
             _cl(f"    {_YELLOW}⚠ {msg}{_RESET}", level=logging.WARNING)
 
     def _run_step(self, title, func, redirect=False):
-        """Run `func()` with timing + the shared ok/✓ / ⚠ console+log line.
+        """Run `func()` with timing + the shared ok/✓ / ⚠ console+log line;
+        raise-on-failure like `Stage._run_step`.
 
-        With `redirect=True` (the sim phase), fd 1/2 are captured for the
-        duration of `func()` so lume-impact / `ImpactTexe` output doesn't scroll
-        the parent terminal; the captured text is then replayed into the pipeline
-        log THROUGH the logger after `func()` returns. The status line is written
-        to a saved duplicate of fd 1 so it still reaches the real terminal — same
-        trick `run_step` uses for the tqdm bar. Mirrors `Stage._run_step`'s
-        raise-on-failure contract.
-
-        Why capture into a SEPARATE temp file rather than redirecting fd 1/2 at
-        the pipeline log directly: the `setup_logging` FileHandler holds that log
-        file open with its OWN buffered write offset, so a raw `os.write` (the
-        exe is a real subprocess writing to its inherited fd) appended at EOF gets
-        clobbered the moment the handler next flushes from its stale offset (the
-        exe banner silently vanishes). Capturing to a throwaway file and then
-        emitting it via `log.info` keeps a single writer (the handler) on the log.
+        With `redirect=True` (sim phase), capture fd 1/2 to a SEPARATE temp file,
+        then replay it into the log via `log.info` after `func()` returns. The
+        temp file is required: redirecting fd 1/2 straight at the pipeline log
+        would race the `setup_logging` FileHandler's buffered write offset (a raw
+        `os.write` at EOF gets clobbered on the handler's next flush), so a single
+        writer (the handler) must own the log. The status line goes to a saved dup
+        of fd 1 so it still reaches the terminal.
         """
         import tempfile
-        # Status banner first (before any redirect), so it lands on the terminal.
+        # Status banner before any redirect, so it lands on the terminal.
         _cl(f"\n{_BOLD}▶ {title}{_RESET}")
         log.info(f"    {func.__module__}.main()  cwd={os.getcwd()}")
         t0 = time.time()
@@ -212,14 +156,11 @@ class ImpactStage:
                 saved_out, saved_err = os.dup(1), os.dup(2)
                 os.dup2(cap_fd, 1)
                 os.dup2(cap_fd, 2)
-                # Expose the saved terminal fd so `terminal_progress` bars (calibration,
-                # final-run watcher) inside func() still reach the real terminal.
+                # Expose the saved terminal fd so `terminal_progress` bars in func() reach it.
                 _TERMINAL_FD = saved_out
             except Exception:
-                # If the capture can't be set up, fall back to running un-redirected
-                # rather than failing the whole stage. Restore fd 1/2 from any saved
-                # duplicates FIRST — a partial dup2 (fd 1 redirected, fd 2 raised) would
-                # otherwise leave fd 1 dangling on the about-to-be-closed temp file.
+                # Capture setup failed: fall back to un-redirected. Restore fd 1/2 FIRST
+                # — a partial dup2 would leave fd 1 dangling on the about-to-close temp file.
                 if saved_out is not None:
                     try: os.dup2(saved_out, 1)
                     except Exception: pass
@@ -254,8 +195,7 @@ class ImpactStage:
                 if cap_fd is not None:
                     try: os.close(cap_fd)
                     except Exception: pass
-                # Replay the captured exe/sim output INTO the log via the logger,
-                # so the FileHandler stays the single writer (no offset clobber).
+                # Replay captured output via the logger (keeps the FileHandler sole writer).
                 if cap_path is not None:
                     try:
                         with open(cap_path, "r", errors="replace") as fh:

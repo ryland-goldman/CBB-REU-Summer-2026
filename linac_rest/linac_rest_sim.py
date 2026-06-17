@@ -1,41 +1,9 @@
 """
-Cornell Linac **Sections 2–8** in Impact-T (the ``linac_rest`` stage): accelerate the
-captured ~25 MeV beam from ``linac_sec1`` through seven S-band travelling-wave sections to
-≈308 MeV at the default 11 MW klystron point (307.97 survivors through the real bore).
+linac_rest stage (Cornell Linac sections 2–8) main():  handoff IN (captured core from
+linac_sec1) → build/calibrate the in-memory Impact-T deck → I.run() → §5 gates →
+openPMD handoff OUT + injection_summary.json.
 
-Fifth and final stage of the Cornell Linac chain:
-    cathode → gun → injector → linac_sec1 → linac_rest (this).
-
-Unlike the four WarpX stages, this is an **Impact-T** run driven through lume-impact
-(external serial ``ImpactTexe``), so it runs IN-PROCESS via ``ImpactStage`` (no pywarpx
-global-geometry binding). The deck is assembled in-memory by ``build_linac_rest_lattice``
-(seven TW sections reusing the ``rfdata4–7`` field shape, SC off, quads K1=0 for the
-headline), each section's field scale calibrated to its ΔE_target by
-``calibration.calibrate_sections``.
-
-Handoff IN (``linac_sec1`` → ParticleGroup):
-  * read ``linac_sec1/diags/main/particles`` LAST (exit) dump — the captured coasting
-    beam (``pipeline.impact_io.read_warpx_dump``);
-  * keep only the **captured core** (KE ≥ ``MIN_KE_MEV``): the sec-1 exit dump carries a
-    low-energy un-captured tail (~16% of charge below 10 MeV) whose β < 0.999 would break
-    the rigid-crest no-slip assumption across the 36 m line and is not part of the beam the
-    downstream optics transport. The discarded tail is recorded in the summary;
-  * ``drift_to_t()`` then zero z (Impact-T injects at z == 0, t-coordinates);
-  * set ``I.initial_particles`` (carries the surviving charge — no renormalisation).
-
-Handoff OUT (Impact-T → openPMD for plot_chain + summary):
-  * ``P_out = I.particles["final_particles"]`` → ``write_openpmd_particles`` writes the exact
-    WarpX openPMD layout (species ``"electrons"``, ``ux=γβ``, ``w``=count) into
-    ``diags/main/particles/`` so ``plot_chain``/``_beam_summary``/``build_moment_table`` read
-    it with the same ``get_particle([...], species="electrons")`` call as every WarpX stage;
-  * Impact-T's only particle dumps (with write_beam off) are the initial and final beams,
-    so a 2-iteration series (injected core + ≈308 MeV exit) is written for plot_chain; the
-    per-section vs-z evolution lives in ``injection_summary.json`` ``stat_vs_z`` (I.stat), not
-    in particle slices;
-  * ``injection_summary.json`` records ``q_injected_C`` (the captured-core charge read from
-    sec-1, so ``_beam_summary`` reports ~100% within-stage and the chain capture narrative
-    stays coherent) and ``z_inject_lab_m`` (the lab-z the beam was injected at — Impact-T
-    output z is local-frame; the cross-stage z0 shift lives in ``plot_chain``).
+See linac_rest/README.md for physics, operating point, calibration, and gotchas.
 """
 
 import inspect
@@ -54,27 +22,16 @@ from . import DEFAULT_OUTDIR
 
 MC2_MEV = 0.51099895069          # electron rest energy [MeV]
 
-# Design per-cell phase advance [deg] the FODO gradients are derived at — read from the helper's
-# signature default so the recorded value can never drift from what fodo_quad_gradients() actually
-# used (the sim calls it with the default μ). Placeholder optics (nominal μ; see fodo_quad_gradients).
+# Read from the helper's signature default so the recorded μ can't drift from what
+# fodo_quad_gradients() actually uses (the sim calls it with the default).
 _FODO_PHASE_ADV_DEG = inspect.signature(L.fodo_quad_gradients).parameters["phase_adv_deg"].default
 
 # ── Upstream input ────────────────────────────────────────────────────────────
-# linac_sec1's exit dump (its captured ~25 MeV coasting beam). The reader picks the
-# last/exit iteration by default — the captured beam, NOT a handoff-plane nearest-⟨z⟩ pick
-# (mirrors linac_sec1's _exit_row rows[-1] for the linac exit).
-LINAC_SEC1_DIAG = "linac_sec1/diags/main/particles"
+LINAC_SEC1_DIAG = "linac_sec1/diags/main/particles"  # last/exit dump (the captured ~25 MeV beam)
 LINAC_SEC1_SUMMARY = "linac_sec1/diags/main/injection_summary.json"  # for the true-injected denom
-# z the sec-1 captured beam exits at (its exit-dump ⟨z⟩ ≈ 3.31 m lab). Recorded into the
-# linac_rest summary as z_inject_lab_m so plot_chain's _apply_linac_rest_z0 can place the
-# local-frame Impact-T z in the lab without a hard-coded offset.
-Z_INJECT_LAB_M = None            # measured from the read-in dump at run time (None ⇒ measure)
+Z_INJECT_LAB_M = None            # lab-z of sec-1 exit (None ⇒ measure from the dump at run time)
 
-# Captured-core energy cut [MeV]: drop the low-energy un-captured tail so the injected beam
-# is the captured core (β > 0.999 ⇒ rigid-crest no-slip holds). β > 0.999 needs KE > 10.92 MeV
-# (γ > 22.37); 12 MeV (β ≈ 0.99917) keeps a margin and retains ~88% of the sec-1 exit charge.
-# The discarded tail is the un-captured halo, not part of the transported beam. Configurable.
-MIN_KE_MEV = 12.0
+MIN_KE_MEV = 12.0                # captured-core energy cut [MeV]; β≈0.99917 ⇒ rigid-crest no-slip holds
 
 # ── Operating point (tunable via linac_rest.config(...)) ──────────────────────
 POWER_MW = 11.0                  # RF input power [MW] per section — ONE convention (sec-1 point)
@@ -82,39 +39,24 @@ PHASE_DEG = 0.0                  # on-crest synchronous phase (β > 0.999 ⇒ no
 
 # ── Performance / deck knobs ──────────────────────────────────────────────────
 Np = 4000                        # macroparticles tracked in the final I.run() (downsample core to this)
-Np_calib = 400                   # decimated bunch for per-section calibration (⟨KE⟩/crest are mean
-                                 # quantities, so a coarse bunch fits the scale+phase fine and the
-                                 # ~240 calibration tracks run ~10× faster); 0 ⇒ calibrate on full Np
+Np_calib = 400                   # decimated bunch for per-section calibration (0 ⇒ full Np)
 Ntstep = 200000                  # Impact-T step cap (sized for ~36 m at Dt≈2e-12; mean_z asserted)
 Dt = 2.0e-12                     # time step [s]
-Nxyz = 16                        # SC mesh per axis (power of 2; used only when SPACE_CHARGE). 16³ over
-                                 # the ~20 mm box is ~1 cell per σ for the sub-mm core — fine for the
-                                 # order-of-magnitude SC sanity toggle, UNDER-resolved for a converged
-                                 # SC prediction (raise to 32/64 and check convergence for a real study).
-SPACE_CHARGE = False             # beam self-field (space charge) on/off. False (headline) →
-                                 # Bcurr=0 (the physics-neutral SC-off deck the energy headline is
-                                 # built on). True → Bcurr = q_injected·Bfreq drives Impact-T's SC mesh
-                                 # (≈308 MeV exit is relativistic ⇒ SC is a small effect). The SC-ON
-                                 # path is EXPLORATORY/UNVALIDATED (like QUADS_ON): the per-section ΔE
-                                 # gates were validated SC-off; re-confirm gates 1/2/5/6 before relying
-                                 # on SC-on numbers. Calibration stays SC-free; SC acts on the run only.
+Nxyz = 16                        # SC mesh per axis (power of 2; used only when SPACE_CHARGE)
+SPACE_CHARGE = False             # beam self-field. False (headline) ⇒ Bcurr=0; True ⇒ Bcurr=q·Bfreq
+                                 # (exploratory/unvalidated; calibration stays SC-free, SC on run only)
 DRIFT_M = None                   # inter-section drift override [m] (None ⇒ build default 0.4)
 QUADS_ON = False                 # headline: quads OFF (K1 = 0). True ⇒ exploratory FODO.
 QUAD_K = None                    # per-section quad b1_gradient [T/m] (exploratory; None ⇒ zeros)
 RNG_SEED = 0
-REQUIRE_GATES = True             # T6: assert the hard §5 gates so a bad run fails loudly
+REQUIRE_GATES = True             # assert the hard §5 gates so a bad run fails loudly
 
 OUTDIR = None                    # if None at main(), use DEFAULT_OUTDIR
 
 
 def _sec1_lab_z0():
-    """linac_sec1's local→lab z offset, mirroring plot_chain._apply_linac_z0.
-
-    sec-1's diagnostics are in its own local frame; plot_chain shifts them to lab by
-    z0 = z_handoff_m − z_inject_mean_m (recorded in sec-1's injection_summary.json). We add the
-    same offset to the sec-1 dump ⟨z⟩ so linac_rest's recorded z_inject_lab_m is in the lab
-    frame and the segments abut without overlap. Falls back to Z_HANDOFF (2.03 m) if the
-    sec-1 summary lacks the fields (older runs), matching plot_chain's own fallback.
+    """linac_sec1's local→lab z offset (z_handoff_m − z_inject_mean_m), mirroring
+    plot_chain._apply_linac_z0. Falls back to 2.03 m if the sec-1 summary lacks the fields.
     """
     try:
         with open(LINAC_SEC1_SUMMARY) as fh:
@@ -131,16 +73,13 @@ def load_sec1_core():
     preserve the surviving charge), ``drift_to_t()`` + zeroes z for Impact-T injection. The
     ParticleGroup carries the captured-core charge (no renormalisation).
     """
-    P = read_warpx_dump(LINAC_SEC1_DIAG)             # species "electron", t-coords, last dump
+    P = read_warpx_dump(LINAC_SEC1_DIAG)             # species "electron" (singular), t-coords, last dump
     n_all = P.n_particle
-    # LAB-frame injection z: the sec-1 dump's ⟨z⟩ is in sec-1's LOCAL frame; plot_chain shifts
-    # sec-1 to lab by z0 = z_handoff_m − z_inject_mean_m (from sec-1's injection_summary). Add
-    # that same offset so z_inject_lab_m is the LAB z where the sec-1 beam exits — i.e. exactly
-    # where linac_rest abuts sec-1 (else plot_chain's _apply_linac_rest_z0 would place the
-    # segment ~1.9 m too early, overlapping sec-1's exit-drift dumps).
+    # sec-1 dump ⟨z⟩ is in sec-1's LOCAL frame; add its local→lab offset so z_inject_lab is the
+    # LAB z where linac_rest abuts sec-1 (else plot_chain places the segment ~1.9 m too early).
     z_local = float(P["mean_z"])
     z_inject_lab = (z_local + _sec1_lab_z0()) if Z_INJECT_LAB_M is None else Z_INJECT_LAB_M
-    q_exit = float(P["charge"])                      # all sec-1 exit charge (pre-core-cut)
+    q_exit = float(P["charge"])                      # all sec-1 exit charge (pre-core-cut, honest denom)
 
     ke_mev = (P.energy - MC2_MEV * 1e6) / 1e6
     core = ke_mev >= MIN_KE_MEV
@@ -158,8 +97,7 @@ def load_sec1_core():
         Pc = Pc[sel]
         Pc.weight = Pc.weight * (q_core / float(Pc.charge))   # restore total core charge
 
-    # Impact-T injects at a common time with z == 0: drift every particle to the mean t,
-    # then translate z so the bunch sits at z == 0.
+    # Impact-T injects at a common time with z == 0: drift to mean t, then translate z to 0.
     Pc.drift_to_t(Pc["mean_t"])
     Pc.z = Pc.z - Pc["mean_z"]
 
@@ -169,10 +107,8 @@ def load_sec1_core():
     info = dict(
         n_sec1_exit=int(n_all), n_core=int(Pc.n_particle),
         q_sec1_exit_C=q_exit, q_core_C=q_core,
-        # Explicit model-validity-cut bookkeeping (per physicist's policy): the FULL sec-1
-        # charge is the honest denominator; the dropped sub-MIN_KE_MEV tail is counted as loss.
         q_after_cut_C=q_core,                        # survivors of the KE≥MIN_KE_MEV cut
-        q_dropped_lowKE_C=(q_exit - q_core),         # the dropped low-energy (β<0.999) tail
+        q_dropped_lowKE_C=(q_exit - q_core),         # the dropped low-energy (β<0.999) tail (counted as loss)
         core_charge_frac=(q_core / q_exit if q_exit else 0.0),
         min_ke_mev_cut=float(MIN_KE_MEV), ke_in_mev=ke_in,
         ke_min_core_mev=ke_min, beta_min_core=beta_min,
@@ -189,12 +125,8 @@ def load_sec1_core():
 
 
 def _stat_vs_z(I, n=200):
-    """Downsample Impact-T's continuous z-stats into a small along-z table for the plots.
-
-    The per-section evolution (⟨KE⟩, σ_KE, σ_x, ε_n) comes from Impact-T's I.stat(...) arrays
-    (thousands of points over the line — write_beam dumps are off, see build_impact), thinned
-    to ~`n` evenly-spaced samples and stored in injection_summary.json so plot_linac_rest can
-    render vs-z without re-running. σ_KE uses σ_gamma·mc2 (sigma_energy is not a stat key).
+    """Thin Impact-T's I.stat(...) z-arrays to ~`n` samples for the vs-z plots (write_beam
+    dumps are off). σ_KE uses σ_gamma·mc2 (sigma_energy is not a stat key).
     """
     zc = I.stat("mean_z")
     if len(zc) == 0:
@@ -211,15 +143,8 @@ def _stat_vs_z(I, n=200):
 
 
 def _watch_fort18(I, bar, stop_evt, poll=0.3):
-    """Drive the final-run progress bar from Impact-T's ``fort.18`` (the WarpX stages get a
-    per-step ``afterstep`` callback; Impact-T is an opaque external exe, so we watch its
-    on-disk reference trajectory instead).
-
-    ``fort.18`` column 2 is the reference particle's ``mean_z`` [m] (impact.parsers FORT_KEYS[18]),
-    written live by the exe in the run workdir (``I.path``). Poll its last line and advance ``bar``
-    toward the lattice length. Best-effort: the file is written concurrently, so a partial last
-    line / missing file just skips that tick (the bar still shows elapsed time, and main() snaps it
-    to full when the run returns).
+    """Drive the run progress bar from Impact-T's ``fort.18`` column 2 (reference ``mean_z`` [m]),
+    polled live from the run workdir. Best-effort: a partial/missing line just skips a tick.
     """
     f18 = None
     while not stop_evt.is_set():
@@ -256,17 +181,8 @@ def _run_with_progress(I, total_len):
 
 
 def _write_outputs(I, outdir, inj):
-    """Write the Impact-T result as WarpX-layout openPMD + the injection summary JSON.
-
-    Writes the exit beam (final_particles) — and any other surviving ParticleGroups — as
-    openPMD slices for the cross-stage handoff (plot_chain sorts by ⟨z⟩, tolerates a single
-    exit dump). The per-section vs-z evolution lives in inj["stat_vs_z"] (Impact-T I.stat),
-    not in particle slices.
-
-    The output groups' charges were already re-imposed in main() — each scaled to
-    q_core × (group n / n_in) so the openPMD `weighting` sums to the physically transmitted
-    charge (Impact-T with Bcurr=0 returns a default 1 C normalisation; transmission was
-    measured from macro count BEFORE that rescale, so the rescale can't mask aperture loss).
+    """Write the surviving ParticleGroups as WarpX-layout openPMD slices (sorted by ⟨z⟩) plus
+    injection_summary.json. Group charges were already re-imposed in main().
     """
     part_dir = os.path.join(outdir, "particles")
     os.makedirs(part_dir, exist_ok=True)
@@ -297,21 +213,10 @@ def main():
     # ── Handoff IN: captured core from linac_sec1 ─────────────────────────────
     P_in, core_info = load_sec1_core()
 
-    # ── Build the CALIBRATION deck — ALWAYS quads-OFF (zero quad/drift radius) ─
-    # Calibration fits each section's crest phase + field scale on `mean_energy`, which is
-    # transverse-independent ONLY on-axis. A quads-OFF, zero-new-aperture deck keeps the decimated
-    # Np_calib bunch neither focused nor bore-scraped mid-fit, so no particle leaves the mean and
-    # the fit is clean and IDENTICAL to today's headline. Quads (+ the new quad bore radius) appear
-    # only on the fresh final-run deck below. Built unconditionally with quads_on=False, quad_k=None.
-    # Space-charge current for the FINAL run deck. Impact-T is a single-bunch tracker: its SC solve
-    # uses only the per-bunch charge Q = Bcurr/Bfreq deposited on the Nxyz³ mesh (NOT a physical
-    # average current or bunch rep rate). With Bfreq = RF_FREQ_HZ, Bcurr = |q_injected|·RF_FREQ_HZ
-    # makes Q = |q_injected| exactly — RF_FREQ_HZ is a bookkeeping factor that cancels, not a real
-    # rep rate. 0 ⇒ SC off (headline default). The CALIBRATION deck below is built SC-FREE
-    # (bcurr=0) regardless: the per-section on-crest ΔE the fit targets is transverse-independent and
-    # SC-independent at γ>49 (longitudinal SC ∝ 1/γ²), so fitting the field scale absent self-field
-    # is the correct model — SC is then layered onto the final run as a small perturbation. Building
-    # I_cal SC-free also avoids running a full Poisson solve inside every crest-scan/brentq probe.
+    # ── Build the CALIBRATION deck — ALWAYS quads-OFF, SC-free (bcurr=0) ──────
+    # The fit's mean_energy is transverse-independent only on-axis; a quads-OFF, zero-aperture,
+    # SC-free deck keeps the fit clean and identical to the headline. `bcurr` (Bcurr=|q|·Bfreq ⇒
+    # Q=|q| on the SC mesh) applies only to the FINAL run deck below.
     bcurr = abs(P_in.charge) * L.RF_FREQ_HZ if SPACE_CHARGE else 0.0
     I_cal, total_len = L.build_impact(
         power_mw=POWER_MW, phase_deg=PHASE_DEG, drift_m=DRIFT_M,
@@ -323,22 +228,21 @@ def main():
           f"on-crest θ₀={PHASE_DEG:g}°, SC {'on (Bcurr=%.4g A)' % bcurr if SPACE_CHARGE else 'off'}, "
           f"quads {'ON' if QUADS_ON else 'OFF (K1=0)'} → {outdir}/", flush=True)
 
-    # ── Per-section scale calibration (Task 5) — on the quads-OFF deck ─────────
+    # ── Per-section scale calibration — on the quads-OFF deck ─────────────────
     print("Calibrating per-section field scale to ΔE_target (on-crest, scale-only)…",
           flush=True)
     with terminal_progress(total=L.N_SECTIONS, desc="linac_rest: calibrate",
                            unit="sec") as cbar:
         calib = cal.calibrate_sections(I_cal, P_in, power_mw=POWER_MW, np_calib=Np_calib,
                                        bar=cbar)
-    # `calib` carries per-section {scale, crest_phase_deg} — both are re-applied to the run deck.
+    # `calib` carries per-section {scale, crest_phase_deg} — both re-applied to the run deck.
     calibrated_scales = [r["scale"] for r in calib]
 
     # ── Assemble the RUN deck ─────────────────────────────────────────────────
     applied_quad_k = [0.0] * L.N_SECTIONS    # placed b1_gradient [T/m] (all-zero quads-OFF)
     if QUADS_ON:
-        # Build a FRESH quads-ON deck (no in-place-mutate-then-configure ambiguity): the calibrated
-        # `scales` are baked in at build time, the derived (or overridden) FODO gradients are placed,
-        # and the new quad/drift bore radius is active. The measured `ke_in` energy-scales the FODO.
+        # Build a FRESH quads-ON deck (calibrated scales baked in, FODO gradients + quad/drift
+        # bore radius active); the measured ke_in energy-scales the FODO.
         quad_k = (QUAD_K if QUAD_K is not None
                   else L.fodo_quad_gradients(ke_in_mev=core_info["ke_in_mev"]))
         applied_quad_k = list(quad_k)        # the per-quad T/m actually placed on the run deck
@@ -346,22 +250,18 @@ def main():
             power_mw=POWER_MW, phase_deg=PHASE_DEG, drift_m=DRIFT_M,
             np_particles=P_in.n_particle, dt=Dt, ntstep=Ntstep, nxyz=Nxyz,
             quads_on=True, quad_k=quad_k, scales=calibrated_scales, bcurr=bcurr)
-        # Re-apply the calibration onto the fresh deck VIA THE CONTROLGROUP, exactly as
-        # calibrate_sections writes the live deck — NOT just the build-time `scales=` element values.
-        # Adding the rf_field_scale ControlGroup (absolute=True, group value defaults 0) and then
-        # configure() would OVERWRITE the baked-in element scales with 0 (a silent no-acceleration
-        # run that still passes the b1_gradient assert). So set the group scale AND the absolute
-        # crest phase per section (θ₀ is absolute ⇒ scales alone don't put the section on crest),
-        # then configure once.
+        # Re-apply calibration via the ControlGroup, not just the build-time element scales: the
+        # rf_field_scale group is absolute=True defaulting 0, so adding it + configure() would
+        # overwrite the baked-in scales with 0 (silent no-acceleration). Set the group scale AND
+        # the absolute crest phase per section (θ₀ is ABSOLUTE), then configure once.
         for r in calib:
             gname = cal._ensure_section_group(I, r["index"])
             cal._set_section_phase(I, r["index"], r["crest_phase_deg"])
             cal._set_group_scale(I, gname, r["scale"])
         I.initial_particles = P_in
         I.configure()
-        # Guard: the FODO must actually be placed on the run deck (catches a silent quads-off build).
-        # Each gap is an H/V doublet (quad{N}a lead pole + quad{N}b opposite-sign half); check the
-        # lead half of the first placed doublet.
+        # Guard the FODO was actually placed (catches a silent quads-off build); quad3a is the
+        # lead half of the first H/V doublet.
         assert I.ele["quad3a"]["b1_gradient"] != 0.0, (
             "QUADS_ON run deck has zero b1_gradient on quad3a — FODO gradients did not apply")
         print(f"Run deck: quads ON, H/V-doublet lead-pole b1_gradient [T/m] = "
@@ -369,10 +269,8 @@ def main():
               f"(placeholder optics — guessed K1, A→T undocumented, H/V doublet (±g halves), "
               f"nominal μ={_FODO_PHASE_ADV_DEG:g}°)", flush=True)
     else:
-        # Headline: the run deck IS the quads-OFF calibrated deck. SC-OFF (bcurr=0) this is
-        # byte-identical to before; SC-ON we re-impose the run Bcurr on the (SC-free-calibrated)
-        # deck and re-configure so the final track carries space charge while the calibration that
-        # produced its scales/phases stayed SC-free.
+        # Headline: the run deck IS the quads-OFF calibrated deck. SC-ON re-imposes the run Bcurr
+        # on the SC-free-calibrated deck and re-configures (calibration stayed SC-free).
         I = I_cal
         if bcurr:
             I.header["Bcurr"] = bcurr
@@ -385,13 +283,9 @@ def main():
         raise RuntimeError(f"Impact-T did not finish cleanly (finished={I.finished}, "
                            f"error={I.error})")
 
-    # ── Transmission from MACRO COUNT (BEFORE re-imposing charge) ─────────────
-    # Measure transmission as n_out/n_in on the macroparticle COUNT, while the output still
-    # carries Impact-T's own weights — this is the only honest transmission. (Computing it
-    # from charge AFTER re-imposing q_core below would force 1.0, masking any aperture scrape:
-    # the reviewer's bug.) With Bcurr=0 Impact-T carries no charge, but the per-macro WEIGHT
-    # is uniform, so n_out/n_in is the true surviving fraction whether or not the bore aperture
-    # scrapes. q_out is then q_core × that fraction — the physically transmitted charge.
+    # ── Transmission from MACRO COUNT, measured BEFORE re-imposing charge ──────
+    # n_out/n_in on the macro count (uniform per-macro weight) is the only honest transmission;
+    # computing it from charge AFTER the re-impose below would force 1.0 and mask aperture loss.
     P_out = I.particles["final_particles"]
     n_in = int(P_in.n_particle)
     n_out = int(P_out.n_particle)
@@ -399,23 +293,19 @@ def main():
     q_core = float(P_in["charge"])
     q_out = q_core * transmission                       # physically transmitted core charge
 
-    # ── Re-impose the physical beam charge for the openPMD output (SC OFF loses it) ──
-    # Impact-T returns the output with a default 1 C normalisation; rescale each output group's
-    # per-macro weights so the group sums to its physically transmitted charge (q_core × the
-    # group's own surviving fraction vs n_in). This is for the openPMD `weighting` record only;
-    # the transmission number above was already measured from counts, so this can't mask loss.
+    # ── Re-impose the physical charge for the openPMD `weighting` (SC-OFF loses it) ──
+    # Impact-T returns a default 1 C normalisation; rescale each group to q_core × (group n /
+    # n_in). Output-only — transmission was already measured from counts above.
     for _name, _pg in I.particles.items():
         if _pg is not None and _pg.n_particle > 0:
             _pg.charge = q_core * (_pg.n_particle / n_in)
 
-    # ── Validation gates (§5) — assert the hard gates (Task 6) ────────────────
+    # ── Validation gates (§5) — assert the hard gates ─────────────────────────
     gates = cal.validate_run(I, P_in, power_mw=POWER_MW, calib=calib,
                              require_gates=REQUIRE_GATES)
 
     # ── Handoff OUT: openPMD + summary ────────────────────────────────────────
-    # The true end-to-end denominator is the injector→linac handoff charge (linac_sec1's
-    # q_injected_C — NOT a cathode quantity; the gun renormalizes the cathode weight to 1 nC);
-    # record it here for the chain capture narrative.
+    # Record sec-1's q_injected_C (the injector→linac handoff charge) for the chain capture narrative.
     sec1_true_injected = None
     if os.path.exists(LINAC_SEC1_SUMMARY):
         try:
@@ -424,10 +314,8 @@ def main():
             sec1_true_injected = None
 
     inj = dict(
-        # HONEST capture denominator (team ruling): the FULL linac_sec1 captured charge that
-        # arrived at the handoff, NOT the post-cut core. So _beam_summary's q_out/q_injected
-        # counts the dropped low-energy tail (the MIN_KE_MEV model-validity cut) AND the in-run
-        # aperture loss as within-stage loss — normalizing to the core charge would overstate it.
+        # HONEST capture denominator: the FULL sec-1 captured charge at the handoff, NOT the
+        # post-cut core — so _beam_summary's q_out/q_injected counts the dropped tail + in-run loss.
         q_injected_C=core_info["q_sec1_exit_C"],     # full sec-1 exit charge (honest denominator)
         q_core_injected_C=core_info["q_core_C"],     # of that, the captured core actually tracked
         z_inject_lab_m=core_info["z_inject_lab_m"],  # lab-z of injection (Impact-T z is local)
@@ -435,16 +323,12 @@ def main():
         total_lattice_length_m=float(total_len),
         power_mw=float(POWER_MW), phase_deg=float(PHASE_DEG),
         quads_on=bool(QUADS_ON),
-        # Applied FODO optics (placeholder — guessed K1, A→T undocumented, H/V doublet (±g qL/2
-        # halves), nominal μ): the per-quad b1_gradient [T/m] ACTUALLY PLACED on the run deck (all-zero when
-        # quads OFF), and the design per-cell phase advance used to derive them. Length-N_SECTIONS;
-        # only [0..N_SECTIONS-2] (Q2–Q7) are placed — the trailing entry (Q8, after the last section)
-        # is never installed (see fodo_quad_gradients / README Q8-inert note).
+        # Per-quad b1_gradient [T/m] ACTUALLY PLACED (all-zero quads-OFF); length-N_SECTIONS but
+        # only [0..N_SECTIONS-2] (Q2–Q7) placed — the Q8 trailing entry is never installed.
         quad_k=[float(k) for k in applied_quad_k],
         quad_phase_adv_deg=float(_FODO_PHASE_ADV_DEG),
-        # Aperture provenance: which aperture the transmission was measured against. The real
-        # tapered bore is ON for the headline (bore_aperture_on True or quads_on); xyrad_m is the
-        # containment-box half-width (kept just above the bore so the bore is the binding aperture).
+        # Which aperture the transmission was measured against; xyrad_m is the containment-box
+        # half-width (kept just above the bore so the bore is the binding aperture).
         bore_aperture_on=bool(L.BORE_APERTURE_ON or QUADS_ON),
         xyrad_m=float(L.XYRAD_M),
         ke_in_mev=core_info["ke_in_mev"],
@@ -455,10 +339,8 @@ def main():
         # Transmission from MACRO COUNT (n_out/n_in), measured before re-imposing charge.
         n_core_in=n_in, n_out=n_out,
         transmission_core=transmission,              # n_out/n_in — honest (1.0 only if no scrape)
-        # Envelope-in-bore soft gate (T6): 3σ_max of the transverse RMS envelope vs the narrowest
-        # bore radius [m], and the PASS/FAIL boolean. Soft/diagnostic — characterizes whether the
-        # FODO contains the beam; never gated (guessed K1). Can legitimately FAIL quads-OFF (the
-        # no-focusing beam diverges past the bore — see validate_run).
+        # Soft envelope-in-bore gate: 3σ_max RMS envelope vs narrowest bore [m] + PASS/FAIL.
+        # Never gated (guessed K1); can legitimately FAIL quads-OFF (no-focusing beam diverges).
         max_envelope_m=float(gates["max_envelope_m"]),
         min_bore_m=float(gates["min_bore_m"]),
         envelope_in_bore=gates["envelope_in_bore"],

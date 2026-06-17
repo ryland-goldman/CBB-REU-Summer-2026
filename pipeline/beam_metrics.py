@@ -1,27 +1,16 @@
 """Shared beam-moment helpers (pure numpy; no pywarpx).
 
-Home for the small, stage-independent beam statistics that several plotters compute
-identically — so the math lives in one place and the stage plotters can't drift apart.
-(Deliberately NOT in `pipeline/_runner.py`, which is the pywarpx/subprocess/tqdm
-machinery — wrong home for pure-numpy moment math.)
+See pipeline/README.md for the emittance unit conventions and which plotters use these.
 """
 
 import numpy as np
 
 
 def rms_emit(q, uq, w):
-    """Normalized rms emittance sqrt(⟨q²⟩⟨uq²⟩ − ⟨q·uq⟩²) for one phase plane.
+    """Charge-weighted normalized rms emittance sqrt(⟨q²⟩⟨uq²⟩ − ⟨q·uq⟩²) for one phase plane.
 
-    ``q`` is a position [m], ``uq`` the conjugate normalized momentum γβ (openPMD ``u``,
-    which already includes γ — do NOT multiply by γ again). ``w`` are the macroparticle
-    weights. Returns the RAW emittance in m·(γβ); the caller applies the plane-specific
-    unit scaling: ×1e6 for the transverse plane (→ mm·mrad), or ×1e3 for the longitudinal
-    z–(γβ_z) plane (→ mm·dimensionless, NOT mm·mrad — the longitudinal plane is not an
-    angle, so it gets no mrad factor).
-
-    All moments are charge-weighted by ``w``. This is the shared convention — gun/plot_gun.py
-    and pipeline/plot_chain.py both call it, so the stage and cross-stage figures agree on the
-    same dump (the weighted form is correct for the downsampled+reweighted snapshots).
+    ``uq`` is the openPMD ``u`` = γβ (already includes γ — do NOT multiply by γ again).
+    Returns the RAW emittance in m·(γβ); the caller applies the unit scaling.
     """
     w = np.asarray(w, dtype=float)
     sw = w.sum()

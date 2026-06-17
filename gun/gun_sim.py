@@ -1,52 +1,12 @@
 """
 CESR gun in WarpX (RZ): accelerate the cathode-emitted electrons through the
-Poisson–Superfish gun field, with self-consistent space charge.
+scaled CESR_gun.gdf electrode field with self-consistent (electromagnetostatic)
+space charge, then reconstruct the timed exit beam for the injector handoff.
 
-This is the second stage of the Cornell Linac chain modelled in WarpX. Stage 1
-(`cathode/`) is the thermionic cathode operating at the Child–Langmuir
-limit; here we take its emitted electrons and track them through the gun's
-electrostatic accelerating field — the `CESR_gun.gdf` map scaled to 150 kV by
-`build_gun_field.py` and applied as an external (electrode) field on the
-particles, while WarpX's electromagnetostatic solver supplies the beam self-field
-(electrostatic E plus the self magnetic B from the beam current, so the
-relativistic magnetic pinch is included).
-
-Geometry is RZ (cylindrical), matching the gun field map's native symmetry.
-
-Run with (from the repo root, with `conda activate CBB`):
-    python -c "import gun; gun.run()"               # build field map + sim + plots
-    python -c "import gun; gun.run(plots=False)"    # build + sim only
-    python -c "import gun; gun.plot()"              # plots only
-Direct script invocation (`python gun/gun_sim.py`) does NOT work — this module
-imports `pipeline._runner`, which is only on sys.path when launched from the
-repo root (either via the facade above or `python -m gun.gun_sim`).
-
-Beam source — see README: the cathode run is a continuous (DC) emitter, so the
-weights in its last particle snapshot encode the steady-state population in
-transit through the diode (~82 nC), not a bunch charge. We import the emitted
-**phase-space distribution** (positions + momenta), remap the 2D (x, z) slab
-into RZ by treating |x| as the radius r and smearing the particles uniformly in
-azimuth — importance-resampling by r so the revolution supplies its 2πr Jacobian
-(a uniform-in-x slab → a uniform-density disc, not a spurious 1/r on-axis cusp) —
-and renormalize the total weight to a physical gun bunch charge
-`BUNCH_CHARGE` (the CESR gun is pulse-grid gated). The full 82 nC injected as
-one instantaneous bunch is unphysical — its radial space-charge field (~50 MV/m)
-dwarfs the gun field and blows the beam apart before it accelerates.
-
-Beam representation (`BEAM_RELEASE`, default "timed"): the CESR gun is gated by a 2 ns
-grid pulse (cathode_master.in `twidth=2`), four gun-transit-times long, so the physical
-beam is a long, low-density quasi-DC stream — the original GPT deck emits it that way via
-`settdist(...,"t",...)`. Releasing the whole bunch at one instant ("snapshot") instead
-over-concentrates the charge and over-states the space-charge force (the WarpX–GPT
-150 kV-gun cross-code benchmark in CornellMisc/.../bench/writeup put the *controlled* beam-
-representation term at ~28 % on emittance; here the over-dense snapshot ALSO blows the halo to
-the wall — ≈81 % vs ≈100 % transmission — so the two modes' raw εn,x are computed on different
-particle sets and their difference is confounded, see README). We release the imported
-macroparticles over `PULSE_WIDTH` (uniform/flat-top — the real pulse has 30 V/ns edge ramps,
-not modelled) via a per-step injection callback (the benchmark's warpx_tr.py technique), and
-reconstruct the full exit beam for the injector by id-tracking it through the field-free pad
-past the field map (`build_exit_handoff`). "snapshot" is kept for speed and back-compat. See
-README → *Beam source* for the handoff and the injector-retuning caveat.
+Second stage of the WarpX Linac chain. See gun/README.md for physics, the
+beam-source slab→RZ remap, the timed/snapshot representation, the exit handoff,
+and parameters. Use the gun facade (`import gun; gun.run()`); direct
+`python gun/gun_sim.py` fails (needs the repo root on sys.path for pipeline.*).
 """
 
 import os
@@ -68,74 +28,37 @@ ep0 = picmi.constants.ep0
 GUN_FIELD = "gun/gun_field/gun_E.h5"
 GUN_VOLTAGE = 150.0e3        # [V]
 RMAX = 0.015                 # field-map R extent [m]
-ZMAX_FIELD = 0.051765        # field-map Z extent [m] — the gun field ends here (Ez→0 at the
-                             # map edge, verified) and is the physical exit plane.
-# The RZ DOMAIN extends a field-free drift pad past the field map. WarpX zero-fills the
-# applied field beyond the map (verified), so z ∈ (ZMAX_FIELD, ZMAX] is a field-free drift.
-# This pad is REQUIRED by the timed-mode exit-beam reconstruction: build_exit_handoff samples
-# each particle AFTER it clears the field, in field-free space, where the drift-to-a-common-
-# time is emittance-preserving. Without the pad the domain ended exactly at the field map, so
-# the reconstruction drifted still-in-field particles as if field-free and inflated εn,x ~8×
-# (physics-review CRITICAL). ZPAD ≥ one inter-dump z-step (≈ v_exit·run_time/N_DIAGS ≈ 13 mm)
-# so every exiting particle is caught in ≥1 field-free dump before it leaves the domain.
+ZMAX_FIELD = 0.051765        # field-map Z extent [m]; Ez→0 at the map edge (the exit plane)
+# Field-free drift pad past the map (WarpX zero-fills applied field beyond it). Required so
+# the timed handoff samples each particle in field-free space (drift-to-common-time preserves
+# εn,x; sampling still-in-field manufactures a spurious x–u correlation, ~8× inflation).
 ZPAD = 0.020                 # field-free drift pad past the field map [m]
 ZMAX = ZMAX_FIELD + ZPAD     # full RZ domain z-extent [m]
 
 CATHODE_DIAG = "cathode/diags/particles"
-BUNCH_CHARGE = 1.0e-9        # renormalized gun bunch charge [C] = 1 nC, matching the
-                             # original LinacSim gpt_master.in total_charge = -1e-9;
-                             # raw cathode snapshot is ~82 nC
+BUNCH_CHARGE = 1.0e-9        # renormalized gun bunch charge [C] (raw cathode snapshot is ~82 nC)
 RNG_SEED = 0
 
-# ── Beam representation (snapshot vs time-release) ────────────────────────────
-# The single largest unrealism the WarpX–GPT 150 kV-gun cross-code benchmark
-# (CornellMisc/.../bench/writeup) identified: injecting the whole bunch at ONE instant
-# ("snapshot") over-concentrates the charge and over-states the space-charge force vs
-# releasing it over the real emission window ("time-release"), a ~28 % effect on εn,x in
-# a comparable gun. The CESR gun is gated by a 2 ns grid pulse (cathode_master.in
-# `twidth=2`), four gun-transit-times long, so the physical beam is a long, low-density,
-# quasi-DC stream — exactly what the original GPT deck emits via `settdist(...,"t",...)`.
-# We reproduce that by injecting the imported macroparticles over PULSE_WIDTH with a
-# per-step `installbeforestep` callback (the same technique the benchmark's warpx_tr.py
-# uses), instead of all at t=0.
-BEAM_RELEASE = "timed"       # "timed" → release over PULSE_WIDTH (realistic, default);
-                             # "snapshot" → all charge at t=0 (over-states space charge,
-                             # kept for speed / back-compat with the old chain handoff).
-PULSE_WIDTH = 2.0e-9         # grid-pulse emission window [s] (cathode_master.in twidth=2 ns).
-                             # Flat-top model: emission times are drawn uniformly over
-                             # [0, PULSE_WIDTH] (the real pulse has 30 V/ns edge ramps; a
-                             # flat top is a documented first approximation — the dominant
-                             # correction is the line-density drop, not the edge shape).
-HANDOFF_DIR = "gun/diags/handoff"   # timed mode reconstructs the full released exit beam
-                             # here (id-tracked exit-plane crossing across the volumetric
-                             # dumps) for the injector; snapshot mode leaves it absent.
+# ── Beam representation (snapshot vs time-release); see README → "Beam source" ──
+BEAM_RELEASE = "timed"       # "timed" → release over PULSE_WIDTH (default); "snapshot" → all at t=0
+PULSE_WIDTH = 2.0e-9         # grid-pulse emission window [s] (uniform/flat-top)
+HANDOFF_DIR = "gun/diags/handoff"   # timed mode reconstructs the exit beam here for the injector
 
 # ── Grid (RZ, single azimuthal mode — the gun field is m = 0) ─────────────────
-# 128 (r) × 712 (z): the WarpX–GPT 150 kV-gun cross-code benchmark
-# (CornellMisc/.../bench/writeup) found εn,x falls ~4 % and only converges once the
-# grid resolves the near-cathode dynamics (their RZ study converged by nz≈720 over
-# 55 mm); the old nz=384 over 51.77 mm (dz≈135 µm) sat on the unconverged side. nz=712
-# over the padded 71.77 mm domain keeps dz≈101 µm (near-isotropic dz/dr≈0.86) across
-# BOTH the field region and the field-free pad (uniform grid).
 nr, nz = 128, 712            # divisible by the blocking factor (8)
 
 # ── Diagnostics output directory ──────────────────────────────────────────────
 DIAG_DIR = "gun/diags"
 
-# ── Performance knobs (tunable via gun.config(...); see pipeline/run_pipeline.py) ─
-# Defaults reproduce the original run exactly; lower them to trade accuracy for speed.
-# Runtime ≈ nz² (per-step cost ∝ cells, and dz=ZMAX/nz ⇒ fewer derived steps as nz drops).
+# ── Performance knobs (tunable via gun.config(...); see README → "Performance knobs") ─
 REQUIRED_PRECISION = 1e-5            # MLMG Poisson solve relative tolerance
-SPACE_CHARGE = True                  # beam self-field (space charge) on/off. False →
-                                     # warpx_do_not_deposit: the beam deposits no charge,
-                                     # so only the applied gun field acts (no self-repulsion).
+SPACE_CHARGE = True                  # beam self-field on/off (False → warpx_do_not_deposit)
 MAX_ITERS = None                     # MLMG iteration cap (None → PICMI default)
 CFL = 0.4                            # dt = CFL · dz / v_exit
 TRANSIT_MARGIN = 1.15                # run length = TRANSIT_MARGIN × gun-transit time
 AVG_SPEED_FRAC = 0.6                 # bunch average speed as a fraction of v_exit
 MAX_STEPS = 0                        # 0 → auto-derive from CFL/margins; >0 → fixed
-N_DIAGS = 40                         # number of openPMD dumps over the run (≥20 keeps
-                                     # space_charge.png's near-launch field snapshot)
+N_DIAGS = 40                         # openPMD dumps over the run (≥20 keeps space_charge.png snapshot)
 MAX_PART = 0                         # 0/None → keep all cathode particles; >0 → cap
 
 
@@ -161,8 +84,7 @@ def load_cathode_bunch():
         raise RuntimeError(
             f"no cathode particles with r < RMAX={RMAX} m; check RMAX or the "
             f"upstream cathode output")
-    # Keep `xk` (the masked signed x) alongside the kept arrays so the radial-momentum
-    # sign below survives the optional downsample (x[keep] would re-mask the full set).
+    # Keep the masked signed x (`xk`) so the radial-momentum sign below survives the downsample.
     xk = x[keep]
     r, z, ux, uy, uz, w = (a[keep] for a in (r, z, ux, uy, uz, w))
 
@@ -173,17 +95,9 @@ def load_cathode_bunch():
         xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
         w = w * scale_w
 
-    # slab(x) → RZ disc: supply the 2πr revolution Jacobian that the naive r=|x|
-    # map omits. A 2D Cartesian slab uniform in x has a flat dN/dr; revolving it
-    # with r=|x| and unchanged weight yields areal density n(r) ∝ 1/r — a spurious
-    # on-axis charge cusp that gives a radially-flat (nonlinear) self-field and
-    # corrupts the σ_r, φ-well, and emittance this stage is meant to deliver.
-    # Importance-resample (with replacement) with probability ∝ r·w (charge-correct;
-    # ≡ ∝ r for the cathode's uniform weights), so dN/dr → r·dN/dr and the areal
-    # density matches the cathode's true radial profile (a flat-top emitting strip
-    # → a uniform-density disc). Drawing from the actual particles keeps weights
-    # uniform (no weight-variance, so downstream RMS/emittance stay
-    # unweighted-valid) and preserves the cathode-edge position–momentum correlations.
+    # slab(x) → RZ disc: importance-resample (with replacement) by r·w to supply the 2πr
+    # revolution Jacobian the naive r=|x| map omits (else n(r) ∝ 1/r on-axis cusp).
+    # See README → "Beam source".
     if r.max() > 0.0:
         rw = r * w
         sel = rng.choice(r.size, r.size, replace=True, p=rw / rw.sum())
@@ -204,10 +118,8 @@ def load_cathode_bunch():
     # Renormalize weights so the imported distribution carries BUNCH_CHARGE.
     w = w * (BUNCH_CHARGE / (w.sum() * q_e))
 
-    # Emission time per macroparticle. In "timed" mode the bunch is released over the
-    # PULSE_WIDTH grid-pulse window (uniform → flat-top current); the macroparticles are
-    # sorted by t so the per-step injection callback can walk them in one pass. In
-    # "snapshot" mode every particle is emitted at t=0 (all charge present at once).
+    # Emission time per macroparticle. timed: released over PULSE_WIDTH, t-sorted so the
+    # per-step injection callback walks them in one pass. snapshot: all emitted at t=0.
     if BEAM_RELEASE == "timed":
         t = rng.uniform(0.0, PULSE_WIDTH, size=r.size)
         order = np.argsort(t)
@@ -222,41 +134,22 @@ def load_cathode_bunch():
           f"release={BEAM_RELEASE}"
           + (f" over {PULSE_WIDTH*1e9:.1f} ns" if BEAM_RELEASE == "timed" else ""),
           flush=True)
-    # openPMD ux/uy/uz are the dimensionless normalized momenta γβ; PICMI's
-    # ParticleListDistribution wants proper velocity u = γβc in m/s, so ×c.
-    # (Without this the beam is injected essentially at rest and the cathode's
-    # thermal transverse momentum — hence its emittance — is lost; the energy
-    # gain is insensitive because the cathode KE ≪ 150 keV gun voltage.)
+    # openPMD ux/uy/uz are dimensionless γβ; PICMI ParticleListDistribution wants proper
+    # velocity u = γβc [m/s], so ×c (else the beam is injected essentially at rest).
     return dict(x=xpos, y=ypos, z=zpos, ux=uxn * c, uy=uyn * c, uz=uz * c, w=w, t=t)
 
 
 def build_exit_handoff():
     """Reconstruct the full time-released exit beam and write it for the injector.
 
-    Time-release makes the gun beam a ~2 ns quasi-DC stream whose ballistic z-extent
-    (~v_exit·PULSE_WIDTH ≈ 0.4 m) is many times the gun domain, so no single volumetric
-    snapshot can hold the whole released beam. We reconstruct it from the volumetric dumps
-    by particle **id** (the `pipeline/collimator.py` idiom), sampling each particle in the
-    FIELD-FREE pad past the field map so the reconstruction is emittance-correct:
+    The ~2 ns stream's ballistic z-extent exceeds the gun domain, so reconstruct it from the
+    volumetric dumps by particle id (the `pipeline/collimator.py` idiom): take each id's first
+    appearance in the FIELD-FREE pad (z ≥ ZMAX_FIELD) as its exit-plane phase space, then drift
+    all to a common reference time. Sampling in the pad — NOT the last in-field dump — preserves
+    εn,x (a still-in-field sample manufactures a spurious x–u correlation). Ids never reaching
+    the pad are classified r=RMAX radial loss vs un-flushed tail. See README → "Exit-beam handoff".
 
-      1. For each id, find its FIRST appearance with z ≥ ZMAX_FIELD — i.e. just after it
-         clears the gun field into the field-free pad. Its (x, u) there IS the exit-plane
-         phase space (the field is ≈0 beyond ZMAX_FIELD). Sampling in the pad — NOT at the
-         particle's last in-field dump — is the fix for the εn,x inflation: a field-free
-         ballistic drift preserves εn,x, but drifting a still-in-field particle as if
-         field-free manufactures a spurious x–u correlation (physics-review CRITICAL).
-      2. An id that NEVER reaches z ≥ ZMAX_FIELD did not exit: if it is still present in the
-         final dump it is the un-flushed tail (run ended first); otherwise it was absorbed
-         before the pad, i.e. scraped at the r = RMAX wall (the only other boundary) → a
-         radial loss. Both are dropped and counted (this correctly identifies losses — the
-         old r-at-last-dump test was a no-op because absorbed particles vanish at r<RMAX).
-      3. Drift the kept (field-free) samples to a common reference time t_ref = max sample
-         time — all motion is field-free so εn,x is preserved. early-emitted → exited
-         early → drifted furthest → bunch HEAD (largest z); last-emitted → z≈ZMAX_FIELD →
-         TAIL, matching the injector's `z − z.min() + Z_INJECT` (tail at the entrance).
-
-    Writes an openPMD particle dump to HANDOFF_DIR via `pipeline.impact_io`. The injector's
-    `load_gun_bunch` reads HANDOFF_DIR when present (else the volumetric snapshot).
+    Writes an openPMD dump to HANDOFF_DIR via `pipeline.impact_io`; the injector reads it when present.
     """
     from pmd_beamphysics import ParticleGroup
     from pipeline.impact_io import write_openpmd_particles
@@ -268,7 +161,7 @@ def build_exit_handoff():
         print("  handoff: no volumetric dumps to reconstruct from — skipped", flush=True)
         return
 
-    # Stack every (id, dump) row. Vectorized so the ~Npart×Ndumps rows never hit a loop.
+    # Stack every (id, dump) row.
     cols = {k: [] for k in ("id", "t", "x", "y", "z", "ux", "uy", "uz", "w")}
     final_it = ts.iterations[-1]
     for it, t_dump in zip(ts.iterations, ts.t):
@@ -286,8 +179,8 @@ def build_exit_handoff():
     cat = {k: np.concatenate(v) for k, v in cols.items()}
     n_ids = np.unique(cat["id"]).size
 
-    # First appearance in the FIELD-FREE pad (z ≥ ZMAX_FIELD) per id: restrict to pad rows,
-    # sort by (id, t), take the earliest-t row of each id-group.
+    # First appearance in the field-free pad (z ≥ ZMAX_FIELD) per id: sort pad rows by (id, t),
+    # take the earliest-t row of each id-group.
     pad = np.where(cat["z"] >= ZMAX_FIELD)[0]
     if pad.size == 0:
         print("  handoff: no particle reached the field-free pad (z ≥ "
@@ -313,7 +206,7 @@ def build_exit_handoff():
     n_radial = len(not_exited) - n_unflushed
 
     # Ballistic drift of the field-free samples to a common reference time t_ref = max(t_s).
-    gamma = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)
+    gamma = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)  # γ from u = γβ
     vx, vy, vz = (c * ux / gamma, c * uy / gamma, c * uz / gamma)
     dtau = t_s.max() - t_s
     xh, yh, zh = x + vx * dtau, y + vy * dtau, z + vz * dtau
@@ -341,13 +234,9 @@ def main():
         n_azimuthal_modes=1,
         lower_bound=[0.0, 0.0],
         upper_bound=[RMAX, ZMAX],
-        # r=0 must be "none" (axis); the electrode field is applied externally, so
-        # the self-field solve just needs grounded z plates (dirichlet). The outer
-        # radial wall is also dirichlet (grounded pipe at r=RMAX=15 mm, well outside
-        # the r≲8 mm beam): the electromagnetostatic solver also does a vector-Poisson
-        # solve for A, and the dominant A_z component (driven by the beam's j_z) would
-        # have an all-Neumann, singular operator — and the MLMG bottom solve diverges —
-        # if the outer wall were neumann; the dirichlet wall makes A_z well-posed.
+        # r=0 is "none" (axis). The outer radial wall MUST be dirichlet (not neumann): the
+        # magnetostatic A_z solve (driven by beam j_z) is otherwise an all-Neumann singular
+        # operator and MLMG diverges. See README → "Space-charge model".
         lower_boundary_conditions=["none", "dirichlet"],
         upper_boundary_conditions=["dirichlet", "dirichlet"],
         lower_boundary_conditions_particles=["none", "absorbing"],
@@ -355,41 +244,29 @@ def main():
         warpx_blocking_factor=8,
     )
 
-    # Electromagnetostatic solver for the beam self-field. In addition to the
-    # electrostatic Poisson solve (∇²φ = -ρ/ε₀, E = -∇φ), warpx_magnetostatic=True
-    # also solves the Coulomb-gauge vector potential from the beam current
-    # (∇²A = -μ₀ j, B = ∇×A), so the self magnetic field is included. This supplies
-    # the relativistic magnetic-pinch term qβ×B that partially cancels the radial
-    # space-charge repulsion — the net transverse self-force is qE_r/γ² rather than the
-    # pure-electrostatic qE_r (the ≈γ²=1.66× over-repulsion at the 146 keV exit the
-    # plain labframe solver incurs). The magnetostatic MLMG solve is given the same
-    # REQUIRED_PRECISION / MAX_ITERS knobs as the electrostatic solve via the explicit
-    # warpx_magnetostatic_required_precision / warpx_magnetostatic_max_iters params.
+    # Electromagnetostatic solver: warpx_magnetostatic=True adds the self-B (qβ×B pinch ⇒ net
+    # qE_r/γ²) on top of the ES Poisson solve. See README → "Space-charge model".
     solver_kw = dict(grid=grid, method="Multigrid",
                      required_precision=REQUIRED_PRECISION,
                      warpx_magnetostatic=True,
                      warpx_magnetostatic_required_precision=REQUIRED_PRECISION,
-                     warpx_self_fields_verbosity=0,           # silence ES MLMG per-iteration chatter
-                     warpx_magnetostatic_verbosity=0)         # and the magnetostatic solve
+                     warpx_self_fields_verbosity=0,
+                     warpx_magnetostatic_verbosity=0)
     if MAX_ITERS:                                     # omit when None → PICMI default
         solver_kw["maximum_iterations"] = MAX_ITERS
         solver_kw["warpx_magnetostatic_max_iters"] = MAX_ITERS
     solver = picmi.ElectrostaticSolver(**solver_kw)
 
-    # ── Applied gun field: the scaled CESR_gun.gdf map, read from file ────────
-    # Applied directly to particles every step (the electrode field), on top of the
-    # self-consistent space-charge field from the Poisson solve. PICMI has no class
-    # for a tabulated particle-applied field, so set the raw WarpX inputs.
+    # Applied gun electrode field (scaled CESR_gun.gdf), read from file via raw WarpX inputs
+    # (PICMI has no tabulated particle-applied-field class). See README → "The gun field map".
     pywarpx.particles.E_ext_particle_init_style = "read_from_file"
     pywarpx.particles.read_fields_from_path = GUN_FIELD
     pywarpx.particles.B_ext_particle_init_style = "none"
 
     bunch = load_cathode_bunch()
     timed = (BEAM_RELEASE == "timed")
-    # snapshot: seed the species with the whole bunch (all at t=0). timed: seed with only
-    # the earliest-emitted macroparticle (PICMI requires a non-empty initial distribution),
-    # then inject the rest over the pulse via the per-step callback below. `sl` selects the
-    # seed slice; the cathode arrays are already t-sorted in timed mode.
+    # snapshot: seed the whole bunch. timed: seed only the earliest macroparticle (PICMI needs
+    # a non-empty initial distribution), inject the rest over the pulse via the callback below.
     sl = slice(0, 1) if timed else slice(None)
     electrons = picmi.Species(
         particle_type="electron",
@@ -403,21 +280,13 @@ def main():
     )
 
     # ── Time step / duration ──────────────────────────────────────────────────
-    # Exit kinetic energy ≈ 150 keV -> γ ≈ 1.29, β ≈ 0.63, v_exit ≈ 1.9e8 m/s.
     gamma = 1.0 + q_e * GUN_VOLTAGE / (m_e * c**2)
     v_exit = c * np.sqrt(1.0 - 1.0 / gamma**2)
     dz = ZMAX / nz
     dt = CFL * dz / v_exit
-    # Steps for the bunch to just cross the full gun (average speed ~AVG_SPEED_FRAC·v_exit).
-    # We stop as the beam reaches the exit: running longer empties the domain, and
-    # the Multigrid self-field solve aborts when there is essentially no charge left.
-    # Run length is sized on the time to clear the FIELD region (ZMAX_FIELD), NOT the full
-    # padded domain: the run must STOP while the beam is still in the field-free pad, before
-    # it drains out the padded ZMAX — an empty domain aborts the MLMG self-field solve
-    # (`MLMG failed`). At PULSE_WIDTH + TRANSIT_MARGIN·transit_field the last-released particle
-    # has cleared the field into the pad (caught in ≥1 field-free dump for the handoff) while
-    # the bulk is still transiting, so the solve is never charge-starved. MAX_STEPS (module
-    # constant, 0 = auto) overrides the derived value when set.
+    # Run length is sized on the time to clear the FIELD region (ZMAX_FIELD), NOT the padded
+    # domain: the run must stop while the beam is still in the pad, before it drains out ZMAX —
+    # an empty domain aborts the MLMG solve (`MLMG failed`). MAX_STEPS (0 = auto) overrides.
     transit_field = ZMAX_FIELD / (AVG_SPEED_FRAC * v_exit)
     run_time = (PULSE_WIDTH if timed else 0.0) + TRANSIT_MARGIN * transit_field
     max_steps = MAX_STEPS or int(run_time / dt)
@@ -429,11 +298,8 @@ def main():
           flush=True)
 
     # ── Diagnostics (openPMD, HDF5) ───────────────────────────────────────────
-    # Fresh diags: WarpX appends one openPMD file per dump, so re-running with a
-    # different grid/step count would otherwise mix old and new iterations (whose
-    # diag steps interleave) into one series — the plots then show a fan of
-    # overlapping curves. diags are git-ignored and regenerated, so clearing is
-    # safe. (Mirrors injector_sim.py / linac_sec1_sim.py.)
+    # Fresh diags: WarpX appends one openPMD file per dump, so a stale series from a prior
+    # grid/step count would interleave with the new one. See README → "Fresh diags on rerun".
     if os.path.isdir(DIAG_DIR):
         shutil.rmtree(DIAG_DIR)
 
@@ -461,11 +327,10 @@ def main():
         solver=solver,
         max_steps=max_steps,
         time_step_size=dt,
-        verbose=0,                     # silence per-step "STEP N starts" — the tqdm bar is the progress display
+        verbose=0,                     # the tqdm bar is the progress display
         particle_shape="linear",
     )
-    # ParticleListDistribution supplies the macroparticles explicitly, so this layout
-    # (and its n_macroparticles_per_cell) is inert — the count is the imported list size.
+    # ParticleListDistribution supplies the macroparticles explicitly, so this layout is inert.
     sim.add_species(
         electrons,
         layout=picmi.PseudoRandomLayout(n_macroparticles_per_cell=1, grid=grid),
@@ -474,12 +339,10 @@ def main():
     sim.add_diagnostic(part_diag)
 
     # ── Time-release injection ────────────────────────────────────────────────
-    # Build up the bunch over PULSE_WIDTH: each step, inject the macroparticles whose
-    # emission time falls in the step window. Particle 0 is already seeded, so injection
-    # starts at index 1. add_particles writes into the live container (the broken RZ
-    # accessor is the READ path — `Component x does not exist` — not this write path,
-    # verified by spike). ux/uy/uz are proper velocity γβc [m/s], matching the seed's
-    # ParticleListDistribution units.
+    # Build up the bunch over PULSE_WIDTH: each step inject the macroparticles whose emission
+    # time falls in the step window (particle 0 already seeded, so start at index 1).
+    # add_particles writes into the live container — the broken RZ accessor is the READ path
+    # (`Component x does not exist`), not this WRITE path. ux/uy/uz are proper velocity γβc [m/s].
     if timed:
         state = {"next": 1, "step": 0}
         pc = [None]

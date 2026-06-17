@@ -1,30 +1,8 @@
-"""Stage shim + progress/log helpers shared by each <stage>/ facade
-(cathode, gun, injector, linac_sec1, …).
+"""Stage facade shim + shared progress/log helpers for each <stage>/ package.
 
-Each top-level package (cathode/, gun/, injector/, linac_sec1/, …) instantiates
-a `Stage` in its __init__.py and re-exports `config`, `run`, `plot`. The Stage object:
-
-  * Sets `OMP_NUM_THREADS` once (read by OpenMP at WarpX library load) and
-    chdirs to the repo root so each stage's hard-coded relative paths resolve.
-  * Applies `config(**kwargs)` overrides by setattr on the underlying build/sim/plot
-    modules. Soft-apply: keys that don't match any module attribute are silently
-    ignored (the sim module lives in a subprocess, so strict cross-phase
-    validation isn't possible — cross-check `<stage>/*.py` if a config call
-    seems to have no effect).
-  * Runs **builds and plots in-process** — they don't touch pywarpx.
-  * Runs the **simulation in a fresh subprocess** via `pipeline._launch_sim`.
-    pywarpx binds globally to one geometry (2D/RZ/3D) at first .so load and
-    caches diagnostic state by name; chaining cathode (2D) → gun (RZ) →
-    injector (RZ) in a single interpreter trips
-    `AssertionError: Diagnostic attributes not consistent for "fields"`.
-    A child interpreter per stage sidesteps both.
-  * Writes a structured pipeline log (banner, timing, exceptions) to
-    `pipeline/logs/pipeline_<ts>.log`. The child inherits this path via the
-    `PIPELINE_LOG_PATH` env var and `run_step()` redirects WarpX's per-step
-    output into it, so the tqdm bar (writing to the child's inherited stdout
-    = parent terminal) updates on a clean line.
-
-Logging is initialised once per process and reused across stages.
+Provides `Stage` (build/plot in-process, sim in a fresh subprocess), config
+override plumbing, tqdm-over-`afterstep` progress, and the per-process pipeline
+log. See pipeline/README.md for architecture, subprocess isolation, and gotchas.
 """
 
 import importlib
@@ -56,12 +34,9 @@ _log_path = None
 def setup_logging(path=None):
     """Initialise the per-process pipeline log file. Idempotent.
 
-    With `path` given, attach to that existing file in APPEND mode instead of
-    creating a fresh timestamped one. This is the child-subprocess case:
-    `_launch_sim` passes PIPELINE_LOG_PATH so the child's `progress:` lines and
-    any other `log.*` calls (emitted by run_step) join the parent's log — without
-    it the child's `pipeline` logger has no handler and those records are silently
-    dropped (and a "w" reopen would truncate the parent's file).
+    With `path` given (child-subprocess case), attach to that existing file in
+    APPEND mode so the child's records join the parent's log; a "w" reopen would
+    truncate the parent's file.
     """
     global _log_path
     if _log_path is not None:
@@ -92,21 +67,15 @@ def _cl(msg="", level=logging.INFO):
 
 
 def run_step(sim, nsteps, desc):
-    """Run `sim.step(nsteps)` with a tqdm progress bar driven by WarpX's
-    `afterstep` callback. WarpX's own stdout/stderr is redirected to the
-    pipeline log file for the duration of the step, so the bar updates on a
-    clean terminal line (rather than being scrolled off by WarpX's init banner
-    and post-step warnings). The same callback also emits periodic
-    `progress: step N/total (%) — elapsed / rate / ETA` lines to the log (~20
-    over the run), so non-TTY runs (CI, nohup, redirected output) — where tqdm
-    is disabled — still get progress, and the log retains it regardless of TTY.
+    """Run `sim.step(nsteps)` with a tqdm bar driven by WarpX's `afterstep`
+    callback; WarpX's stdout/stderr is redirected to the log so the bar stays on
+    a clean terminal line, with periodic progress lines logged for non-TTY runs.
     Stage sim files call this in place of bare `sim.step(...)`.
     """
     from pywarpx.callbacks import installcallback, uninstallcallback
     from tqdm import tqdm as _tqdm
 
-    # The bar writes to a saved duplicate of fd 1, so it still hits the real
-    # terminal even after we redirect fd 1/2.
+    # Bar writes to a dup of fd 1 so it still hits the terminal after fd 1/2 redirect.
     bar_fd = os.dup(1)
     bar_file = os.fdopen(bar_fd, "w", buffering=1, closefd=False)
     bar = _tqdm(total=nsteps, unit="step", desc=desc,
@@ -127,9 +96,8 @@ def run_step(sim, nsteps, desc):
                      f"elapsed {el:5.0f}s  {rate:5.1f} step/s  eta {eta:4.0f}s")
             state["next_log"] += log_every
 
-    # From here on every acquired fd / installed callback is released in the
-    # finally, so a failure mid-setup (e.g. os.open on a bad PIPELINE_LOG_PATH)
-    # can't leak the bar fd or leave the afterstep hook installed.
+    # All acquired fds / the afterstep hook are released in the finally so a
+    # mid-setup failure can't leak them.
     saved_out = saved_err = redir_fd = None
     try:
         installcallback("afterstep", tick)
@@ -170,11 +138,10 @@ def run_step(sim, nsteps, desc):
 
 
 def _module_top_level_names(dotted):
-    """Return the set of top-level assignment targets in a module's source,
-    without importing it. Used to validate config() keys against the sim
-    module (which we cannot import in-parent without breaking subprocess
-    isolation). Best-effort: on any failure returns an empty set, so unknown
-    keys still get flagged — safer to over-warn than to miss a typo."""
+    """Top-level assignment targets in a module's source, parsed without
+    importing it (importing the sim module in-parent would break subprocess
+    isolation). Best-effort: returns empty set on failure (over-warns rather
+    than missing a typo)."""
     try:
         import ast
         spec = importlib.util.find_spec(dotted)
@@ -185,8 +152,7 @@ def _module_top_level_names(dotted):
         names = set()
 
         def _add_target(t):
-            # Recurse into tuple/list targets so unpacked module constants
-            # (e.g. `nr, nz = 96, 384`) are recorded, not just bare names.
+            # Recurse into tuple/list targets so unpacked constants (`nr, nz = ...`) count.
             if isinstance(t, ast.Name):
                 names.add(t.id)
             elif isinstance(t, (ast.Tuple, ast.List)):
@@ -205,19 +171,12 @@ def _module_top_level_names(dotted):
 
 
 def _raise_fd_limit(target=16384):
-    """Raise the open-file-descriptor soft limit (root fix for "Inaccessible").
-
-    openpmd-viewer leaks one fd per `get_particle()` — the per-iteration HDF5
-    file it opens is never closed — so looping over a stage's ~280 diagnostic
-    dumps exhausts macOS's default soft limit of 256. The open then fails with
-    "IO Task OPEN_FILE failed ... Inaccessible" (how HDF5 surfaces EMFILE) at a
-    fixed dump COUNT, not a specific file, so retries can't help (the fds stay
-    spent) — the failing iteration just tracks how many dumps were read before
-    the limit (e.g. ~83 in the parent plot process, ~250 in the fresher sim
-    subprocess). Raise the soft limit toward the hard cap so a full diag series
-    fits with margin. Called first thing in _prepare_environment so the parent's
-    in-process plot step is covered and the spawned sim subprocess inherits it
-    (rlimits survive fork/exec)."""
+    """Raise RLIMIT_NOFILE soft limit toward the hard cap (root fix for the
+    "OPEN_FILE failed ... Inaccessible" error). openpmd-viewer leaks one fd per
+    get_particle(), so looping a stage's ~280 dumps exhausts the macOS default
+    256 — fails at a fixed dump COUNT (not a file), so retries can't help.
+    Called in _prepare_environment; the sim subprocess inherits it (survives
+    fork/exec)."""
     try:
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         want = min(hard, max(soft, target))
@@ -228,22 +187,11 @@ def _raise_fd_limit(target=16384):
 
 
 def _prepare_environment():
-    """Set OMP_NUM_THREADS (before any pywarpx import) and chdir to the repo root.
-
-    Default 1: these stages are fastest single-threaded — small grids + a
-    memory-bandwidth-bound MLMG solve mean OpenMP threads only contend for the
-    memory bus and add barrier overhead. Keep single-threaded; see the OMP note
-    in run_pipeline.py / CLAUDE.md.
-    """
+    """Raise the fd limit, set OMP_NUM_THREADS (must precede any pywarpx import),
+    and chdir to the repo root. Default 1 thread; see pipeline/README.md."""
     _raise_fd_limit()
-    # Disable HDF5 file locking (minor mitigation; the fd-limit raise above is the
-    # real fix for the "OPEN_FILE failed ... Inaccessible" error). Reading openPMD
-    # diagnostics never needs the lock. Set on os.environ so the spawned sim
-    # subprocess (which copies it) inherits it too.
     os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
-    # An explicitly-set OMP_THREADS always wins, even if OMP_NUM_THREADS was
-    # already exported (e.g. inherited from a conda profile or prior run);
-    # otherwise fall back to the documented single-threaded default.
+    # Explicit OMP_THREADS wins over an inherited OMP_NUM_THREADS; else default 1.
     if "OMP_THREADS" in os.environ:
         os.environ["OMP_NUM_THREADS"] = os.environ["OMP_THREADS"]
     else:
@@ -269,23 +217,17 @@ class Stage:
     def config(self, **kwargs):
         """Stage parameter overrides applied at the next run()/plot().
 
-        **Cumulative:** keys accumulate across calls (`dict.update`) and are
-        never auto-cleared, so a key set once persists into every later
-        run() until overwritten. A scan loop that varies, say, POWER_KW but
-        also writes per-point OUTDIRs must set OUTDIR every iteration (as the
-        documented injector scan does) — set it once and the stale value
-        leaks into subsequent runs, silently overwriting the same directory.
+        Cumulative and never auto-cleared, so a key set once persists into later
+        runs until overwritten — a scan loop must set per-point keys (e.g.
+        OUTDIR) every iteration or the stale value leaks (see injector/README.md).
         """
         self._params.update(kwargs)
 
     def run(self, plots=True):
         """Build field map (if any), simulate, then plot (unless plots=False).
 
-        The build and plot phases run in-process (no pywarpx involved). The
-        simulation phase is run in a fresh Python subprocess because pywarpx
-        binds globally to one geometry at first .so load and caches
-        diagnostic state by name — sharing one interpreter across stages
-        trips `AssertionError: Diagnostic attributes not consistent for ...`.
+        Build/plot run in-process; the sim runs in a fresh subprocess (pywarpx
+        binds globally to one geometry per interpreter). See pipeline/README.md.
         """
         _prepare_environment()
         setup_logging()
@@ -344,11 +286,9 @@ class Stage:
         return importlib.import_module(dotted) if dotted else None
 
     def _apply_params(self, *modules):
-        """Soft-apply config kwargs onto the given modules (no-op when a key
-        is absent). The sim module lives in a subprocess, so the child checks
-        its own keys (see pipeline._launch_sim) and the parent only knows
-        about build/plot — `recognized` here is the union across all modules
-        the parent sees, used by `_warn_unknown_params` to flag typos."""
+        """Soft-apply config kwargs onto the given modules (no-op when a key is
+        absent); returns the union of recognized keys. The sim module is in a
+        subprocess and checks its own keys (see pipeline._launch_sim)."""
         recognized = set()
         for mod in modules:
             if mod is None:
@@ -360,11 +300,9 @@ class Stage:
         return recognized
 
     def _warn_unknown_params(self, recognized):
-        """Warn about config() keys that matched no attribute on any module
-        the parent loaded (build/plot) AND no attribute on the sim module.
-        The sim is in a subprocess, so we introspect its source for top-level
-        bindings rather than importing it here (which would defeat the
-        per-stage subprocess isolation)."""
+        """Warn about config() keys matching no attribute on build/plot AND no
+        top-level binding in the sim module's source (introspected, not imported,
+        to keep subprocess isolation)."""
         unknown = set(self._params) - set(recognized)
         if not unknown:
             return
