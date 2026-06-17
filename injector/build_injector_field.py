@@ -56,10 +56,6 @@ Q_L_1 = 3000                 # loaded Q of prebuncher 1
 Q_L_2 = 4300                 # loaded Q of prebuncher 2
 Q_L = Q_L_1                  # back-compat alias
 
-# On-crest reference phase offsets (deg) reproducing the GUI on-crest definitions.
-PHI_OFF_1_DEG = -70.0        # Prebuncher 1
-PHI_OFF_2_DEG = -45.0        # Prebuncher 2 (reversed)
-
 
 def load_prebuncher_map(path):
     """Return regular-grid (r, z, Er, Ez, Bphi) arrays from the GPT GDF map.
@@ -259,8 +255,10 @@ def main():
 
     # Gap parity sanity check on the source .gdf: the reversed-Preb-2 reasoning assumes
     # Ez EVEN, Er ODD, Bφ EVEN about the gap (180° rotation flips all 3 = global E,B sign
-    # flip ≡ +π absolute phase; applied PREB2_REV_PHASE=0 because crest-referencing already
-    # absorbs it — do NOT add +π). See README. A future map breaking parity invalidates this.
+    # flip ≡ +π absolute phase). Whether that +π is applied as PREB2_REV_PHASE is
+    # convention-dependent: at the zc default it is applied explicitly (PREB2_REV_PHASE=π);
+    # under the legacy crest+GUI convention it was absorbed by crest-referencing (rev=0). See
+    # README -> Reversed install. A future map breaking parity invalidates this.
     def _parity(arr):
         f = arr[::-1]
         denom = float(np.sqrt((arr * arr).sum() * (f * f).sum()))
@@ -280,8 +278,8 @@ def main():
           f"z={z[ipk]*1e3:.1f} mm; 1-J gap voltage V1J = {v1j/1e3:.2f} kV")
     print(f"Gap parity (z-flip corr, peak-|Er| row r={r[jr]*1e3:.1f}mm): "
           f"Ez {p_ez:+.4f} (EVEN), Er {p_er:+.4f} (ODD), Bφ {p_bphi:+.4f} (EVEN) "
-          f"→ 180° rotation flips all 3 = +π in ABSOLUTE phase (absorbed by crest-ref; "
-          f"applied PREB2_REV_PHASE=0)")
+          f"→ 180° rotation flips all 3 = +π in ABSOLUTE phase (applied explicitly as "
+          f"PREB2_REV_PHASE=π at the zc default; absorbed by crest-ref under legacy crest)")
 
     write_field(OUT_FILE_1, r, z, Er, Ez, Bphi, Z_GAP_CENTER_1)
     print(f"Prebuncher 1 gap at lab z = {Z_GAP_CENTER_1*1e3:.1f} mm "

@@ -112,12 +112,27 @@ drive phase**.
 In the **zc + `phi_off = 0`** parametrization, `phi_off` carries **no** reversal information
 (unlike the old crest+GUI convention, where the GUI's 178.9° Preb-2 reference was measured for
 the already-reversed cavity and so absorbed the +π). So Preb-2 must carry the genuine
-geometric +π itself: **`PREB2_REV_PHASE = π`**. With `rev = 0` Preb-2 would still be
-energy-neutral (centroid on a zero-crossing) but on the **debunching** slope; `rev = π` flips
-it back to compressive — verified empirically (SC-off, σ_z keeps tightening through Preb-2 with
-`rev = π`). **Note:** this is the *opposite* of the old crest-referenced default
-(`PREB2_REV_PHASE = 0`); the value is convention-dependent, not absolute — if you switch
-`PHASE` back to `"crest"` with the GUI `phi_off`, restore `rev = 0`.
+geometric +π itself: **`PREB2_REV_PHASE = π`**.
+
+Both `rev = 0` and `rev = π` are **energy-flat** (the centroid sits on a zero-crossing either
+way); they differ only in the chirp **slope**, so the distinction is *which* of the two
+bunching outcomes you get, not bunching-vs-debunching. A decisive SC-off A/B (same input)
+measures it (σ_z [mm], injection → post-Preb-1 → post-Preb-2 → waist → 2.03 m handoff):
+
+| `PREB2_REV_PHASE` | post-Preb-2 (1.45 m) | waist | σ_z at handoff |
+|-------------------|----------------------|-------|----------------|
+| **π** (faithful)  | 36.7 | **31.2 mm @ 2013 mm** | **31.3 mm** |
+| 0 (forward)       | 29.9 | 20.3 mm @ 1644 mm | 48.6 mm |
+
+So `rev = 0` actually bunches **harder** (the more-aggressive of the two energy-flat
+zero-crossings) — it **over-compresses** to an earlier ~20 mm waist at ~1.64 m that then
+**re-expands** to ~49 mm by the handoff. The faithful `rev = π` is the *less-aggressive*
+slope: σ_z tightens monotonically through Preb-2 to its ~31 mm waist landing **at** the 2.03 m
+handoff. `rev = π` is therefore both the geometrically-correct reversed install **and** the
+operationally-correct default — do **not** "fix" it to `rev = 0`. **Note:** the value is
+convention-dependent — under the old crest+GUI convention the reversal was absorbed into the
+crest reference, so `PREB2_REV_PHASE = 0` there; if you switch `PHASE` back to `"crest"` with
+the GUI `phi_off`, restore `rev = 0`.
 
 ### Preb-2 timing caveat (constant-v phase error)
 
@@ -265,7 +280,10 @@ collimator*).
 > and lands the σ_z waist at the 2.03 m handoff (see *RF drive*). But the lens currents (6/40/10 A)
 > were matched to the *old crest* beam, which net-accelerated to ~220 keV by the iris; the
 > energy-flat zc beam stays at ~150 keV (lower rigidity), so the Sol 0 / Lens 0E telescope is no
-> longer matched and iris transmission fell from the old crest value (~42%) to **~19%**. Re-matching
+> longer matched and iris transmission fell from the old crest value (~42%) to **~19%**. (That
+> ~42%→~19% is not a strict apples-to-apples control: the old 42% was measured on the old crest
+> beam *and* its old waist location, so it mixes the energy and waist-location changes; the clean
+> A/B — energy-flat with vs without re-matched currents — has not been run.) Re-matching
 > the solenoid currents to the ~150 keV energy-flat beam is the open **transverse** follow-up (the
 > LinacSim reconciliation backlog) — it does not affect the longitudinal headline above. The beam
 > also still radially expands over the unfocused 0.225→1.6 m drift (~37% in-domain loss there,
