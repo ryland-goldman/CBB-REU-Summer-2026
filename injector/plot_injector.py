@@ -176,10 +176,12 @@ def load_cavity_axis_file(field_path):
     return z_lab, ez[0]
 
 
-def cavity_phi(z_gap, v_at_gap, phi_off_deg, phase, rev_phase, t_offset=0.0):
+def cavity_phi(z_gap, v_at_gap, phi_off_deg, phase, rev_phase, t_offset=0.0,
+               z_ref=Z_INJECT):
     """Re-derive a cavity's drive phase φ exactly as injector_sim.make_cavity
-    does (crest base + GUI phi_off + reversal phase), single source of truth."""
-    t_gap = t_offset + (z_gap - Z_INJECT) / v_at_gap
+    does (zc/crest base + phi_off + reversal phase, CENTROID-referenced via z_ref),
+    single source of truth."""
+    t_gap = t_offset + (z_gap - z_ref) / v_at_gap
     base = np.pi / 2.0 if phase == "zc" else np.pi
     return -OMEGA * t_gap + base + np.radians(phi_off_deg) + rev_phase, t_gap
 
@@ -190,17 +192,23 @@ def cavity_figure(name, rec, power, phase):
         PREB1_KW, PREB1_Q, PREB1_PHI_OFF, PREB2_KW, PREB2_Q, PREB2_PHI_OFF,
         PREB2_REVERSED, PREB2_REV_PHASE, PREB1_FIELD, PREB2_FIELD)
     v_beam = rec["v_beam"]
+    # Centroid lab-z of the injection snapshot: the cavities are CENTROID-referenced
+    # (see injector_sim.make_cavity), so re-derive the drive phase from the same z_ref.
+    z0, _, w0 = rec["snaps"][rec["it"][0]]
+    z_centroid = float(np.average(z0, weights=w0))
 
     # Preb 1
     scale1 = rf_scale(PREB1_KW, PREB1_Q)
-    phi1, t_gap1 = cavity_phi(Z_GAP_CENTER_1, v_beam, PREB1_PHI_OFF, phase, 0.0)
+    phi1, t_gap1 = cavity_phi(Z_GAP_CENTER_1, v_beam, PREB1_PHI_OFF, phase, 0.0,
+                              z_ref=z_centroid)
     z1_lab, ez1 = load_cavity_axis_file(PREB1_FIELD)
-    # Preb 2 (reversed via PREB2_REV_PHASE; constant-v arrival uses v_beam)
+    # Preb 2 (reversed via PREB2_REV_PHASE; arrival chains from Preb-1's centroid t_gap1)
     have2 = PREB2_KW > 0
     if have2:
         scale2 = rf_scale(PREB2_KW, PREB2_Q)
         rev = PREB2_REV_PHASE if PREB2_REVERSED else 0.0
-        phi2, t_gap2 = cavity_phi(Z_GAP_CENTER_2, v_beam, PREB2_PHI_OFF, phase, rev)
+        phi2, t_gap2 = cavity_phi(Z_GAP_CENTER_2, v_beam, PREB2_PHI_OFF, phase, rev,
+                                  t_offset=t_gap1, z_ref=Z_GAP_CENTER_1)
         z2_lab, ez2 = load_cavity_axis_file(PREB2_FIELD)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.4), constrained_layout=True)
@@ -334,9 +342,17 @@ def per_case_figure(name, rec, base):
         titles = titles + ["injector exit (2.03 m plane)"]
     fig, axs = plt.subplots(1, len(picks), figsize=(4.3 * len(picks), 4.0),
                             constrained_layout=True)
+    axs = np.atleast_1d(axs)
     for ax, it, ti in zip(axs, picks, titles):
         z, ke, w = snaps[it]
-        ax.scatter((z - z.mean()) * 1e3, ke - ke.mean(), s=2, alpha=0.15, color="C0")
+        zc = (z - np.average(z, weights=w)) * 1e3
+        kc = ke - np.average(ke, weights=w)
+        # Charge-weighted 2D density (nC per bin): the heatmap shows WHERE the beam
+        # density sits, which a fixed-alpha scatter cannot resolve in the dense core.
+        # Per-panel colorbar — bin areas differ across panels, so the scale is local.
+        h = ax.hist2d(zc, kc, bins=120, weights=w * Q_E * 1e9, cmap="inferno",
+                      cmin=np.finfo(float).tiny)
+        fig.colorbar(h[3], ax=ax, label="charge  [nC/bin]", fraction=0.046, pad=0.02)
         zi = rec["it"].index(it)
         ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("KE − ⟨KE⟩  [keV]")
         ax.set_title(f"{ti}  (⟨z⟩={rec['zmean'][zi]*1e3:.0f} mm)")

@@ -23,9 +23,13 @@ the gun — outer radial wall `dirichlet` for A_z well-posedness), so the ~γ² 
 transverse-SC over-repulsion (the WarpX–GPT gun benchmark's cause 4, which grows for a longer
 line) is removed — the injector is the longest, lowest-γ line where it matters most. All six
 LinacSim solenoids are built (`SOL_NAMES`); Lens 0B/0C/0D default to 0 A (faithful, inert) and
-are `config()`-overridable (`I_LENS0B…`). **Open:** the prebuncher operating point still needs
-re-tuning for the longer time-release gun beam (waist lands ~370 mm before the handoff, radial
-blow-up over the unfocused 0.225→1.6 m drift) — the LinacSim reconciliation backlog.
+are `config()`-overridable (`I_LENS0B…`). The cavity phasing is **zero-crossing, centroid-referenced**
+(`PHASE="zc"`, `phi_off=0`, Preb-2 `PREB2_REV_PHASE=π`): both cavities sit at the RF zero-crossing of
+the bunch centroid, so they velocity-bunch at **zero net mean-energy change** (149→152 keV) and the
+σ_z waist lands **at** the 2.03 m handoff. **Open (transverse):** the solenoid currents (6/40/10 A)
+were matched to the old crest beam that net-accelerated to ~220 keV; on the energy-flat ~150 keV zc
+beam the Sol 0 / Lens 0E telescope is no longer matched, so iris transmission fell ~42%→~19% —
+re-matching the lens currents to the new energy is the open follow-up (LinacSim reconciliation backlog).
 
 The `linac_rest` stage is the **rest of the straight electron line to CHESS** — Cornell linac
 sections 2–8 (CEA 2/3/4/5 + CU 3/4/5), seven S-band traveling-wave sections chained into **one

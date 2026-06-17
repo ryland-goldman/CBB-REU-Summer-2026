@@ -235,9 +235,11 @@ and mean KE — the two kicks (Preb-1 +20 keV, Preb-2 ~+54 keV mean) raise ⟨KE
 ![Injector: z–KE phase space at four points](injector/results/injector_phasespace.png)
 
 Mean-subtracted `z–KE` phase space at four points: injection / cavity exit / best focus / **injector
-exit** (the dump nearest the z≈2.03 m handoff plane — the beam re-expanded past best focus). The two
-cavities drive the head→tail chirp compressive (net chirp past Z2 turns negative), unlike the
-single-cavity prebuncher which barely perturbed the gun beam.
+exit** (the dump nearest the z≈2.03 m handoff plane). Each panel is a **charge-weighted 2D density
+heatmap** (nC per bin, per-panel colorbar) so the dense core is resolved, not just the envelope. The
+two zero-crossing (centroid-referenced) cavities drive the head→tail chirp compressive at zero net
+mean-energy change; the long 154°-wide bunch folds into a checkmark (sinusoidal, not linear, chirp),
+with the charge piling up at the head fold by the exit. The waist now lands at the handoff plane.
 
 ### `injector_cavity.png` — the RF drive (both cavities)
 ![Injector: on-axis Ez(z) lobes of both prebunchers and their RF waveforms](injector/results/injector_cavity.png)
@@ -245,8 +247,9 @@ single-cavity prebuncher which barely perturbed the gun beam.
 **Left:** on-axis `Ez(z)` of both scaled 1-J cavity maps placed at their lab gaps — Preb 1 @ 534 mm
 (8 kW, V_gap ≈ 59 kV) and Preb 2 @ 1318 mm (10 kW reversed, V_gap ≈ 78 kV). **Right:** the temporal
 RF waveform `E ∝ cos(ωt+φ)` at each cavity's bunch arrival, with the bunch-centre marker; the
-scale/phase are re-derived exactly as the sim drives them (crest base + GUI φ_off; Preb-2's reversed
-install is `PREB2_REV_PHASE=0` — the +π is absorbed by crest-referencing the loaded field).
+scale/phase are re-derived exactly as the sim drives them (zc base + centroid reference, so both
+cavities sit at `E ≈ 0` of peak at the centroid — zero net energy kick; Preb-2's reversed install is
+`PREB2_REV_PHASE=π` in this zc parametrization).
 
 ### `injector_bunch_profile.png` — the real longitudinal bunch shape λ(z)
 ![Injector: line-charge density λ(z) at three snapshots](injector/results/injector_bunch_profile.png)

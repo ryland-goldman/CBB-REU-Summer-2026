@@ -66,7 +66,7 @@ charge is stronger and the threshold higher, so 8 kW is even further below thres
   phase; there is **no mirrored/negated map**.
 - `lens0a.h5` / `sol0.h5` / `lens0e.h5` — the three static, per-Ampere B-only solenoid maps.
 
-### RF drive and the two-cavity phasing
+### RF drive and the two-cavity phasing (zero-crossing, centroid-referenced)
 
 Each cavity drives its 1-J map as a standing-wave TM mode (GPT's `Map25D_TM`):
 `Er,Ez(t) = map·scale·cos(ωt+φ)`, `Bφ(t) = map·scale·sin(ωt+φ)`. The drive phase is
@@ -75,23 +75,33 @@ Each cavity drives its 1-J map as a standing-wave TM mode (GPT's `Map25D_TM`):
 φ = -ω·t_gap + base + radians(phi_off_deg) + rev_phase
 ```
 
-- `base = π` ("crest") is the faithful reference: the GUI `phi_off` values are
-  **crest-referenced**, so the operating point is crest + `phi_off` (Preb-1 −70°, Preb-2 −45°,
-  reproducing the GUI's 304.7° / 178.9° on-crest definitions). `base = π/2` ("zc") is the
-  bare zero-crossing kept only for the exploratory scan (use with `phi_off=0`).
-- **Preb-1** (8 kW, Q=3000, −70° from crest): a mild **+20 keV** net kick with a strong
-  bunching slope (on-axis kick fraction −cos(π − 70°) ≈ +0.34; slope sin ≈ +0.94 ⇒ the tail
-  gains energy and the bunch compresses downstream).
-- **Preb-2** (10 kW, Q=4300, reversed, −45° from crest): the second velocity buncher. Its
-  mean kick is ~+54 keV (measured: gun-exit 146 keV → ~220 keV at the handoff, of which Preb-1
-  is +20 keV); it drives the head→tail chirp compressive (dchirp ≈ −0.33 keV/mm in the
-  Preb-2-only test).
+where `t_gap` is the arrival time of the **bunch centroid** (`z_ref = z_centroid`, not the
+tail) at the gap. The faithful default is **`PHASE="zc"`** (`base = π/2`) with
+`phi_off = 0`: this lands the **centroid on the RF zero-crossing**, so the net mean-energy
+kick is zero and each cavity acts as a **pure velocity buncher** — bunching does not change the
+mean energy (gun-exit 149 keV → 152 keV at the handoff, ≈ flat; the transient ±18 keV swings
+on the `mean KE` line near each gap are the long bunch *straddling* the cavity and cancel out
+as it clears). `base = π` (`"crest"`) is the legacy *net-accelerating* reference (149 → 157 keV
+ramp) kept for comparison.
 
-**Two-cavity bunching (vs the P=0 drift baseline AND vs Preb-1 alone):** σ_drift/σ_2cav ≈
-**4.4×** near the focus and ≈ **2.4× vs Preb-1 alone** — Preb-2 genuinely *adds* bunching.
-σ_z monotonically tightens drift ~80 mm → Preb-1 ~37 mm → two-cavity ~12–18 mm.
+> **Why centroid-referenced.** The physical beam is the ~2 ns / ~380 mm time-release stream,
+> which spans **~154° of RF** (the centroid sits **77° behind the tail**). Phasing the *tail*
+> to the zero-crossing would leave the bulk on the decelerating slope (measured: −53 keV net),
+> so the reference plane is the centroid. The cavity is energy-neutral by the symmetry of
+> −cos(φ) about the zero-crossing over ±77°; the head (φ ≈ 13°) is decelerated and the tail
+> (φ ≈ 167°) accelerated ⇒ compressive chirp.
 
-### Reversed install (`PREB2_REV_PHASE = 0`) — the subtle part
+- **Preb-1** (8 kW, Q=3000): centroid on the zero-crossing, full bunching slope (sin ≈ 1).
+- **Preb-2** (10 kW, Q=4300, reversed): the second velocity buncher, also centroid-on-zero-crossing
+  (`PREB2_REV_PHASE = π`, see below).
+
+**Bunching.** σ_z monotonically tightens from ~108 mm (injection) to its ~33 mm **waist, which
+now lands at the 2.03 m handoff plane** (min σ_z at ≈1962 mm) — the exit is the focus, not past
+it. The waist is fold-limited (~33 mm): a single zero-crossing imparts a *sinusoidal* (not
+linear) chirp across the 154°-wide bunch, so the longitudinal phase space folds into the
+checkmark seen in `injector_phasespace.png` rather than collapsing to a point.
+
+### Reversed install (`PREB2_REV_PHASE = π`) — the subtle part
 
 GPT installs Preb 2 with `-1,0,0` (a 180° rotation). For this map's **definite parity** —
 Ez EVEN, Er ODD, Bφ EVEN about the gap (measured corr ±0.9999; also forced by Maxwell for a
@@ -99,30 +109,26 @@ TM0 mode, Bφ ~ dEr/dz − dEz/dr with both even ⇒ Bφ even, asserted in the b
 rotation flips ALL THREE lab components, i.e. a global E,B sign flip **≡ +π in ABSOLUTE
 drive phase**.
 
-BUT we do **not** phase in absolute phase: we phase to bunch arrival + a CREST base + the GUI
-`phi_off`, and the GUI's 178.9° on-crest reference for Preb-2 was measured for the
-**as-installed (already-reversed)** cavity. So the crest reference **already contains the
-reversal**; adding a separate +π double-counts and lands Preb-2 on the debunching slope. In
-the (forward-map + crest-base + GUI φ_off) parametrization, **`PREB2_REV_PHASE = 0` IS the
-geometric reversal** (the +π and the crest-reference's built-in reversal cancel) — not its
-absence. Verified empirically by a Preb-2-only kick-sign run: rev=0 bunches (dchirp
-−0.33 keV/mm, tail gains); rev=+π decelerates (−67 keV, no bunching). **Do not "fix" this to
-+π.** (The knob is retained for a future map whose loaded drive phase is not the as-installed
-crest.)
+In the **zc + `phi_off = 0`** parametrization, `phi_off` carries **no** reversal information
+(unlike the old crest+GUI convention, where the GUI's 178.9° Preb-2 reference was measured for
+the already-reversed cavity and so absorbed the +π). So Preb-2 must carry the genuine
+geometric +π itself: **`PREB2_REV_PHASE = π`**. With `rev = 0` Preb-2 would still be
+energy-neutral (centroid on a zero-crossing) but on the **debunching** slope; `rev = π` flips
+it back to compressive — verified empirically (SC-off, σ_z keeps tightening through Preb-2 with
+`rev = π`). **Note:** this is the *opposite* of the old crest-referenced default
+(`PREB2_REV_PHASE = 0`); the value is convention-dependent, not absolute — if you switch
+`PHASE` back to `"crest"` with the GUI `phi_off`, restore `rev = 0`.
 
 ### Preb-2 timing caveat (constant-v phase error)
 
 Preb-2's arrival is timed in two segments — `v_beam` to Z1, then the post-Preb-1 speed over
-Z1→Z2 — using an analytic estimate of Preb-1's +20 keV kick. The faithful crest-base Preb-1
-raises β over the inter-cavity drift, so timing Preb-2 with the bare injection β would
-mis-time it by ~−10° at 214 MHz; the two-segment estimate cuts this to a **~−4° residual**
-(the analytic thin-gap kick slightly overshoots the space-charge-loaded ensemble mean, so it
-does not reach <1°). This is below the constant-v-per-segment approximation, and the σ-ratio
-bunching gate passes — accepted at the design
-point, documented honestly as ~4° (NOT <1°). **The exact fix is a two-pass run** (read the
-post-Preb-1 β from a diagnostic, rebuild the Preb-2 timing); needed only if a future study
-changes Preb-1's mean kick (a Preb-1 power scan, or moving its phase toward crest) — the scan
-facility carries this note.
+Z1→Z2 — using an analytic estimate of Preb-1's net kick (`-cos(base+phi_off)·V_gap`). At the
+**zc/centroid** default Preb-1's net centroid kick is ≈0 (energy-flat), so `v_after_preb1 ≈
+v_beam` and the inter-cavity timing residual is small (the logged Δφ vs bare-injection-β timing
+is set by the two-segment estimate; the σ-ratio bunching gate passes). **The exact fix is a
+two-pass run** (read the post-Preb-1 β from a diagnostic, rebuild the Preb-2 timing); needed
+only if a future study gives Preb-1 a non-zero net kick (a Preb-1 power scan, or `PHASE="crest"`
+which net-accelerates ~+20 keV) — the scan facility carries this note.
 
 ## Solenoid lenses (the transverse focusing / radial-scrape fix)
 
@@ -249,28 +255,23 @@ verbosity≥2 spot-check confirms it converges in **3–4 V-cycles** (resid/bnor
 At the faithful currents (6/40/10 A) the three lenses focus the beam through the injector:
 Lens 0A (z ≈ 0.225 m) sets the early envelope, and the Sol 0 / Lens 0E matching telescope at
 z ≈ 1.9 m — just upstream of the 1.922 m iris — squeezes it through the 9.547 mm aperture.
-On the time-release gun beam with the relativistic EMS self-field (see *Self-field solver*),
-**~42% of the handoff charge passes the iris** (0.262 / 0.620 nC, via the multi-plane scrape at
-the real 1.922 m iris plane — see *The 9.547 mm collimator*). This is a controlled A/B above the
-**34%** the old lab-frame electrostatic solver gives on the *same* input — removing the γ²
-transverse over-repulsion focuses the beam tighter, so more clears the iris.
+On the time-release gun beam with the relativistic EMS self-field (see *Self-field solver*) and
+the **zero-crossing (energy-flat) cavity phasing**, **~19% of the handoff charge passes the iris**
+(0.114 / 0.585 nC, via the multi-plane scrape at the real 1.922 m iris plane — see *The 9.547 mm
+collimator*).
 
-> **⚠ Operating point under re-validation (time-release beam).** The prebuncher phases and lens
-> currents were tuned for the compact *snapshot* gun handoff. On the physical time-release beam
-> (a ~380 mm / 2 ns quasi-DC stream spanning ~155° of RF) the longitudinal waist now lands at
-> z ≈ 1.66 m — ~370 mm *upstream* of the 2.03 m handoff — so the bunch re-expands (σ_z 4.5 → 41 mm)
-> before it is handed off, and the beam radially expands to the 36 mm domain wall over the
-> unfocused 0.225→1.6 m drift (~37% loss there). That ~37% loss also trips `linac_sec1`'s dump
-> selector: `load_injector_bunch` applies an `n ≥ 0.8·nmax` population gate *before* its
-> nearest-⟨z⟩ pick, so when the near-handoff dumps drop below 0.8·nmax it falls back to an
-> earlier, off-plane dump (recorded `it_handoff` at ⟨z⟩≈0.843 m on the current run) — i.e. the
-> linac is presently *not* injecting the 2.03 m handoff beam. So the **downstream RF-bucket
-> capture (~7%) and the "146 → ~220 keV" net-acceleration figures below predate this
-> reconciliation and are not yet re-measured** — re-tuning the phases/currents for the long beam
-> (and re-converging the selector) is the open follow-up (the LinacSim reconciliation backlog).
-> The iris-transmission and solver numbers above ARE on the current time-release beam. NOTE: the
-> `injector exit (2.03 m plane)` phase-space panel shows the physical handoff plane, **not** the
-> off-plane dump the selector currently ingests.
+> **⚠ Transverse match under re-validation (decoupled from the longitudinal fix).** The
+> **longitudinal** operating point is now correct: zc/centroid phasing keeps the mean energy flat
+> and lands the σ_z waist at the 2.03 m handoff (see *RF drive*). But the lens currents (6/40/10 A)
+> were matched to the *old crest* beam, which net-accelerated to ~220 keV by the iris; the
+> energy-flat zc beam stays at ~150 keV (lower rigidity), so the Sol 0 / Lens 0E telescope is no
+> longer matched and iris transmission fell from the old crest value (~42%) to **~19%**. Re-matching
+> the solenoid currents to the ~150 keV energy-flat beam is the open **transverse** follow-up (the
+> LinacSim reconciliation backlog) — it does not affect the longitudinal headline above. The beam
+> also still radially expands over the unfocused 0.225→1.6 m drift (~37% in-domain loss there,
+> unchanged — that gap is unfocused in LinacSim too). Note `linac_sec1`'s `n ≥ 0.8·nmax` dump
+> selector may still fall back off-plane on a low-population near-handoff dump; the downstream
+> RF-bucket capture is not re-measured at the new operating point.
 
 > **Fixed (physics-review):** two corrections fed these numbers. (1) An earlier version placed
 > LENS_0E ~800 mm out of position (a `grid_global_offset` bug that omitted the native grid origin
@@ -312,7 +313,8 @@ writes to `injector/results/`:
 
 - `injector_line.png` — σ_z(z) (vs drift baseline) and peak current / mean energy, with both
   prebuncher-gap markers (Z1, Z2).
-- `injector_phasespace.png` — z–KE at injection / cavity exit / best focus.
+- `injector_phasespace.png` — z–KE **charge-weighted 2D density heatmaps** (nC/bin, per-panel
+  colorbar) at injection / cavity exit / best focus / injector exit.
 - `injector_cavity.png` — the RF drive: both on-axis Ez(z) lobes (Preb 1 @ 534 mm, Preb 2 @
   1318 mm) and both RF waveforms at their gap arrivals (scale/phase re-derived as the sim does).
 - `injector_bunch_profile.png` — the longitudinal line-charge density λ(z).

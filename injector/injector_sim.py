@@ -41,7 +41,7 @@ def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
 # truth, so sim and plot_injector.py cannot drift apart.
 from .build_injector_field import (
     Z_GAP_CENTER_1, Z_GAP_CENTER_2, V1J_KEV, F_RF, Q_L_1, Q_L_2,
-    PHI_OFF_1_DEG, PHI_OFF_2_DEG, SOL_FILES, Z_HANDOFF,
+    SOL_FILES, Z_HANDOFF,
 )
 from . import DEFAULT_OUTDIR
 
@@ -68,17 +68,18 @@ CFL = 0.8                        # dt = CFL · Δz / v_beam
 # ── Operating point — Prebuncher 1 (config()-overridable) ─────────────────────
 PREB1_KW = 8.0                   # dissipated RF power [kW]
 PREB1_Q = Q_L_1                  # loaded Q of prebuncher 1
-PREB1_PHI_OFF = PHI_OFF_1_DEG    # CREST-referenced GUI phase offset [deg] (-70)
+PREB1_PHI_OFF = 0.0              # phase offset [deg] from the zc base (0 = centroid on zero-crossing)
 
 # ── Operating point — Prebuncher 2 (reversed; config()-overridable) ───────────
 PREB2_KW = 10.0                  # Prebuncher 2 design power [kW] (prebuncher2_input_power)
 PREB2_Q = Q_L_2                  # loaded Q of prebuncher 2 (4300)
-PREB2_PHI_OFF = PHI_OFF_2_DEG    # CREST-referenced GUI phase offset [deg] (-45)
+PREB2_PHI_OFF = 0.0              # phase offset [deg] from the zc base (0 = centroid on zero-crossing)
 PREB2_REVERSED = True            # apply the reversed-install phase PREB2_REV_PHASE
-# Reversed install is rev_phase=0, NOT +π: crest-referencing the loaded (already-reversed)
-# field auto-absorbs the geometric +π, so adding +π double-counts -> debunches. DO NOT
-# "fix" this to +π. See README -> Reversed install (PREB2_REV_PHASE = 0).
-PREB2_REV_PHASE = 0.0            # [rad] faithful reversed install in this crest-referenced parametrization
+# Reversed install is a genuine +π in absolute drive phase (180° rotation flips Ez). In the
+# zc + phi_off=0 parametrization phi_off carries NO reversal info (unlike the old crest+GUI
+# convention), so Preb-2 needs rev_phase=π to bunch (rev=0 would land it energy-neutral but
+# DEBUNCHING). See README -> Reversed install.
+PREB2_REV_PHASE = np.pi          # [rad] reversed install in the zc/centroid parametrization
 
 # ── Solenoid lens currents [A] (config()-overridable; 0 disables a lens) ───────
 # LinacSim GUI defaults (6/40/10 A); 1-A maps scale linearly with current.
@@ -101,9 +102,10 @@ COLLIM_R = 0.009547              # [m] iris/pipe radius (SLAC bore; gpt scatteri
 COLLIM_Z = 1.922                # [m] iris start; the 9.547 mm pipe runs COLLIM_Z → ZMAX
 COLLIMATE = True                # report the collimated handoff charge (set False to skip)
 
-# Phase reference: "crest" (base=π) is faithful (GUI phi_off is crest-referenced); "zc"
-# (base=π/2) is the bare zero-crossing for the exploratory scan. See README -> RF drive.
-PHASE = "crest"                  # faithful default: crest base + GUI phi_off
+# Phase reference: "zc" (base=π/2) puts the bunch CENTROID on the RF zero-crossing, so the
+# net mean-energy kick is zero and the cavity acts as a pure velocity buncher (the design
+# goal). "crest" (base=π) is the legacy net-accelerating reference. See README -> RF drive.
+PHASE = "zc"                     # default: zero-crossing (centroid-referenced) velocity bunching
 
 # ── Performance knobs (tunable via injector.config(...); see run_pipeline.py) ──
 # This stage dominates the pipeline. Do NOT coarsen NZ — convergence-bound, not cell-bound;
@@ -130,7 +132,10 @@ OUTDIR = None                    # if None at main(), use DEFAULT_OUTDIR
 def load_gun_bunch():
     """Import the gun's last snapshot (already RZ) and shift it to the entrance.
 
-    Returns (dict for ParticleListDistribution, v_beam, mean KE [keV]).
+    Returns (dict for ParticleListDistribution, v_beam, mean KE [keV], z_centroid).
+    ``z_centroid`` is the lab-z of the charge centroid after the entrance shift; the
+    cavities are phased to put the CENTROID (not the tail) at the zero-crossing so the
+    net mean-energy kick is zero. See README -> RF drive (centroid phase reference).
     """
     ts = OpenPMDTimeSeries(GUN_DIAG)
     if len(ts.iterations) == 0:
@@ -159,12 +164,13 @@ def load_gun_bunch():
     v_beam = float(np.average(beta_z, weights=w) * c)
     ke_mean = float(np.average(gb - 1.0, weights=w) * m_e * c**2 / q_e / 1e3)
 
+    z_centroid = float(np.average(z, weights=w))
     print(f"Imported {z.size} macroparticles from gun (iter {it}); "
-          f"z {z.min()*1e3:.1f}–{z.max()*1e3:.1f} mm, "
+          f"z {z.min()*1e3:.1f}–{z.max()*1e3:.1f} mm, ⟨z⟩ {z_centroid*1e3:.1f} mm, "
           f"⟨KE⟩ {ke_mean:.1f} keV, v_beam {v_beam:.3e} m/s, "
           f"q {w.sum()*q_e*1e9:.3f} nC", flush=True)
     return (dict(x=x, y=y, z=z, ux=ux * c, uy=uy * c, uz=uz * c, w=w),
-            v_beam, ke_mean)
+            v_beam, ke_mean, z_centroid)
 
 
 def make_cavity(field_path, power, q_l, z_gap, v_at_gap, phi_off_deg, phase,
@@ -172,18 +178,21 @@ def make_cavity(field_path, power, q_l, z_gap, v_at_gap, phi_off_deg, phase,
     """Build one prebuncher cavity as a picmi.LoadAppliedField.
 
     Drives the 1-J map as a standing-wave TM mode: E ∝ scale·cos(ωt+φ),
-    B ∝ scale·sin(ωt+φ). ``v_at_gap`` is the mean beam speed over ``z_ref → z_gap``;
-    ``t_offset`` is the time already elapsed reaching ``z_ref`` (Preb 2 uses a two-segment
-    arrival to account for Preb-1's kick). ``rev_phase`` is added to φ. See README -> RF
-    drive / Reversed install / Preb-2 timing caveat.
+    B ∝ scale·sin(ωt+φ). ``z_ref`` is the lab-z of the bunch CENTROID at the reference
+    plane, so ``t_gap`` is the centroid's gap arrival and the zc base lands the centroid on
+    the zero-crossing (net mean kick = 0). ``v_at_gap`` is the mean beam speed over
+    ``z_ref → z_gap``; ``t_offset`` is the time already elapsed reaching ``z_ref`` (Preb 2
+    uses a two-segment arrival to account for Preb-1's kick). ``rev_phase`` is added to φ.
+    See README -> RF drive / Reversed install / Preb-2 timing caveat.
 
     Keep .10e precision on every term — ω·t truncation accumulates over the ~5 ns transit.
     """
     scale = float(np.sqrt(1e3 * q_l * power / (2.0 * np.pi * F_RF)))
-    # Arrival time of the bunch tail at this cavity's gap: time to z_ref + leg z_ref→z_gap.
+    # Arrival time of the bunch centroid at this cavity's gap: time to z_ref + leg z_ref→z_gap.
     t_gap = t_offset + (z_gap - z_ref) / v_at_gap
-    # Electron energy kick ΔW(t) ∝ -cos(ωt+φ) (on-axis Ez single-signed positive); crest base
-    # = π (faithful), zc base = π/2 (exploratory). rev_phase carries the reversed install.
+    # Electron energy kick ΔW(t) ∝ -cos(ωt+φ) (on-axis Ez single-signed positive); zc base
+    # = π/2 (centroid on zero-crossing -> net mean kick 0, pure buncher), crest base = π
+    # (legacy net-accelerating). rev_phase carries the reversed install.
     base = np.pi / 2.0 if phase == "zc" else np.pi
     phi = -omega * t_gap + base + np.radians(phi_off_deg) + rev_phase
     e_time = f"{scale:.10e}*cos({omega:.10e}*t + ({phi:.10e}))"
@@ -241,7 +250,7 @@ def main():
     # Compute omega here (not at import) so a config(F_RF=...) override is honored.
     omega = 2.0 * np.pi * F_RF
 
-    bunch, v_beam, ke_mean = load_gun_bunch()
+    bunch, v_beam, ke_mean, z_centroid = load_gun_bunch()
 
     # ── Grid + electrostatic (self-field) solver ──────────────────────────────
     grid = picmi.CylindricalGrid(
@@ -288,10 +297,10 @@ def main():
                 warpx_B_time_function=f"{cur:.8e}"))
             print(f"Solenoid {os.path.basename(path)}: I={cur:g} A", flush=True)
 
-    # Prebuncher 1 (forward map) — arrival uses v_beam.
+    # Prebuncher 1 (forward map) — centroid arrival uses v_beam over z_centroid→gap.
     fld1, scale1, phi1, t_gap1 = make_cavity(
         PREB1_FIELD, PREB1_KW, PREB1_Q, Z_GAP_CENTER_1, v_beam,
-        PREB1_PHI_OFF, PHASE, omega)
+        PREB1_PHI_OFF, PHASE, omega, z_ref=z_centroid)
     if PREB1_KW > 0:
         applied.append(fld1)
     print(f"Preb 1: P={PREB1_KW:g} kW, Q={PREB1_Q}, scale={scale1:.3f}, "
@@ -315,7 +324,7 @@ def main():
             rev_phase=rev_phase)
         applied.append(fld2)
         # Phase error vs. timing with bare injection β, for the sanity log.
-        t_gap2_inj = (Z_GAP_CENTER_2 - Z_INJECT) / v_beam
+        t_gap2_inj = (Z_GAP_CENTER_2 - z_centroid) / v_beam
         dphi_deg = np.degrees(omega * (t_gap2 - t_gap2_inj))
         print(f"Preb 2 (reversed): P={PREB2_KW:g} kW, Q={PREB2_Q}, scale={scale2:.3f}, "
               f"V_gap≈{scale2*V1J_KEV:.1f} kV, φ={phi2:.3f} rad, t_gap={t_gap2*1e9:.3f} ns "
@@ -360,7 +369,7 @@ def main():
     else:
         ke_after2, v_after2 = ke_after1, v_after1
     v_after = v_after2          # speed AT the 2.03 m handoff (post-Preb-2); cadence-only below
-    transit = ((Z_GAP_CENTER_1 - Z_INJECT) / v_beam
+    transit = ((Z_GAP_CENTER_1 - z_centroid) / v_beam
                + (Z_GAP_CENTER_2 - Z_GAP_CENTER_1) / v_after1
                + (ZMAX - Z_GAP_CENTER_2) / v_after2)
     n_steps = MAX_STEPS or int(TRANSIT_MARGIN * transit / dt)
