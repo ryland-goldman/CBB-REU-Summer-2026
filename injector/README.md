@@ -15,7 +15,7 @@ Lens 0A  ->  Prebuncher 1  ->  Prebuncher 2 (reversed)  ->  Sol 0 / Lens 0E  -> 
  @0.225 m     @0.534 m            @1.318 m                    @1.897 / 1.914 m
 ```
 
-It reads the gun's exit beam (~146 keV, β ≈ 0.63, ~1.0 nC time-release / ~0.83 nC legacy
+It reads the gun's exit beam (~149 keV, β ≈ 0.63, ~1.0 nC time-release / ~0.83 nC legacy
 snapshot, already RZ), velocity-bunches
 it with two 214 MHz prebuncher cavities while focusing it with three static solenoid
 lenses, and hands a focused, collimated beam to `linac_sec1` at the true linac entrance

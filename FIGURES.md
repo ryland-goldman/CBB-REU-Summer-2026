@@ -32,7 +32,7 @@ The chain is order-dependent — each stage accelerates/transports the previous 
 
 ```
 cathode  ─►  gun  ─►  injector  ─►  linac_sec1  ─►  linac_rest
-(SCL diode)  (~146 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)  (sections 2–8, ~308 MeV)
+(SCL diode)  (~149 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)  (sections 2–8, ~308 MeV)
 ```
 
 ---
@@ -183,13 +183,13 @@ transport through the gun, including the near-cathode radial focusing as the bea
 Mean and max kinetic energy of the beam vs. local position `z` (reconstructed on fixed-z virtual
 screens, not a per-dump `⟨z⟩` aggregate — see `beam_envelope.png` below), climbing toward the 150 keV
 gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the
-~150 keV cathode→exit potential drop (mean exit KE ≈ 146 keV; ~83 % of the 1 nC bunch reaches the exit).
+~150 keV cathode→exit potential drop (mean exit KE ≈ 149 keV; ~83 % of the 1 nC bunch reaches the exit).
 
 ### `exit_phase_space.png` — exit beam
 ![Exit longitudinal phase space and energy spectrum](gun/results/exit_phase_space.png)
 
 Left: longitudinal phase space (`z` vs. `KE`) at the last dump. Right: the final energy spectrum
-(histogram) with `⟨KE⟩` marked — a narrow distribution at ~146 keV, the beam handed off to the
+(histogram) with `⟨KE⟩` marked — a narrow distribution at ~149 keV, the beam handed off to the
 injector.
 
 ### `beam_envelope.png` — transverse envelope and emittance
