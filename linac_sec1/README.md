@@ -201,7 +201,10 @@ writing five figures to `results/`:
   each macroparticle's id-trajectory across the volumetric dumps is interpolated to every z-plane
   it crosses (forward/monotonic z), so σ_x(z) is local rather than the per-dump **projected** RMS
   (which mixes the beam's whole z-extent at each dump). Real envelope oscillation from the
-  injection mismatch survives; the projection smear does not. The survival panel is per-dump,
+  injection mismatch survives; the projection smear does not. Each screen describes only the
+  particles that reach it, so downstream of the RF-capture loss σ_x(z) is the **surviving-slice**
+  envelope, not the full injected beam (the RF-rejected slipping tail, which can be locally
+  non-monotonic in z, drops out of its downstream screens rather than biasing them). The survival panel is per-dump,
   normalised to the **injected** charge, showing the iris-collimation drop at the first dump
   (r > RMAX = 9.547 mm scrape) followed by the RF-capture loss.
 - `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured fraction **of the

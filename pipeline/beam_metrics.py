@@ -45,6 +45,13 @@ def screen_profile(idP, zP, wP, quantities, emit_pairs=(), nscreen=80,
     emit_pairs  : iterable of (qname, uname) (both must be in ``quantities``); returns
                   the raw rms emittance sqrt(⟨q²⟩⟨u²⟩−⟨qu⟩²) per screen for each pair.
 
+    Assumes each macroparticle's weight is constant across dumps (``wi = ws[a]`` — true for
+    these stages, where weight is set once at injection). The interpolation is linear in z, so
+    a transverse oscillation under-resolved by the dump cadence biases ``emit`` low; keep enough
+    dumps to resolve it. A particle only contributes to screens within its own z-range, so where
+    particles are lost mid-line (e.g. an iris scrape) the downstream screens describe the surviving
+    subset, not the injected beam.
+
     Returns ``(screens, out)``: ``screens`` are the plane positions [m]; ``out`` has
     ``count`` and dicts ``mean``/``rms``/``max`` (keyed by quantity name) and ``emit``
     (keyed by the ``(qname, uname)`` tuple). All moments are RAW (caller scales units)

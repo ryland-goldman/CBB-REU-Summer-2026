@@ -178,9 +178,10 @@ This is the field the beam sees.
 transport through the gun, including the near-cathode radial focusing as the beam accelerates.
 
 ### `energy_gain.png` — energy gain along the gun
-![Mean and max KE vs. ⟨z⟩](gun/results/energy_gain.png)
+![Mean and max KE vs. z](gun/results/energy_gain.png)
 
-Mean and max kinetic energy of the beam vs. mean position `⟨z⟩`, climbing toward the 150 keV
+Mean and max kinetic energy of the beam vs. local position `z` (reconstructed on fixed-z virtual
+screens, not a per-dump `⟨z⟩` aggregate — see `beam_envelope.png` below), climbing toward the 150 keV
 gun-voltage line (dotted). The gain tracks `∫ e·|E_z| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the
 ~150 keV cathode→exit potential drop (mean exit KE ≈ 146 keV; ~83 % of the 1 nC bunch reaches the exit).
 
@@ -192,13 +193,16 @@ Left: longitudinal phase space (`z` vs. `KE`) at the last dump. Right: the final
 injector.
 
 ### `beam_envelope.png` — transverse envelope and emittance
-![per-plane RMS size σ_x and normalized emittance vs ⟨z⟩](gun/results/beam_envelope.png)
+![per-plane RMS size σ_x and normalized emittance vs z](gun/results/beam_envelope.png)
 
 The near-cathode focusing that `beam_rz.png` shows only as three snapshots, quantified along the
-gun. **Blue:** the per-plane RMS size `σ_x = √⟨(x−⟨x⟩)²⟩` (weighted, mean-centered — the same
-convention as `plot_chain`, so the two figures agree on the same dump) contracts from ≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode
-emission is focused by the radial gun field (the full-radial `√⟨r²⟩ = √2·σ_x` is ≈ 5.7 → 4.1 mm).
-**Red (twin axis):**
+gun. Both curves are reconstructed on **fixed-z virtual screens** (`pipeline/beam_metrics.screen_profile`,
+not a z-histogram): each macroparticle's id-trajectory across the dumps is interpolated to every
+z-plane it crosses, so the profile is local in `z` (no per-dump `⟨z⟩` pooling) and `εn,x` is smooth
+rather than carrying bin-to-bin sampling jitter. **Blue:** the per-plane RMS size
+`σ_x = √⟨(x−⟨x⟩)²⟩` (weighted, mean-centered — the same convention as `plot_chain`) contracts from
+≈ 4.0 mm at launch to a ≈ 2.8 mm waist near the exit as the diverging cathode emission is focused by
+the radial gun field (the full-radial `√⟨r²⟩ = √2·σ_x` is ≈ 5.7 → 4.1 mm). **Red (twin axis):**
 the normalized transverse emittance `εn,x = √(⟨x²⟩⟨ux²⟩ − ⟨x·ux⟩²)` grows as space charge and
 field nonlinearities act — the beam-quality cost of the transport.
 
@@ -311,8 +315,10 @@ sub-relativistic beam into a phase-velocity-c wave.
 ### `beam_envelope.png` — focusing and adiabatic damping
 ![Linac: σ_x and surviving charge](linac_sec1/results/beam_envelope.png)
 
-**Top:** RMS transverse size σ_x vs ⟨z⟩ with the structure bore (9.55 mm) marked; **bottom:**
-surviving charge fraction q/q_inj normalised to the **injected** charge. The curve drops at the
+**Top:** local RMS transverse size σ_x vs z — reconstructed on fixed-z virtual screens
+(`pipeline/beam_metrics.screen_profile`), not the per-dump projected RMS — with the structure bore
+(9.55 mm) marked; **bottom:** surviving charge fraction q/q_inj vs per-dump ⟨z⟩, normalised to the
+**injected** charge. The curve drops at the
 first dump (the r > 9.547 mm iris collimation) then decays through the RF-capture loss. The
 surviving slice adiabatically damps (σ_r ∝ 1/√(γβ)) as it accelerates.
 
