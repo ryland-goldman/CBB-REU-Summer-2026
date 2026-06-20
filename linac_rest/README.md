@@ -3,9 +3,9 @@
 The rest of the straight electron line to CHESS, after `linac_sec1`: seven S-band
 (2856 MHz) traveling-wave (TW) accelerating sections (CEA 2/3/4/5 + CU 3/4/5),
 chained into **one** Impact-T deck and integrated as one time-ordered beam. Reads
-`linac_sec1`'s captured ~25 MeV exit beam and accelerates the captured core on-crest
-to **≈308 MeV** at the default 11 MW klystron point (307.97 MeV survivor mean through the real
-bore; 309.2 MeV full-beam mean before the bore scrapes the lower-energy off-axis tail; ≈307 MeV
+`linac_sec1`'s captured ~21 MeV exit beam and accelerates the captured core on-crest
+to **≈305 MeV** at the default 11 MW klystron point (304.9 MeV survivor mean through the real
+bore; 305.2 MeV full-beam mean before the bore scrapes the lower-energy off-axis tail; ≈307 MeV
 expected from the table).
 
 ```
@@ -80,9 +80,9 @@ exit ⟨KE⟩         = measured ⟨KE⟩_in + Σ_i ΔE_target,i(P_op)   # compu
 | 7 | CU 3  | 4.97 | 51 | 43.7 | 14.7→11.7 | Q7 |
 | 8 | CU 4  | 4.97 | 51 | 43.7 | 14.7→11.7 | — |
 
-Σ ΔE @11 MW ≈ 282 MeV ⇒ exit ≈ 307 MeV expected from a ~25 MeV input; the **achieved**
-calibrated exit is **309.2 MeV full-beam / 307.97 MeV for the survivors through the real bore**
-(every per-section ΔE within <0.05 % of its target; the ~1.2 MeV survivor-vs-full-beam gap is the
+Σ ΔE @11 MW ≈ 282 MeV ⇒ exit ≈ 307 MeV expected from a ~21 MeV input; the **achieved**
+calibrated exit is **305.2 MeV full-beam / 304.9 MeV for the survivors through the real bore**
+(every per-section ΔE within <0.05 % of its target; the ~0.3 MeV survivor-vs-full-beam gap is the
 real bore scraping the lower-energy, more-divergent off-axis particles — see *Space charge &
 quads*). The @15 MW column is a *different* (15 MW) section-1 beam — NOT a co-equal target. Sec 5/6
 cell counts and the bore taper are `details.md` source-table guesses (propagated as uncertainty).
@@ -111,10 +111,10 @@ capture. The core charge actually tracked is recorded separately (`q_core_inject
 `core_charge_frac_of_sec1_exit`). The dominant real loss is the upstream sec-1 capture; the
 within-stage `q_out/q_injected` additionally includes the **quads-OFF transverse-divergence loss**
 (see *Space charge & quads*), which is a no-focusing model artifact — NOT real-machine loss — so
-the **end-to-end capture ≈ 4.78 %** of the true-injected charge at the **injector→linac handoff**
-(`linac_sec1`'s recorded `q_injected_C`, ~0.75 nC at z ≈ 2.03 m — NOT a cathode quantity; the gun
+the **end-to-end capture ≈ 3.93 %** of the true-injected charge at the **injector→linac handoff**
+(`linac_sec1`'s recorded `q_injected_C`, ~0.93 nC at z ≈ 2.03 m — NOT a cathode quantity; the gun
 renormalizes the cathode's non-physical DC macroparticle weight to a 1 nC bunch, so no cathode
-charge enters the denominator; the 4.78 % is quoted from the recorded run summaries, not computed
+charge enters the denominator; the 3.93 % is quoted from the recorded run summaries, not computed
 by `plot_chain`) is a **lower bound**, not
 a prediction of the real linac's sections-2–8 transmission (the real FODO contains the beam, so the
 true value is higher). The robust deliverable is the energy gain, not the transmission.
@@ -134,7 +134,9 @@ true value is higher). The robust deliverable is the energy gain, not the transm
   `DRIFT_M` (0.4 m placeholder) field-free margin split around the real-length quadrupole
   (`gap/2` drift, quad, `gap/2` drift — the quad length is NOT subtracted from the gap, since
   several real quads exceed 0.4 m). With `K1 = 0` a quad is optically a drift of its length.
-- **`QUADS_ON=True` → derived energy-scaled FODO (exploratory).** Turns the inert quads into a
+- **`QUADS_ON=True` → derived energy-scaled FODO (exploratory).** (QUADS_ON numbers below are from
+  an earlier quads-ON run on the snapshot operating point and have NOT been re-baselined to the
+  current timed-beam run, whose quads-OFF transmission is 46.0 %.) Turns the inert quads into a
   real focusing lattice. `build_linac_rest_lattice.fodo_quad_gradients(ke_in_mev=…)` derives the
   per-quad `b1_gradient` [T/m] from **accelerator optics**, NOT measured quad current (A→T
   undocumented):
@@ -180,7 +182,7 @@ true value is higher). The robust deliverable is the energy gain, not the transm
   section **exit** bore (the quad sits *downstream* of the section exit at the narrower taper; the solrf
   body already uses the **entrance** radius `[0]`, an intentional taper). Gating on `quads_on` (not the
   already-True `bore_aperture_on`) keeps the quads-OFF path byte-identical (`radius` stays `0.0`) so the
-  published 78.5% can't silently regress; the box `XYRAD_M` is never widened.
+  published 46.0% can't silently regress; the box `XYRAD_M` is never widened.
 - **Transverse confinement: the quads-OFF headline does NOT contain the beam — the energy gain
   is the result, transmission is only a no-focusing lower bound.** With **no quad focusing** over
   the 36 m line the beam genuinely diverges. Transmission is measured against the **real tapered
@@ -190,7 +192,7 @@ true value is higher). The robust deliverable is the energy gain, not the transm
   counting a 30-cm-radius beam as "transmitted" — physically meaningless; the real bore makes the
   number physically anchored and un-gameable.) The acceleration partly counteracts the divergence
   via adiabatic damping (σ_r ∝ 1/√(γβ), γβ ≈ 50 → 605 over the line ⇒ ~3.5× shrink), so a fraction
-  passes the real bore, but the rest scrapes — measured **transmission ≈ 78.5 %** (1783/2271
+  passes the real bore, but the rest scrapes — measured **transmission ≈ 46.0 %** (1834/3991
   macroparticles through the real bore). **This is a no-focusing MODEL ARTIFACT, NOT real-machine
   loss** — the real FODO lattice (quad A→T calibrations undocumented, `details.md`) contains the
   beam, so the true transmission is higher. The reported transmission (count-based `n_out/n_in`
@@ -257,7 +259,7 @@ from a full-bunch full-scan calibration); `ImpactTexe` is serial.
    bunch of finite phase length accumulates a second-order correlated spread over the 7 sections
    (each adding ~40 MeV on a cosine; the curvature term the plan called "negligible" is sizeable
    at 282 MeV total gain). The **relative** spread still shrinks (20.0% → 6.9%) only because ⟨KE⟩
-   grows faster (27 → ~308 MeV, ~11.4×) than σ_KE. This affects spread only — calibration uses
+   grows faster (27 → ~305 MeV, ~11.4×) than σ_KE. This affects spread only — calibration uses
    ⟨KE⟩, so the energies/scales are unaffected;
 4. normalized emittance εn,x/εn,y in vs out — diagnostic. NOTE: quads-OFF εn is **not**
    conserved; the recorded vs-z εn sawtooths ~2.4× — a fort.10N `norm_emit` artifact at

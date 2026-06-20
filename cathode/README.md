@@ -71,7 +71,7 @@ we do not impose the answer.
 ## What the simulation does (`cathode_diode.py`)
 
 - **Geometry**: 2D x–z, cathode plane at `z = 0` held at 0 V, anode at `z = d = 0.2 mm`
-  (200 µm) held at `+60 V`. Electrons are emitted only from the finite cathode patch
+  (200 µm) held at `+30 V`. Electrons are emitted only from the finite cathode patch
   `|x| < 8 mm` (the `lower_bound`/`upper_bound` of the flux distribution).
 - **Emission**: continuous flux injection (PICMI `UniformFluxDistribution`) at `2 × J_CL`,
   with a small thermal velocity spread set by a 1425 K cathode and a half-Maxwellian
@@ -86,20 +86,26 @@ we do not impose the answer.
 
 | Parameter | Value |
 |-----------|-------|
-| Anode bias `V` | 60 V |
+| Anode bias `V` | 30 V (peak grid potential = `Voff` + `Vpulse`) |
 | Gap `d` | 0.2 mm (200 µm) |
 | Cathode width `2R` | 16 mm (80× the gap → 1D limit on axis) |
 | Cathode temperature | 1425 K |
-| Injected current | 2 × J_CL ≈ 5.42 × 10⁴ A/m² |
-| Child–Langmuir J_CL | ≈ 2.71 × 10⁴ A/m² |
+| Injected current | 2 × J_CL ≈ 1.92 × 10⁴ A/m² |
+| Child–Langmuir J_CL | ≈ 9.59 × 10³ A/m² |
 | Grid | 128 × 64 cells (x, z), domain ±16 mm × 0.2 mm |
 | Steps | 2000 (gap-fill ≈ 480 steps) |
 
 These parameters now match Adam's Region-1 cathode geometry from the original LinacSim inputs
-(`reference/Linac Simulation Documentation/input_files/`): cathode diameter 16 mm, cathode–grid
-distance 0.2 mm, cathode temperature 1425 K, and the 60 V pulse voltage (`Vpulse`). The 16 mm /
-0.2 mm geometry still sits deep in the 1D limit (80× the gap) so the on-axis result recovers planar
-Child–Langmuir. It remains a **DC** 2D demo — the grid voltage pulsing is not modelled.
+(`reference/Linac Simulation Documentation/input_files/cathode_master.in`): cathode diameter 16 mm,
+cathode–grid distance 0.2 mm, and cathode temperature 1425 K. The 16 mm / 0.2 mm geometry sits deep
+in the 1D limit (80× the gap) so the on-axis result recovers planar Child–Langmuir. It remains a
+**DC** 2D demo — the grid voltage pulsing is not modelled.
+
+**Gap voltage = 30 V, not `Vpulse` = 60 V.** LinacSim drives the grid with a *pulse*
+`V(t) = Voff + Vpulse·f(t)` (`details.md` voltage-pulse model), where `Voff = −30 V` is the
+off-bias and `Vpulse = 60 V` is the peak *swing*. The pulse shape `f` peaks at 1, so the actual
+peak cathode→grid potential difference is `Voff + Vpulse = −30 + 60 = +30 V`. This DC demo uses
+that peak (`V_anode = 30 V`); `Vpulse` alone (60 V) is the swing amplitude, not the absolute bias.
 
 ---
 
