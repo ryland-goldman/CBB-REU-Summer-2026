@@ -104,6 +104,13 @@ ramp) kept for comparison.
 > follows the GUI (−70/−45). Confirm the intended working point with the LinacSim author before
 > treating either as canonical.
 
+To reproduce that GUI working point in one call, the facade exposes
+**`injector.faithful_gpt_deck()`** — it `config()`s `PHASE="crest"`, `PREB1_PHI_OFF=-70`,
+`PREB2_PHI_OFF=-45`, and `PREB2_REV_PHASE=0` (the reversal is absorbed into the crest
+reference). It does **not** change the shipped `zc` default, and its non-zero Preb-1 net kick
+desyncs the analytic Preb-2 inter-cavity timing (see *Reversed install* below) — a hardened
+study still needs the two-pass timing fix. Call it before `injector.run()`.
+
 > **Why centroid-referenced.** The physical beam is the ~2 ns / ~380 mm time-release stream,
 > which spans **~154° of RF** (the centroid sits **77° behind the tail**). Phasing the *tail*
 > to the zero-crossing would leave the bulk on the decelerating slope (measured: −53 keV net),

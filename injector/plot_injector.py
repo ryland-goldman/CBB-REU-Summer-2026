@@ -2,8 +2,9 @@
 Figures and summary for the WarpX injector stage. Reads `injector/diags/main`
 plus any `injector/diags/P*` scan cases (+ `P0_drift` baseline); writes the
 injector_{line,phasespace,cavity,bunch_profile}.png and compare_power_phase.png
-figures. Per-case figures use config-independent filenames (operating point lives
-in the input dir + titles), so a new run overwrites rather than orphaning.
+figures. The default "main" case keeps the bare injector_<fig>.png names; scan
+cases are keyed by case name (injector_<fig>_<case>.png), so a multi-case scan
+preserves every figure instead of overwriting.
 
 Run as a module (package-relative import): conda run -n CBB python -m injector.plot_injector
 See injector/README.md for physics, parameters, and gotchas.
