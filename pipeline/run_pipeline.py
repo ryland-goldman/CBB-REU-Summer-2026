@@ -36,8 +36,12 @@ from pipeline.constants import MC2_EV
 # ── Operating-point overrides (physics; defaults live in the stage modules) ──
 cathode.config(V_anode=30.0)
 gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)
-# Crest-referenced phase convention (base=π, kick ∝ −cos(base+φ_off)): null = φ_off −90°, crest = φ_off 0°.
-injector.config(PREB1_KW=8, PREB2_KW=10, PREB1_PHI_OFF=-90, PREB2_PHI_OFF=0, PHASE="crest")
+# Zero-crossing (centroid-referenced) velocity bunching — the documented default operating
+# point (PHASE="zc", φ_off=0, PREB2_REV_PHASE=π): both cavities sit on the RF zero-crossing of
+# the bunch centroid, so they bunch at net-zero mean-energy change (149→152 keV). Do NOT force
+# PHASE="crest" here without also resetting PREB2_REV_PHASE=0 — in crest the reversed-PB2 install
+# is auto-absorbed, so the module's zc PREB2_REV_PHASE=π double-counts and decelerates PB2 to ~70 keV.
+injector.config(PREB1_KW=8, PREB2_KW=10)
 linac_sec1.config(POWER_MW=11.0)
 linac_rest.config(POWER_MW=11.0)
 
