@@ -32,7 +32,7 @@ The chain is order-dependent — each stage accelerates/transports the previous 
 
 ```
 cathode  ─►  gun  ─►  injector  ─►  linac_sec1  ─►  linac_rest
-(SCL diode)  (~149 keV)  (2 prebunchers + 3 solenoids)  (~25 MeV captured)  (sections 2–8, ~308 MeV)
+(SCL diode)  (~149 keV)  (2 prebunchers + 3 solenoids)  (~21 MeV captured)  (sections 2–8, ≈305 MeV)
 ```
 
 ---
@@ -64,7 +64,7 @@ iris-survivor beam `linac_sec1` actually receives is ~13 % lower (≈326 vs ≈3
 
 ### `transmission_waterfall.png` — the two-loss charge chain
 ![Transmission Waterfall](results/transmission_waterfall.png)
-gun exit → injector exit (@2.03 m handoff) → **passes iris** (9.547 mm, ~32%) → **captured** (~25 MeV, ~7%).
+gun exit → injector exit (@2.03 m handoff) → **passes iris** (9.547 mm, ~64%) → **captured** (~21 MeV, ~10%).
 The bore-scrape and the RF-capture losses are **separate bars** — the separation that motivates the
 upstream solenoids. Starts at gun exit (physical ~1 nC renorm); the cathode's raw macroparticle
 weight is excluded (not a physical charge). The injector-exit bar reads the linac's **recorded**
@@ -114,7 +114,7 @@ vacuum field outside — the finite-cathode signature absent from planar theory.
 Transmitted current density at the anode vs. time (integrated across the beam, referenced to the
 cathode width `2R`). Despite injecting **2× J_CL** (red dotted reference, above this zoomed view),
 the transmitted current ramps up during gap-fill and then settles near `J_CL` (dashed,
-≈ 9.59 × 10³ A/m² (≈ 9.6 kA/m²); slightly above it, ≈ 108% in this run — the wide cathode / narrow gap is deep
+≈ 9.59 × 10³ A/m² (≈ 9.6 kA/m²); slightly above it, ≈ 121% in this run — the wide cathode / narrow gap is deep
 in the 1D limit and the finite cathode temperature pushes emission just past the cold-emission
 value). The cathode does **not** pass the 2× current it is fed; space charge regulates it.
 Linear y-axis anchored at the
@@ -280,8 +280,8 @@ synthesised from the two quadrature field maps and driven at the original LinacS
 focused beam at the **z ≈ 2.03 m handoff** and applies the **multi-plane 9.547 mm iris scrape** at
 injection (at the real 1.922 m iris plane; the beam converges through the tail, so a single 2.03 m
 cut would overstate transmission). At the faithful currents the Sol 0 / Lens 0E matching telescope
-focuses ~32 % of the handoff charge through the 9.547 mm iris, and the linac captures **~7 % of the
-true injected charge** to ⟨KE⟩ ≈ 25 MeV (max ~32 MeV). Produced by `plot_linac_sec1.py` from the run (`diags/main`) at
+focuses ~64 % of the handoff charge through the 9.547 mm iris, and the linac captures **~10 % of the
+true injected charge** to ⟨KE⟩ ≈ 21 MeV (max ~32 MeV). Produced by `plot_linac_sec1.py` from the run (`diags/main`) at
 `PHASE_DEG = 0`. Capture is a **conservative γ²≈1.7× lower bound** (real machine captures more),
 tune-sensitive to the upstream lens currents, and reported against the **true injected charge**
 (sidecar `injection_summary.json`), not the post-collimation first dump.
@@ -295,11 +295,11 @@ voltage). **Bottom:** a fixed-time snapshot `Ez(z, t₀)` zoomed to the structur
 the ~3.5 cm 2π/3 cell structure (the field reverses cell-to-cell; the forward traveling wave is the
 sum of the two 90°-offset quadrature maps).
 
-### `energy_gain.png` — ~150 keV → ~25 MeV (captured slice)
+### `energy_gain.png` — ~150 keV → ~21 MeV (captured slice)
 ![Linac: mean/max KE and β vs ⟨z⟩](linac_sec1/results/energy_gain.png)
 
 Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from the ~150 keV handoff; the
-captured slice reaches max ~32 MeV with charge-weighted ⟨KE⟩ ≈ 25 MeV (σ_KE ≈ 8 MeV), then goes
+captured slice reaches max ~32 MeV with charge-weighted ⟨KE⟩ ≈ 21 MeV (σ_KE ≈ 8 MeV), then goes
 flat in the field-free exit drift (the beam coasts). The β = v/c trace (right axis) shows the
 **capture**: the captured particles become relativistic (β → 1), while the bulk that is not
 captured (out of the RF bucket) falls behind.
@@ -326,9 +326,9 @@ surviving slice adiabatically damps (σ_r ∝ 1/√(γβ)) as it accelerates.
 ![Linac: exit energy spectrum + capture fraction](linac_sec1/results/exit_spectrum_capture.png)
 
 Charge-weighted exit energy spectrum (pC per bin) with the mean ± RMS marked, titled with the
-captured fraction **of the true injected charge** (~7 % at the faithful 11 MW point) and
-annotated with how much passed the 9.547 mm iris (~32 %). The surviving particles span a broad
-~5–32 MeV distribution with charge-weighted ⟨KE⟩ ≈ 25 MeV (σ_KE ≈ 8 MeV) — wide because only a
+captured fraction **of the true injected charge** (~10 % at the faithful 11 MW point) and
+annotated with how much passed the 9.547 mm iris (~64 %). The surviving particles span a broad
+~5–32 MeV distribution with charge-weighted ⟨KE⟩ ≈ 21 MeV (σ_KE ≈ 8 MeV) — wide because only a
 phase-spread slice locks to the crest. The capture is a conservative γ² lower bound and
 tune-sensitive to the upstream lens currents; the injector current/phase scans characterize the
 achievable value.
@@ -338,19 +338,19 @@ achievable value.
 ## 5. Linac sections 2–8 (Impact-T) — `linac_rest/results/`
 
 The rest of the straight electron line to CHESS: seven S-band traveling-wave sections
-(CEA 2/3/4/5 + CU 3/4/5) run as one Impact-T deck, accelerating the captured ~25 MeV core
-on-crest to ≈308 MeV at the faithful 11 MW point (307.97 MeV survivors through the real bore;
-309.2 MeV full-beam — the bore scrapes lower-energy off-axis particles). Field shape reuses the
+(CEA 2/3/4/5 + CU 3/4/5) run as one Impact-T deck, accelerating the captured ~21 MeV core
+on-crest to ≈305 MeV at the faithful 11 MW point (304.9 MeV survivors through the real bore;
+305.2 MeV full-beam — the bore scrapes lower-energy off-axis particles). Field shape reuses the
 lume-impact `rfdata4–7` TW template (shape only); all per-section physics is in the calibrated
 scale. Space charge OFF by default (γ > 49); quads present at real lengths but OFF (K1 = 0) for the
 headline. The vs-z panels come from Impact-T's continuous `I.stat(...)` arrays. See
 `linac_rest/README.md`.
 
-### `energy_gain.png` — cumulative energy to ≈308 MeV
+### `energy_gain.png` — cumulative energy to ≈305 MeV
 ![linac_rest: ⟨KE⟩ ± σ_KE vs z](linac_rest/results/energy_gain.png)
 
 ⟨KE⟩ (with the ± σ_KE band) vs ⟨z⟩ across the seven sections — the on-crest cumulative rise
-from the ~25 MeV captured core to ≈308 MeV at 11 MW (each section calibrated to its
+from the ~21 MeV captured core to ≈305 MeV at 11 MW (each section calibrated to its
 ΔE_target = ΔE_table·√(P/15)). The expected exit energy (measured ⟨KE⟩_in + Σ ΔE_target) is
 marked.
 
@@ -382,7 +382,9 @@ gate-1 visual (±3 % per section). Read from the calibration table in `injection
 σ_x **and** σ_y vs ⟨z⟩, titled (and **filenamed**) by the quad state — the plot script writes
 `fodo_optics.png` for quads OFF and `fodo_optics_quadson.png` for `QUADS_ON`, so a quads-ON run
 never overwrites this quads-OFF headline figure. With quads OFF (default) this is
-**placeholder optics — NOT predictive** (the beam diverges, no focusing). With `QUADS_ON` it
+**placeholder optics — NOT predictive** (the beam diverges, no focusing). (QUADS_ON numbers
+below are from an earlier quads-ON run on the snapshot operating point and have NOT been
+re-baselined to the current timed-beam run, whose quads-OFF transmission is 46.0 %.) With `QUADS_ON` it
 shows the **derived energy-scaled FODO**'s **contained, bounded, out-of-phase oscillating**
 σ_x/σ_y envelope — both transverse planes held to ≈ 0.6–4.4 mm RMS over the full 36 m (no
 blow-up), the doublet's win. Each gap is a real **H/V doublet** (two opposite-sign `qL/2` halves

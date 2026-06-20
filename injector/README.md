@@ -214,7 +214,7 @@ lab frame via `grid_global_offset`. The 1-A maps scale linearly with current.
   point, not a precise capture optimum, and use the optional current scan to
   characterize it. *(An earlier ~7× LENS_0A sensitivity figure — 0.21% vs 1.6% — was measured
   before the LENS_0E grid_global_offset bug was fixed and is superseded; with all three lenses
-  correctly placed, and with the multi-plane iris scrape, the default captures ~7%.)*
+  correctly placed, and with the multi-plane iris scrape, the default captures ~10%.)*
 - **Ordering gotcha:** picmi forces the global `E_ext_particle_init_style` to "none" if the
   last-added `LoadAppliedField` has `load_E=False`, so the B-only solenoids are added **before**
   the RF cavities; an unconditional `assert applied[-1].load_E` guards it (a pure-drift baseline
@@ -306,7 +306,7 @@ channel (FWHM ≈ [0.35, 1.87] m) confines the whole prebuncher section, Lens 0A
 sets the early envelope, and the Lens 0E telescope at z ≈ 1.9 m — just upstream of the 1.922 m
 iris — squeezes it through the 9.547 mm aperture. On the time-release gun beam with the
 relativistic EMS self-field (see *Self-field solver*) and the **zero-crossing (energy-flat)
-cavity phasing**, **~69% of the in-domain charge passes the iris** (0.685 / 0.995 nC, via the
+cavity phasing**, **~64% of the in-domain charge passes the iris** (0.599 / 0.933 nC, via the
 multi-plane scrape at the real 1.922 m iris plane — see *The 9.547 mm collimator*).
 
 > **Fixed (physics-review, 2026-06-19): SOL_0 native-placement.** The dominant focusing element,
@@ -316,11 +316,11 @@ multi-plane scrape at the real 1.922 m iris plane — see *The 9.547 mm collimat
 > 2.03 m handoff, leaving PB1/PB2 and the early line **unfocused**. `gpt_master.in` (the
 > authority) installs every solenoid with `Map2D_B("wcs", "z", 0.0, …)` — native absolute z, no
 > peak-alignment shift. Placing SOL_0 at its native z restores the channel over the prebuncher
-> section and raises iris transmission from **~19% → ~69%** (the thin lenses, whose argmax ≈ GUI,
+> section and raises iris transmission from **~19% → ~64%** (the thin lenses, whose argmax ≈ GUI,
 > were unaffected — ≤ 14 mm shift). See *Solenoid lenses → Placement*.
 
 > **⚠ Transverse match — largely resolved by the SOL_0 fix.** With SOL_0 correctly placed,
-> iris transmission is **~69%** on the energy-flat ~150 keV zc beam — *above* the old crest value
+> iris transmission is **~64%** on the energy-flat ~150 keV zc beam — *above* the old crest value
 > (~42%). The earlier ~19% figure was an artifact of the misplaced SOL_0, not (as previously
 > framed) the energy-flat beam mismatching the 6/40/10 A telescope. The longitudinal operating
 > point is also correct: zc/centroid phasing keeps the mean energy flat and lands the σ_z waist
@@ -347,7 +347,7 @@ Three caveats frame this number:
    is the right tool to map the achievable capture (an earlier ~7×-from-8 mm-LENS_0A figure was
    a pre-fix artifact of the LENS_0E mislocation — superseded).
 3. **Charge recovery is the real win:** the solenoids recover in-domain charge from ~0.04 nC
-   (no focusing) to ~0.995 nC — the radial-scrape fix works; the iris then sets the true
+   (no focusing) to ~0.933 nC — the radial-scrape fix works; the iris then sets the true
    transmission. The optional current/phase scans characterize the achievable capture.
 4. **Handoff-seam residual field (bounded approximation):** Lens 0E peaks just upstream of the
    2.03 m handoff and its field *tail* is still substantial AT the plane (≈ 15 % of peak,
