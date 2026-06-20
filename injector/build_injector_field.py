@@ -248,11 +248,13 @@ def build_solenoids():
             f"{name} STORED lab-z peak {lab_peak*1e3:.1f} mm is NOT upstream of the "
             f"{Z_HANDOFF*1e3:.0f} mm handoff plane — the linac would inherit a beam still "
             f"inside this lens")
-        # Peak≈GUI z is a loose sanity ONLY for narrow (peaked) lenses; the flat-top SOL_0's
-        # argmax is an arbitrary plateau point and its GUI z is a center/edge annotation, so
-        # the cross-check is skipped there. Tol = half the FWHM: the GUI annotation is only
-        # accurate to the field's own width (native vs GUI differ up to ~14 mm here), while
-        # an 800 mm-class placement bug is still well outside.
+        # Peak≈GUI z is a loose sanity ONLY for narrow (FWHM < 0.30 m, peaked) lenses; it is
+        # skipped for ANY broad map whose argmax is an arbitrary plateau point — the flat-top
+        # SOL_0 (FWHM ~1.5 m) AND the moderately-broad LENS_0B/0C/0D (FWHM ~0.24–0.33 m) —
+        # whose GUI z is a center/edge annotation, not the argmax. Tol = half the FWHM: the GUI
+        # annotation is only accurate to the field's own width (native vs GUI differ up to
+        # ~14 mm here), while an 800 mm-class placement bug is still well outside. The
+        # unconditional lab_peak ∈ [0, Z_HANDOFF) bounds above catch such bugs on every map.
         if fwhm < 0.30:
             tol = max(SOL_TOL, 0.5 * fwhm)
             assert abs(lab_peak - gui_z) < tol, (
