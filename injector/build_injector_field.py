@@ -29,10 +29,12 @@ SOL_NAMES = ("LENS_0A", "LENS_0B", "LENS_0C", "LENS_0D", "SOL_0", "LENS_0E")
 SOL_GDF = {n: f"fieldmaps/{n}.gdf" for n in SOL_NAMES}
 SOL_FILES = {n: os.path.join(OUT_DIR, n.lower().replace("_", "") + ".h5")
              for n in SOL_NAMES}
-# GUI lab-z of each lens (LinacSim gpt_master.in positions).
+# GUI lab-z annotation of each lens (gpt_master.in "@GUI element" lines). For the thin
+# lenses this is the field peak (cross-checked below); for the flat-top SOL_0 it is a
+# center/edge label, NOT the argmax — placement is native absolute z, not GUI-aligned.
 SOL_GUI_Z = {"LENS_0A": 0.225, "LENS_0B": 1.603, "LENS_0C": 1.692,
              "LENS_0D": 1.838, "SOL_0": 1.897, "LENS_0E": 1.914}
-SOL_TOL = 0.001              # [m] |lab_peak − GUI_z| tolerance
+SOL_TOL = 0.001              # [m] floor for the |lab_peak − GUI_z| narrow-lens cross-check
 
 Z_HANDOFF = 2.03             # [m] linac handoff plane; every focusing peak must be upstream
 ZMAX = 2.10                  # [m] injector domain end
@@ -72,10 +74,19 @@ def load_prebuncher_map(path):
     nr, nz = r.size, z.size
     assert nr * nz == R.size, "field map is not a complete rectangular grid"
 
-    # R fastest, Z slowest  ->  reshape to (nz, nr), then transpose to (nr, nz).
-    Er = Er.reshape(nz, nr).T.copy()
-    Ez = Ez.reshape(nz, nr).T.copy()
-    Bphi = H.reshape(nz, nr).T.copy()
+    # R fastest, Z slowest  ->  reshape to (nz, nr).  prebuncher_25D.gdf stores z
+    # DESCENDING (+152.4 → −152.4 mm), so the flat rows must be reversed to match
+    # the ascending `np.unique(Z)` axis BEFORE transposing — otherwise the map is
+    # z-flipped relative to its axis, which negates the odd Er and corrupts the
+    # off-axis transverse RF force (Ez/Bphi are even, so they would be unaffected).
+    Er = Er.reshape(nz, nr)
+    Ez = Ez.reshape(nz, nr)
+    Bphi = H.reshape(nz, nr)
+    if Z.reshape(nz, nr)[0, 0] > Z.reshape(nz, nr)[-1, 0]:
+        Er, Ez, Bphi = Er[::-1], Ez[::-1], Bphi[::-1]
+    Er = Er.T.copy()
+    Ez = Ez.T.copy()
+    Bphi = Bphi.T.copy()
     return r, z, Er, Ez, Bphi
 
 
@@ -189,13 +200,20 @@ def _write_b_series(out_file, z_offset, dr, dz, Br, Bz):
 def build_solenoids():
     """Build the per-Ampere B-only solenoid maps, each placed in the lab frame.
 
-    Offset is derived programmatically (not hard-coded). grid_global_offset is the
-    lab-z of grid INDEX 0, not the peak, so the native origin z[0] must be added back:
-    offset = GUI_z − z_peak_native + z[0]. z[0] is 0 for LENS_0A/SOL_0 but 0.8 m for
-    LENS_0E (pre-shifted grid); omitting +z[0] mis-placed LENS_0E by −800 mm.
+    Placement is NATIVE absolute machine-z, matching gpt_master.in, which installs every
+    solenoid with `Map2D_B("wcs", "z", 0.0, …)` — i.e. the GDF's stored Z column IS the
+    absolute machine z, with NO peak-alignment shift. grid_global_offset is the lab-z of
+    grid INDEX 0, so it is simply the native origin z[0] (0 for LENS_0A/SOL_0, 0.8 m for
+    the pre-shifted LENS_0B…0E grids).
 
-    The READ-BACK assertions below re-read the WRITTEN placement (not an input
-    recompute, which can't catch a bad offset). See README for full reasoning.
+    Do NOT align argmax→GUI z: that is wrong for the flat-top SOL_0, whose argmax (0.813 m)
+    is an arbitrary point on its [0.35, 1.87] m plateau — forcing it to GUI 1.897 m shifts
+    the whole channel +1.08 m and leaves PB1/PB2 unfocused. The thin lenses' native peaks
+    already match their GUI z (LENS_0A 0.233≈0.225, LENS_0E 1.915≈1.914), confirming native
+    z is absolute. See README → Solenoid lenses.
+
+    The READ-BACK assertions below re-read the WRITTEN placement (not an input recompute,
+    which can't catch a bad offset).
     """
     for name in SOL_NAMES:
         d = easygdf.load(SOL_GDF[name])
@@ -207,13 +225,12 @@ def build_solenoids():
         ipk = int(np.argmax(np.abs(Bz[0])))             # peak on the axis (r=0 row)
         z_peak_native = float(z[ipk])
         gui_z = SOL_GUI_Z[name]
-        # add back native origin z[0] (needed by LENS_0E; 0 for the rest)
-        offset = gui_z - z_peak_native + float(z[0])
+        # native absolute placement: grid index 0 sits at the GDF's own z[0]
+        offset = float(z[0])
 
         _write_b_series(SOL_FILES[name], offset, dr, dz, Br, Bz)
 
-        # READ-BACK guard: STORED peak from grid_global_offset + argmax·dz, NOT
-        # z_peak_native + offset (== gui_z by construction, can never fail).
+        # READ-BACK guard: STORED peak + FWHM from grid_global_offset + argmax·dz.
         chk = io.Series(SOL_FILES[name], io.Access.read_only)
         mB = chk.iterations[0].meshes["B"]
         off_z, ddz = float(mB.grid_global_offset[1]), float(mB.grid_spacing[1])
@@ -221,6 +238,8 @@ def build_solenoids():
         chk.flush()
         bz_axis = bz_stored[0][0]                        # (1,nr,nz) -> r=0 row
         lab_peak = off_z + int(np.argmax(np.abs(bz_axis))) * ddz
+        half = np.flatnonzero(np.abs(bz_axis) >= 0.5 * np.abs(bz_axis).max())
+        fwhm = float((half[-1] - half[0]) * ddz)
         del chk
 
         assert 0.0 <= lab_peak <= ZMAX, (
@@ -229,14 +248,22 @@ def build_solenoids():
             f"{name} STORED lab-z peak {lab_peak*1e3:.1f} mm is NOT upstream of the "
             f"{Z_HANDOFF*1e3:.0f} mm handoff plane — the linac would inherit a beam still "
             f"inside this lens")
-        assert abs(lab_peak - gui_z) < SOL_TOL, (
-            f"{name} STORED lab-z peak {lab_peak*1e3:.2f} mm differs from GUI z {gui_z*1e3:.1f} mm "
-            f"by more than {SOL_TOL*1e3:.1f} mm (grid_global_offset bug?)")
+        # Peak≈GUI z is a loose sanity ONLY for narrow (peaked) lenses; the flat-top SOL_0's
+        # argmax is an arbitrary plateau point and its GUI z is a center/edge annotation, so
+        # the cross-check is skipped there. Tol = half the FWHM: the GUI annotation is only
+        # accurate to the field's own width (native vs GUI differ up to ~14 mm here), while
+        # an 800 mm-class placement bug is still well outside.
+        if fwhm < 0.30:
+            tol = max(SOL_TOL, 0.5 * fwhm)
+            assert abs(lab_peak - gui_z) < tol, (
+                f"{name} STORED lab-z peak {lab_peak*1e3:.2f} mm differs from GUI z {gui_z*1e3:.1f} mm "
+                f"by more than {tol*1e3:.1f} mm (grid_global_offset bug?)")
 
-        # Report: per-Ampere peak |Bz| (mT/A), and the STORED physical lab-z peak.
-        print(f"Solenoid {name}: nr={r.size} nz={z.size}, native peak z={z_peak_native*1e3:.1f} mm, "
+        # Report: per-Ampere peak |Bz| (mT/A), native placement, FWHM (flags flat-top).
+        print(f"Solenoid {name}: nr={r.size} nz={z.size}, native z=[{z[0]*1e3:.0f},{z[-1]*1e3:.0f}] mm, "
               f"offset={offset*1e3:+.1f} mm -> STORED lab-z peak {lab_peak*1e3:.1f} mm "
-              f"(GUI {gui_z*1e3:.1f}), peak |Bz| {abs(Bz[0][ipk])*1e3:.4f} mT/A -> {SOL_FILES[name]}")
+              f"(GUI {gui_z*1e3:.1f}, FWHM {fwhm*1e3:.0f} mm), "
+              f"peak |Bz| {abs(Bz[0][ipk])*1e3:.4f} mT/A -> {SOL_FILES[name]}")
 
 
 def main():
@@ -268,6 +295,24 @@ def main():
     assert p_ez > 0.99, f"Ez not EVEN about the gap (corr {p_ez:+.4f}); the reversed-install reasoning assumes Ez EVEN"
     assert p_er < -0.99, f"Er not ODD about the gap (corr {p_er:+.4f}); the reversed-install reasoning assumes Er ODD"
     assert p_bphi > 0.99, f"Bφ not EVEN about the gap (corr {p_bphi:+.4f}); the reversed-install reasoning assumes Bφ EVEN (TM0)"
+
+    # Raw-GDF orientation check: parity (above) is invariant under a z-flip, so it
+    # CANNOT catch a row-order/axis mismatch that negates the odd Er. Compare the
+    # stored map against the raw GDF column at a fixed off-axis +z point: the sign
+    # and magnitude must agree, guarding the descending-z row reversal in
+    # load_prebuncher_map.
+    _raw = easygdf.load(GDF_PATH)
+    _rawcol = {b["name"]: np.asarray(b["value"]) for b in _raw["blocks"]}
+    _Rr, _Zr, _Err = _rawcol["R"], _rawcol["Z"], _rawcol["Er"]
+    _iz = int(np.argmax(z))                          # +z end of the ascending axis
+    _ir = nr // 2                                    # an off-axis row (Er ≠ 0)
+    _m = (np.isclose(_Rr, r[_ir]) & np.isclose(_Zr, z[_iz]))
+    assert _m.sum() == 1, "could not locate the (r,+z) sample in the raw GDF"
+    _er_raw = float(_Err[_m][0])
+    assert np.sign(Er[_ir, _iz]) == np.sign(_er_raw) and \
+        abs(Er[_ir, _iz] - _er_raw) < 1e-3 * max(abs(_er_raw), 1.0), (
+        f"stored Er at (r={r[_ir]*1e3:.1f}mm, z=+{z[_iz]*1e3:.1f}mm)={Er[_ir, _iz]:.3f} "
+        f"disagrees with raw GDF {_er_raw:.3f} — z row order / axis mismatch (Er sign flip)")
 
     print(f"Prebuncher map: nr={nr} (0–{r[-1]*1e3:.2f} mm), "
           f"nz={nz} ({z[0]*1e3:.1f}–{z[-1]*1e3:.1f} mm)")

@@ -122,7 +122,7 @@ Lens 0E) at their true lab z focus the beam upstream and hand it across the 9.54
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
 | grid | `NR`=16 (r) × `NZ`=1664 (z), r ∈ [0, 9.547 mm], z ∈ [0, 3.5 m] |
-| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200; `SPACE_CHARGE` (default `True`) — `False` passes `warpx_do_not_deposit` (only the RF maps act), a diagnostic-only mode; the self-field is largest at the ~220 keV injection (overstated ~γ² by the lab-frame ES solver), not negligible, so keep it on |
+| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200; `SPACE_CHARGE` (default `True`) — `False` passes `warpx_do_not_deposit` (only the RF maps act), a diagnostic-only mode; the self-field is largest at the ~150 keV injection (overstated ~γ² by the lab-frame ES solver), not negligible, so keep it on |
 | applied fields | `linac_rf1/rf2.h5` × `scale` × cos/sin(ωt+φ) (E+B) — two quadrature RF maps only (no solenoid) |
 | beam | injector snapshot nearest the **z ≈ 2.03 m handoff**, downsampled to `MAX_PART`=50k (reweighted), z head at `Z_INJECT` = 5 mm |
 | time step | `dt = CFL · Δz / v_inject` (`CFL`=0.5; ≈ 5 ps; RF period 0.35 ns) |
@@ -193,7 +193,7 @@ writing five figures to `results/`:
 
 - `linac_field.png` — the on-axis traveling-wave `|Ez|` amplitude (× scale) and a fixed-t field
   snapshot showing the 2π/3 cell structure.
-- `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~220 keV → ~25 MeV mean / ~32 MeV max for the
+- `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~150 keV → ~25 MeV mean / ~32 MeV max for the
   captured slice) with β → 1; the structure shaded.
 - `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
 - `beam_envelope.png` — σ_x and surviving charge vs z with the bore line. σ_x is the **local**
@@ -235,7 +235,7 @@ writing five figures to `results/`:
   accounted for via the injected-charge denominator — see *Capture bookkeeping*.
 - The lab-frame electrostatic self-field omits the `1/γ²` magnetic-pinch cancellation (it applies
   the rest-frame Coulomb force `qE_r`, not `qE_r/γ²`), so it overestimates the transverse
-  space-charge force by ~γ² — largest at the low-energy injection (~220 keV handoff; cf. the gun's
+  space-charge force by ~γ² — largest at the low-energy injection (~150 keV handoff; cf. the gun's
   β≈0.63 → ~66 % overestimate in `gun/README.md`) and
   shrinking toward negligible once captured (γ ≫ 1). Space charge is a small perturbation here, so
   this is acceptable for the demonstration.

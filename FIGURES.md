@@ -84,7 +84,7 @@ the z–(γβ_z) emittance in mm — NOT mm·mrad.)
 ## 1. Cathode — `cathode/results/`
 
 Finite-extent, space-charge-limited (Child–Langmuir) diode in **2D x–z**: cathode plane at
-`z = 0` (0 V), anode at `z = d = 0.2 mm` (+60 V), electrons emitted only from the finite patch
+`z = 0` (0 V), anode at `z = d = 0.2 mm` (+30 V), electrons emitted only from the finite patch
 `|x| < 8 mm`. The run deliberately **over-injects at 2× J_CL** and lets the self-consistent
 fields do the limiting — the answer is not imposed. Produced by `plot_cathode.py`.
 
@@ -114,7 +114,7 @@ vacuum field outside — the finite-cathode signature absent from planar theory.
 Transmitted current density at the anode vs. time (integrated across the beam, referenced to the
 cathode width `2R`). Despite injecting **2× J_CL** (red dotted reference, above this zoomed view),
 the transmitted current ramps up during gap-fill and then settles near `J_CL` (dashed,
-≈ 2.71 × 10⁴ A/m²; slightly above it, ≈ 108% in this run — the wide cathode / narrow gap is deep
+≈ 9.59 × 10³ A/m² (≈ 9.6 kA/m²); slightly above it, ≈ 108% in this run — the wide cathode / narrow gap is deep
 in the 1D limit and the finite cathode temperature pushes emission just past the cold-emission
 value). The cathode does **not** pass the 2× current it is fed; space charge regulates it.
 Linear y-axis anchored at the
@@ -295,10 +295,10 @@ voltage). **Bottom:** a fixed-time snapshot `Ez(z, t₀)` zoomed to the structur
 the ~3.5 cm 2π/3 cell structure (the field reverses cell-to-cell; the forward traveling wave is the
 sum of the two 90°-offset quadrature maps).
 
-### `energy_gain.png` — ~220 keV → ~25 MeV (captured slice)
+### `energy_gain.png` — ~150 keV → ~25 MeV (captured slice)
 ![Linac: mean/max KE and β vs ⟨z⟩](linac_sec1/results/energy_gain.png)
 
-Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from the ~220 keV handoff; the
+Mean and max kinetic energy vs ⟨z⟩ climb across the shaded structure from the ~150 keV handoff; the
 captured slice reaches max ~32 MeV with charge-weighted ⟨KE⟩ ≈ 25 MeV (σ_KE ≈ 8 MeV), then goes
 flat in the field-free exit drift (the beam coasts). The β = v/c trace (right axis) shows the
 **capture**: the captured particles become relativistic (β → 1), while the bulk that is not

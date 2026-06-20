@@ -66,6 +66,16 @@ charge is stronger and the threshold higher, so 8 kW is even further below thres
   phase; there is **no mirrored/negated map**.
 - `lens0a.h5` / `sol0.h5` / `lens0e.h5` — the three static, per-Ampere B-only solenoid maps.
 
+> **Gotcha (descending-z GDF → Er sign).** `prebuncher_25D.gdf` stores its z column
+> **descending** (+152.4 → −152.4 mm), unlike the solenoid maps (ascending). The flat GDF
+> rows must be reversed to match the ascending `np.unique(Z)` axis *before* the `(nz,nr).T`
+> transpose (`load_prebuncher_map`). Skipping the reversal z-flips the map relative to its
+> own axis, which negates the **odd** `Er` (Ez/Bφ are even and unaffected) — a silent bug:
+> on-axis longitudinal bunching and the σ_z/energy headline are unchanged, but every off-axis
+> transverse RF force is wrong-signed in both prebunchers. The gap-parity asserts do **not**
+> catch it (parity is invariant under the flip), so `main()` adds a raw-GDF orientation check
+> comparing the stored `Er` against the raw GDF column at a fixed off-axis +z point.
+
 ### RF drive and the two-cavity phasing (zero-crossing, centroid-referenced)
 
 Each cavity drives its 1-J map as a standing-wave TM mode (GPT's `Map25D_TM`):
@@ -83,6 +93,16 @@ mean energy (gun-exit 149 keV → 152 keV at the handoff, ≈ flat; the transien
 on the `mean KE` line near each gap are the long bunch *straddling* the cavity and cancel out
 as it clears). `base = π` (`"crest"`) is the legacy *net-accelerating* reference (149 → 157 keV
 ramp) kept for comparison.
+
+> **Phase-reference caveat (which is "the" LinacSim operating point).** The GPT master deck is
+> internally inconsistent about the prebuncher phase, so "faithful" here means matching the
+> deck **body**, not the GUI annotation: the executed deck body (`gpt_master.in:213-219`) runs
+> `phi_off = −90°` — the zero-crossing, i.e. exactly this `zc` default — while the `@GUI`
+> annotation block (`:22-29`) *saves* −70°/−45° from crest (net-accelerating, `cos = 0.34/0.71`).
+> `input_files.md` warns the committed GUI values are defaults, "not Adam's tuned working point."
+> So neither phase is unambiguous machine truth; this repo follows the deck body (zc), Cornell2
+> follows the GUI (−70/−45). Confirm the intended working point with the LinacSim author before
+> treating either as canonical.
 
 > **Why centroid-referenced.** The physical beam is the ~2 ns / ~380 mm time-release stream,
 > which spans **~154° of RF** (the centroid sits **77° behind the tail**). Phasing the *tail*
@@ -156,24 +176,30 @@ remain omitted. Each lens is a separate per-Ampere B-only openPMD map (the grids
 LENS_0A is nr=189/nz=16, the others nr=16/nz~601 — so they cannot be combined), placed in the
 lab frame via `grid_global_offset`. The 1-A maps scale linearly with current.
 
-| Map | Current | GUI / lab-z peak | native peak z | programmatic offset | peak \|Bz\| |
-|-----|---------|------------------|---------------|---------------------|-------------|
-| LENS_0A | 6 A | 0.225 m | 0.2333 m | −0.0083 m | 4.03 mT/A |
-| LENS_0B | 0 A (default) | 1.603 m | 1.6107 m | +0.7923 m | 0.40 mT/A |
-| LENS_0C | 0 A (default) | 1.692 m | 1.7013 m | +0.7907 m | 0.32 mT/A |
-| LENS_0D | 0 A (default) | 1.838 m | 1.8240 m | +0.8140 m | 0.34 mT/A |
-| SOL_0   | 40 A | 1.897 m | 0.8129 m | +1.0841 m | 0.15 mT/A |
-| LENS_0E | 10 A | 1.914 m | 1.9147 m | −0.0007 m | 2.21 mT/A |
+| Map | Current | GUI annotation | native peak z | lab-z offset (= z[0]) | lab-z span | peak \|Bz\| |
+|-----|---------|----------------|---------------|-----------------------|------------|-------------|
+| LENS_0A | 6 A | 0.225 m | 0.2333 m | 0.0 m | [0.00, 0.50] | 4.03 mT/A |
+| LENS_0B | 0 A (default) | 1.603 m | 1.6108 m | +0.8 m | [0.80, 2.40] | 0.40 mT/A |
+| LENS_0C | 0 A (default) | 1.692 m | 1.7014 m | +0.8 m | [0.80, 2.40] | 0.32 mT/A |
+| LENS_0D | 0 A (default) | 1.838 m | 1.8241 m | +0.8 m | [0.80, 2.40] | 0.34 mT/A |
+| SOL_0   | 40 A | 1.897 m | 0.8129 m | 0.0 m | [0.00, 2.50] | 0.15 mT/A |
+| LENS_0E | 10 A | 1.914 m | 1.9148 m | +0.8 m | [0.80, 2.40] | 2.21 mT/A |
 
-> **Note (the 0.225→1.6 m gap):** LENS_0B/0C/0D cluster near Sol 0 / 0E around 1.9 m — they
-> are **not** in the long unfocused 0.225→1.6 m drift where the time-release beam radially
-> expands. Energizing them tightens the late matching telescope (and can help squeeze the
-> iris); it does **not** add focusing to that early gap, which is unfocused in LinacSim too.
+> **Note (SOL_0 is a long channel solenoid).** SOL_0's strong-field region (FWHM ≈ [0.35,
+> 1.87] m) spans the **entire** prebuncher section, focusing PB1 (0.534 m) and PB2 (1.318 m).
+> LENS_0B/0C/0D cluster near Lens 0E around 1.9 m. So the early line is **not** unfocused — the
+> SOL_0 channel covers it; the Lens 0E telescope adds the final squeeze into the iris.
 
-- **Offsets are derived programmatically** per map: `offset = GUI_z − Z[argmax|Bz|]`, landing
-  each peak dead-on at its GUI lab-z. This self-corrects against stale plan literals (the plan
-  table's SOL_0 +1.0761 / native 0.8209 is stale — the actual file gives +1.0841 / 0.8129).
-  Do NOT hard-code the offsets.
+- **Placement is NATIVE absolute machine-z**, matching `gpt_master.in`, which installs every
+  solenoid with `Map2D_B("wcs", "z", 0.0, …)` — the GDF's stored Z column *is* absolute machine
+  z, so `grid_global_offset` is simply the native origin `z[0]` (0 for LENS_0A/SOL_0, 0.8 m for
+  the pre-shifted LENS_0B…0E grids). The thin lenses' native peaks already match their GUI
+  annotation (LENS_0A 0.233≈0.225, LENS_0E 1.915≈1.914), confirming native z is absolute.
+  **Do NOT align argmax→GUI z:** that is correct only for the narrow lenses (argmax ≈ GUI) but
+  **wrong for the flat-top SOL_0** — its argmax (0.813 m) is an arbitrary point on the [0.35,
+  1.87] m plateau, and GUI "1.897" is a center/edge label, not the peak. Forcing argmax→1.897
+  shifts the whole channel **+1.08 m** (to [1.08, 3.58], mostly past the 2.03 m handoff) and
+  leaves PB1/PB2 unfocused — the placement bug fixed here (see *Capture / handoff result*).
 - **LENS_0A 8 mm placement (note):** native peak 0.2333 m vs GUI 0.225 m differ by 8 mm —
   below the map's own ~31 mm axial cell, so neither is "more accurate." We ship the
   GUI-position (programmatic) placement for consistency across all three. Capture is
@@ -186,9 +212,10 @@ lab frame via `grid_global_offset`. The 1-A maps scale linearly with current.
   last-added `LoadAppliedField` has `load_E=False`, so the B-only solenoids are added **before**
   the RF cavities; an unconditional `assert applied[-1].load_E` guards it (a pure-drift baseline
   with no RF field legitimately skips the guard).
-- The build asserts each solenoid's in-domain lab-z peak is in [0, 2.10 m], **upstream of the
-  2.03 m handoff** (so the linac never inherits a beam still inside a lens), and within tol of
-  the GUI z.
+- The build asserts each solenoid's in-domain lab-z peak is in [0, 2.10 m] and **upstream of the
+  2.03 m handoff** (so the linac never inherits a beam still inside a lens). A loose
+  peak-within-half-FWHM-of-GUI-z cross-check runs **only for the narrow lenses** (the flat-top
+  SOL_0 is exempt — its argmax is not its GUI annotation) to catch an 800 mm-class placement bug.
 
 ## The 9.547 mm collimator
 
@@ -267,40 +294,42 @@ verbosity≥2 spot-check confirms it converges in **3–4 V-cycles** (resid/bnor
 
 ## Capture / handoff result (the headline, with caveats)
 
-At the faithful currents (6/40/10 A) the three lenses focus the beam through the injector:
-Lens 0A (z ≈ 0.225 m) sets the early envelope, and the Sol 0 / Lens 0E matching telescope at
-z ≈ 1.9 m — just upstream of the 1.922 m iris — squeezes it through the 9.547 mm aperture.
-On the time-release gun beam with the relativistic EMS self-field (see *Self-field solver*) and
-the **zero-crossing (energy-flat) cavity phasing**, **~19% of the handoff charge passes the iris**
-(0.114 / 0.585 nC, via the multi-plane scrape at the real 1.922 m iris plane — see *The 9.547 mm
-collimator*).
+At the faithful currents (6/40/10 A) the lenses focus the beam through the injector: the SOL_0
+channel (FWHM ≈ [0.35, 1.87] m) confines the whole prebuncher section, Lens 0A (z ≈ 0.225 m)
+sets the early envelope, and the Lens 0E telescope at z ≈ 1.9 m — just upstream of the 1.922 m
+iris — squeezes it through the 9.547 mm aperture. On the time-release gun beam with the
+relativistic EMS self-field (see *Self-field solver*) and the **zero-crossing (energy-flat)
+cavity phasing**, **~69% of the in-domain charge passes the iris** (0.685 / 0.995 nC, via the
+multi-plane scrape at the real 1.922 m iris plane — see *The 9.547 mm collimator*).
 
-> **⚠ Transverse match under re-validation (decoupled from the longitudinal fix).** The
-> **longitudinal** operating point is now correct: zc/centroid phasing keeps the mean energy flat
-> and lands the σ_z waist at the 2.03 m handoff (see *RF drive*). But the lens currents (6/40/10 A)
-> were matched to the *old crest* beam, which net-accelerated to ~220 keV by the iris; the
-> energy-flat zc beam stays at ~150 keV (lower rigidity), so the Sol 0 / Lens 0E telescope is no
-> longer matched and iris transmission fell from the old crest value (~42%) to **~19%**. (That
-> ~42%→~19% is not a strict apples-to-apples control: the old 42% was measured on the old crest
-> beam *and* its old waist location, so it mixes the energy and waist-location changes; the clean
-> A/B — energy-flat with vs without re-matched currents — has not been run.) Re-matching
-> the solenoid currents to the ~150 keV energy-flat beam is the open **transverse** follow-up (the
-> LinacSim reconciliation backlog) — it does not affect the longitudinal headline above. The beam
-> also still radially expands over the unfocused 0.225→1.6 m drift (~37% in-domain loss there,
-> unchanged — that gap is unfocused in LinacSim too). Note `linac_sec1`'s `n ≥ 0.8·nmax` dump
-> selector may still fall back off-plane on a low-population near-handoff dump; the downstream
-> RF-bucket capture is not re-measured at the new operating point.
+> **Fixed (physics-review, 2026-06-19): SOL_0 native-placement.** The dominant focusing element,
+> the long channel solenoid SOL_0, was previously mis-placed by **+1.08 m**: the build forced its
+> on-axis `argmax(Bz)` (0.813 m, an arbitrary point on its flat [0.35, 1.87] m plateau) to land
+> at the GUI annotation 1.897 m, shifting the channel to [1.08, 3.58] m — mostly **past** the
+> 2.03 m handoff, leaving PB1/PB2 and the early line **unfocused**. `gpt_master.in` (the
+> authority) installs every solenoid with `Map2D_B("wcs", "z", 0.0, …)` — native absolute z, no
+> peak-alignment shift. Placing SOL_0 at its native z restores the channel over the prebuncher
+> section and raises iris transmission from **~19% → ~69%** (the thin lenses, whose argmax ≈ GUI,
+> were unaffected — ≤ 14 mm shift). See *Solenoid lenses → Placement*.
 
-> **Fixed (physics-review):** two corrections fed these numbers. (1) An earlier version placed
-> LENS_0E ~800 mm out of position (a `grid_global_offset` bug that omitted the native grid origin
-> `z[0]`, putting its peak at 1.114 m instead of 1.914 m — so no lens focused at the iris); the
-> fix (corrected offset + a read-back assertion on the *stored* peak) restored the matching lens
-> to the iris. (2) The iris scrape was applied as a single radial cut at the 2.03 m handoff, but
-> the beam **converges** across the 1.922→2.03 m tail, so that cut kept converged halo the real
-> 1.922 m iris scrapes and reported **~91 % / ~18 %** — overstated ~3×. Replacing it with the
-> multi-plane scrape at the true iris plane gives the **~32 % / ~7 %** above. (The buggy
-> LENS_0E build reported only ~8 % iris / ~1 % capture, so the corrected build still captures
-> several× more than that.)
+> **⚠ Transverse match — largely resolved by the SOL_0 fix.** With SOL_0 correctly placed,
+> iris transmission is **~69%** on the energy-flat ~150 keV zc beam — *above* the old crest value
+> (~42%). The earlier ~19% figure was an artifact of the misplaced SOL_0, not (as previously
+> framed) the energy-flat beam mismatching the 6/40/10 A telescope. The longitudinal operating
+> point is also correct: zc/centroid phasing keeps the mean energy flat and lands the σ_z waist
+> at the 2.03 m handoff (see *RF drive*). A clean re-optimization of the lens currents to the
+> ~150 keV beam remains an optional **transverse** follow-up (the LinacSim reconciliation
+> backlog), but is no longer load-bearing for a sane transmission. Note `linac_sec1`'s
+> `n ≥ 0.8·nmax` dump selector may still fall back off-plane on a low-population near-handoff
+> dump; the downstream RF-bucket capture should be re-measured at this operating point.
+
+> **Earlier fixes (physics-review):** (1) LENS_0E was once placed ~800 mm out of position (a
+> `grid_global_offset` bug that omitted the native grid origin `z[0]`); the fix (carry `z[0]` +
+> a read-back assertion on the *stored* peak) restored the matching lens — the SOL_0 fix above
+> generalizes that to all solenoids (native z, no argmax→GUI shift). (2) The iris scrape was once
+> a single radial cut at the 2.03 m handoff, but the beam **converges** across the 1.922→2.03 m
+> tail, so that cut kept converged halo the real 1.922 m iris scrapes and overstated transmission
+> ~3×. The multi-plane scrape at the true iris plane is the fix (see *The 9.547 mm collimator*).
 
 Three caveats frame this number:
 1. **Self-field solver (resolved):** the injector now uses the relativistic electromagnetostatic
@@ -311,11 +340,12 @@ Three caveats frame this number:
    is the right tool to map the achievable capture (an earlier ~7×-from-8 mm-LENS_0A figure was
    a pre-fix artifact of the LENS_0E mislocation — superseded).
 3. **Charge recovery is the real win:** the solenoids recover in-domain charge from ~0.04 nC
-   (no focusing) to ~0.77 nC — the radial-scrape fix works; the iris then sets the true
+   (no focusing) to ~0.995 nC — the radial-scrape fix works; the iris then sets the true
    transmission. The optional current/phase scans characterize the achievable capture.
-4. **Handoff-seam residual field (bounded approximation):** Sol 0 and Lens 0E peak just upstream
-   of the 2.03 m handoff but their field *tails* are still substantial AT the plane (Sol 0 ≈ 97 %
-   of peak, Lens 0E ≈ 15 % — together ~9 mT on-axis at 40/10 A). The linac stage models no
+4. **Handoff-seam residual field (bounded approximation):** Lens 0E peaks just upstream of the
+   2.03 m handoff and its field *tail* is still substantial AT the plane (≈ 15 % of peak,
+   ~3.4 mT on-axis at 10 A); the native-placed Sol 0 peaks far upstream (0.813 m) so its tail at
+   the plane is small (≈ 8 % of peak, ~0.5 mT at 40 A). The linac stage models no
    solenoid, so this continuing transverse focus is dropped at the seam — an unphysical
    discontinuity. The build only asserts each lens *peak* is upstream of the handoff (not that the
    field has decayed there), so the beam is handed off while still being focused. The dropped focus
