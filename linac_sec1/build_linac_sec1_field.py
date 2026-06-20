@@ -10,8 +10,9 @@ See linac_sec1/README.md for physics, parameters, field-map provenance, and gotc
 
 import os
 import numpy as np
-import easygdf
-import openpmd_api as io
+
+from pipeline.fieldio import (B_UNIT, E_UNIT, load_cols, pad_r, to_grid,
+                              write_thetamode_series)
 
 # ── Inputs / outputs ─────────────────────────────────────────────────────────
 RF1_GDF = "fieldmaps/SLAC-3mLinac-field1.gdf"
@@ -34,68 +35,6 @@ Z_STRUCT = 0.10              # [m] lab-frame z of grid index 0 = structure entra
 RMAX = 0.009547              # [m] sim radial domain = SLAC bore / collimator iris
 BORE_R = 0.00955             # [m] structure bore (native map r-extent); r>this feels zero RF
 
-# openPMD unit dimensions:
-E_UNIT = {io.Unit_Dimension.M: 1.0, io.Unit_Dimension.L: 1.0,
-          io.Unit_Dimension.T: -3.0, io.Unit_Dimension.I: -1.0}      # [V/m]
-B_UNIT = {io.Unit_Dimension.M: 1.0,
-          io.Unit_Dimension.T: -2.0, io.Unit_Dimension.I: -1.0}      # [T]
-
-
-def load_cols(path, names):
-    """Return the named flat columns from a GPT GDF field map."""
-    d = easygdf.load(path)
-    col = {b["name"]: np.asarray(b["value"]) for b in d["blocks"]}
-    return [col[n] for n in names]
-
-
-def to_grid(R, Z, *arrs):
-    """Reshape GDF flat columns (R fastest, Z slowest) to (nr, nz) grid arrays."""
-    r = np.unique(R)
-    z = np.unique(Z)
-    nr, nz = r.size, z.size
-    assert nr * nz == R.size, "field map is not a complete rectangular grid"
-    out = [a.reshape(nz, nr).T.copy() for a in arrs]
-    return (r, z, *out)
-
-
-def pad_r(r, rmax, *arrs):
-    """Extend the (uniform-dr) r-grid with zero rows until it reaches ``rmax``,
-    so r > bore feels an exact zero RF field rather than a WarpX extrapolation."""
-    dr = r[1] - r[0]
-    if r[-1] >= rmax:
-        return (r, *arrs)
-    n_add = int(np.ceil((rmax - r[-1]) / dr))
-    r_new = np.concatenate([r, r[-1] + dr * np.arange(1, n_add + 1)])
-    out = [np.vstack([a, np.zeros((n_add, a.shape[1]))]) for a in arrs]
-    return (r_new, *out)
-
-
-def write_series(out_file, z_offset, dr, dz, meshes):
-    """Write one openPMD field file. ``meshes`` = [(name, [(comp, arr)], unit_dim)]."""
-    os.makedirs(OUT_DIR, exist_ok=True)
-    series = io.Series(out_file, io.Access.create)
-    it = series.iterations[0]
-    for name, comps, unit_dim in meshes:
-        m = it.meshes[name]
-        m.geometry = io.Geometry.thetaMode
-        m.geometry_parameters = "m=0;imag=+"
-        m.axis_labels = ["r", "z"]
-        m.grid_spacing = [dr, dz]
-        m.grid_global_offset = [0.0, z_offset]
-        m.grid_unit_SI = 1.0
-        m.unit_dimension = unit_dim
-        # thetaMode with a single (m = 0) mode -> leading axis of length 1.
-        for cname, arr in comps:
-            data = np.ascontiguousarray(arr[np.newaxis, :, :], dtype=np.float64)
-            comp = m[cname]
-            comp.position = [0.0, 0.0]
-            comp.unit_SI = 1.0
-            comp.reset_dataset(io.Dataset(data.dtype, data.shape))
-            comp.store_chunk(data)
-    series.flush()
-    del series
-
-
 def _build_rf(gdf, ez_name, er_name, h_name, out_file):
     """Build one quadrature RF file; return (r, z, Ez_on_axis) for reporting."""
     R, Z, Er, Ez, Hphi = load_cols(gdf, ["R", "Z", er_name, ez_name, h_name])
@@ -104,7 +43,7 @@ def _build_rf(gdf, ez_name, er_name, h_name, out_file):
     dr, dz = float(r[1] - r[0]), float(z[1] - z[0])
     zero = np.zeros_like(Er)
     # E uses cos(ωt+φ); Bφ (the H column) uses sin(ωt+φ) — supplied at runtime.
-    write_series(out_file, Z_STRUCT, dr, dz, [
+    write_thetamode_series(out_file, 0.0, Z_STRUCT, dr, dz, [
         ("E", (("r", Er), ("t", zero), ("z", Ez)), E_UNIT),
         ("B", (("r", zero), ("t", Hphi), ("z", zero)), B_UNIT),
     ])

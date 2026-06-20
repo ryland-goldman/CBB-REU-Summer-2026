@@ -16,13 +16,14 @@ from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
 from pipeline.collimator import pipe_violator_ids, survivor_mask
+from pipeline.constants import MC2_EV
 from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R, V1KW_KEV
 from . import DEFAULT_OUTDIR
 
 c = picmi.constants.c
 m_e = picmi.constants.m_e
 q_e = picmi.constants.q_e
-MC2_KEV = m_e * c**2 / q_e / 1e3        # electron rest energy [keV] ≈ 511
+MC2_KEV = MC2_EV / 1e3                  # electron rest energy [keV] ≈ 511
 
 # ── Field maps (built by build_linac_sec1_field.py): two SLAC quadrature RF maps ──
 RF1_FIELD = "linac_sec1/linac_sec1_field/linac_rf1.h5"

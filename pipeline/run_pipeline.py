@@ -31,9 +31,10 @@ import linac_sec1
 import linac_rest
 
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
+from pipeline.constants import MC2_EV
 
 # ── Operating-point overrides (physics; defaults live in the stage modules) ──
-cathode.config(V_anode=60.0)
+cathode.config(V_anode=30.0)
 gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)
 # Crest-referenced phase convention (base=π, kick ∝ −cos(base+φ_off)): null = φ_off −90°, crest = φ_off 0°.
 injector.config(PREB1_KW=8, PREB2_KW=10, PREB1_PHI_OFF=-90, PREB2_PHI_OFF=0, PHASE="crest")
@@ -103,7 +104,7 @@ def _beam_summary(diag, label, unit="keV"):
             _cl(f"\n(final-beam summary [{label}]: no snapshot with >50 macroparticles — "
                 "the beam may have cleared the domain)")
             return
-        fac = 0.51099895e3 if unit == "keV" else 0.51099895
+        fac = MC2_EV / 1e3 if unit == "keV" else MC2_EV / 1e6
         ke = (np.sqrt(1 + ux**2 + uy**2 + uz**2) - 1) * fac
         zm = np.average(z, weights=w)
         sz = np.sqrt(np.average((z - zm) ** 2, weights=w))

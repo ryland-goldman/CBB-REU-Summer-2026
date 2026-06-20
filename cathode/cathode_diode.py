@@ -13,17 +13,12 @@ import os
 import shutil
 
 import numpy as np
-from pywarpx import picmi
 
 from pipeline._runner import run_step
+from pipeline.constants import E_CHARGE as q_e, M_E as m_e   # = +1.602e-19 C, electron mass
+from pipeline.emission import child_langmuir_current_density, thermal_velocity_sigma
 
-c    = picmi.constants.c
-m_e  = picmi.constants.m_e
-q_e  = picmi.constants.q_e          # = +1.602e-19 C (elementary charge)
-ep0  = picmi.constants.ep0
-kb   = 1.380649e-23                  # Boltzmann constant [J/K]
-
-V_anode   = 60.0         # anode (grid) bias [V] — cathode at 0 V
+V_anode   = 30.0         # peak anode (grid) bias [V] — cathode at 0 V (= Voff+Vpulse, see README)
 gap_d     = 200.0e-6     # cathode→anode gap [m]
 R_cathode = 8.0e-3       # cathode half-width [m]
 T_cathode = 1425.0       # cathode temperature [K]
@@ -48,11 +43,13 @@ DIAG_PERIOD = None                   # None → dense-early union slice (keeps f
 
 
 def main():
-    # Child–Langmuir current density (electrons, planar gap)
-    J_CL = (4.0 / 9.0) * ep0 * np.sqrt(2.0 * q_e / m_e) * V_anode**1.5 / gap_d**2
+    from pywarpx import picmi          # lazy: keeps the module pywarpx-free to import (plot reuse)
+
+    # Child–Langmuir current density (electrons, planar gap); shared with plot_cathode
+    J_CL = float(child_langmuir_current_density(V_anode, gap_d))
     flux = over_inject * J_CL / q_e      # particle flux [# / m^2 / s]
 
-    v_th = np.sqrt(kb * T_cathode / m_e)            # thermal velocity spread
+    v_th = thermal_velocity_sigma(T_cathode)        # thermal velocity spread
     v_final = np.sqrt(2.0 * q_e * V_anode / m_e)    # cold final velocity through full bias
 
     print(f"Diode : V = {V_anode:.0f} V, gap d = {gap_d*1e3:.1f} mm, "

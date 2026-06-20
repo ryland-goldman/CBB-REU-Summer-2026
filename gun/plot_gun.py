@@ -17,10 +17,11 @@ import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline.beam_metrics import screen_profile
+from pipeline.constants import MC2_EV
+from gun.build_gun_field import GUN_VOLTAGE   # single-source the display voltage
 
-MC2 = 0.51099895e3           # electron rest energy [keV]
+MC2 = MC2_EV / 1e3           # electron rest energy [keV]
 GUN_FIELD = "gun/gun_field/gun_E.h5"
-GUN_VOLTAGE = 150.0e3        # [V]; config()-overridable, mirrors gun_sim.py
 RESULTS = "gun/results"
 
 

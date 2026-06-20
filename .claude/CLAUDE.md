@@ -22,14 +22,16 @@ stage.) Its self-field is the **electromagnetostatic** solver (`warpx_magnetosta
 the gun — outer radial wall `dirichlet` for A_z well-posedness), so the ~γ² lab-frame
 transverse-SC over-repulsion (the WarpX–GPT gun benchmark's cause 4, which grows for a longer
 line) is removed — the injector is the longest, lowest-γ line where it matters most. All six
-LinacSim solenoids are built (`SOL_NAMES`); Lens 0B/0C/0D default to 0 A (faithful, inert) and
-are `config()`-overridable (`I_LENS0B…`). The cavity phasing is **zero-crossing, centroid-referenced**
-(`PHASE="zc"`, `phi_off=0`, Preb-2 `PREB2_REV_PHASE=π`): both cavities sit at the RF zero-crossing of
-the bunch centroid, so they velocity-bunch at **zero net mean-energy change** (149→152 keV) and the
-σ_z waist lands **at** the 2.03 m handoff. **Open (transverse):** the solenoid currents (6/40/10 A)
-were matched to the old crest beam that net-accelerated to ~220 keV; on the energy-flat ~150 keV zc
-beam the Sol 0 / Lens 0E telescope is no longer matched, so iris transmission fell ~42%→~19% —
-re-matching the lens currents to the new energy is the open follow-up (LinacSim reconciliation backlog).
+LinacSim solenoids are built (`SOL_NAMES`) and placed at **native absolute machine-z** (matching
+`gpt_master.in`'s `Map2D_B("wcs","z",0.0,…)` — the GDF Z column is absolute z, NOT argmax-aligned to
+the GUI annotation, which mis-places the flat-top SOL_0 by +1.08 m); Lens 0B/0C/0D default to 0 A
+(faithful, inert) and are `config()`-overridable (`I_LENS0B…`). The cavity phasing is
+**zero-crossing, centroid-referenced** (`PHASE="zc"`, `phi_off=0`, Preb-2 `PREB2_REV_PHASE=π`): both
+cavities sit at the RF zero-crossing of the bunch centroid, so they velocity-bunch at **zero net
+mean-energy change** (149→152 keV) and the σ_z waist lands **at** the 2.03 m handoff. With SOL_0
+correctly placed (its FWHM channel [0.35,1.87] m focuses the whole prebuncher section) iris
+transmission is **~69%** on the energy-flat ~150 keV zc beam; an optional re-optimization of the
+lens currents to that beam remains a transverse follow-up (LinacSim reconciliation backlog).
 
 The `linac_rest` stage is the **rest of the straight electron line to CHESS** — Cornell linac
 sections 2–8 (CEA 2/3/4/5 + CU 3/4/5), seven S-band traveling-wave sections chained into **one
@@ -119,6 +121,8 @@ Each stage lives in its own `<stage>/` directory and follows the same script lay
 - `*_sim.py` — the WarpX/PICMI run. Reads the upstream beam with `openPMD-viewer`, injects it, tracks through the stage, writes openPMD particle diagnostics to its own `diags/`.
 - `plot_*.py` — reads `diags/`, writes figures to `results/`.
 - `README.md` — the stage's physics, field map, operating point, and outputs.
+
+Three in-process **shared modules** under `pipeline/` are the single source of truth that the stage scripts import instead of re-literaling (see `pipeline/README.md` → *Shared modules*): `pipeline/constants.py` (scipy-sourced `C_LIGHT`/`E_CHARGE`/`M_E`/`EPS0`/`K_B`/`MC2_EV` — no stage carries its own rest-energy/charge literal), `pipeline/emission.py` (`child_langmuir_current_density`, `thermal_velocity_sigma` — shared by the cathode sim and its plot overlays), and `pipeline/fieldio.py` (the GDF→openPMD thetaMode parse + writer `load_cols`/`to_grid`/`pad_r`/`write_thetamode_series`, used by all three `build_*_field.py`; `to_grid(reverse_descending_z=True)` row-reverses a z-descending GDF so its odd `Er` is not negated).
 
 **Inter-stage contract (the chain is order-dependent):**
 

@@ -12,8 +12,10 @@ Run with:
 
 import os
 import numpy as np
-import easygdf
-import openpmd_api as io
+import openpmd_api as io                       # io.Series read-back guard in build_solenoids
+
+from pipeline.fieldio import (B_UNIT, E_UNIT, load_cols, pad_r, to_grid,
+                              write_thetamode_series)
 
 GDF_PATH = "fieldmaps/prebuncher_25D.gdf"
 OUT_DIR = "injector/injector_field"
@@ -65,28 +67,11 @@ def load_prebuncher_map(path):
     GDF flat columns: R fastest, then Z. Er, Ez in V/m; the H column is Bφ in
     Tesla (NOT A/m — the A/m reading gives a negligible B; see README).
     """
-    d = easygdf.load(path)
-    col = {b["name"]: np.asarray(b["value"]) for b in d["blocks"]}
-    R, Z, Er, Ez, H = col["R"], col["Z"], col["Er"], col["Ez"], col["H"]
-
-    r = np.unique(R)
-    z = np.unique(Z)
-    nr, nz = r.size, z.size
-    assert nr * nz == R.size, "field map is not a complete rectangular grid"
-
-    # R fastest, Z slowest  ->  reshape to (nz, nr).  prebuncher_25D.gdf stores z
-    # DESCENDING (+152.4 → −152.4 mm), so the flat rows must be reversed to match
-    # the ascending `np.unique(Z)` axis BEFORE transposing — otherwise the map is
-    # z-flipped relative to its axis, which negates the odd Er and corrupts the
-    # off-axis transverse RF force (Ez/Bphi are even, so they would be unaffected).
-    Er = Er.reshape(nz, nr)
-    Ez = Ez.reshape(nz, nr)
-    Bphi = H.reshape(nz, nr)
-    if Z.reshape(nz, nr)[0, 0] > Z.reshape(nz, nr)[-1, 0]:
-        Er, Ez, Bphi = Er[::-1], Ez[::-1], Bphi[::-1]
-    Er = Er.T.copy()
-    Ez = Ez.T.copy()
-    Bphi = Bphi.T.copy()
+    # prebuncher_25D.gdf stores z DESCENDING (+152.4 → −152.4 mm); reverse_descending_z
+    # row-reverses the data to the ascending axis so the odd Er is not negated (else the
+    # off-axis transverse RF force is wrong-signed; Ez/Bphi are even — see injector/README).
+    R, Z, Er, Ez, H = load_cols(path, ["R", "Z", "Er", "Ez", "H"])
+    r, z, Er, Ez, Bphi = to_grid(R, Z, Er, Ez, H, reverse_descending_z=True)
     return r, z, Er, Ez, Bphi
 
 
@@ -108,93 +93,20 @@ def write_field(out_file, r, z, Er, Ez, Bphi, z_gap):
 
     z_offset = z_gap - MAP_HALF_Z
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    series = io.Series(out_file, io.Access.create)
-    it = series.iterations[0]
-
-    def write_mesh(name, comps, unit_dim):
-        m = it.meshes[name]
-        m.geometry = io.Geometry.thetaMode
-        m.geometry_parameters = "m=0;imag=+"
-        m.axis_labels = ["r", "z"]
-        m.grid_spacing = [dr, dz]
-        m.grid_global_offset = [0.0, z_offset]
-        m.grid_unit_SI = 1.0
-        m.unit_dimension = unit_dim
-        # thetaMode single (m=0) mode -> leading axis length 1; axisLabels ["r","z"].
-        for cname, arr in comps:
-            data = np.ascontiguousarray(arr[np.newaxis, :, :], dtype=np.float64)
-            comp = m[cname]
-            comp.position = [0.0, 0.0]
-            comp.unit_SI = 1.0
-            comp.reset_dataset(io.Dataset(data.dtype, data.shape))
-            comp.store_chunk(data)
-
     zero = np.zeros_like(Er)
-    # Electric field  [V/m] = kg·m·s⁻³·A⁻¹
-    write_mesh("E", (("r", Er), ("t", zero), ("z", Ez)), {
-        io.Unit_Dimension.M: 1.0, io.Unit_Dimension.L: 1.0,
-        io.Unit_Dimension.T: -3.0, io.Unit_Dimension.I: -1.0,
-    })
-    # Magnetic field  [T] = kg·s⁻²·A⁻¹ ; only the azimuthal (t) component (Bφ).
-    write_mesh("B", (("r", zero), ("t", Bphi), ("z", zero)), {
-        io.Unit_Dimension.M: 1.0,
-        io.Unit_Dimension.T: -2.0, io.Unit_Dimension.I: -1.0,
-    })
-
-    series.flush()
-    del series
-
-
-B_UNIT = {io.Unit_Dimension.M: 1.0,
-          io.Unit_Dimension.T: -2.0, io.Unit_Dimension.I: -1.0}      # [T]
-
-
-def _sol_to_grid(R, Z, *arrs):
-    """Reshape GDF flat columns (R fastest, Z slowest) to (nr, nz) grid arrays."""
-    r = np.unique(R)
-    z = np.unique(Z)
-    nr, nz = r.size, z.size
-    assert nr * nz == R.size, "solenoid map is not a complete rectangular grid"
-    out = [a.reshape(nz, nr).T.copy() for a in arrs]
-    return (r, z, *out)
-
-
-def _sol_pad_r(r, rmax, *arrs):
-    """Extend the (uniform-dr) r-grid with zero rows until it reaches ``rmax``
-    (no-op when the map already covers it; robust against a future smaller map)."""
-    dr = r[1] - r[0]
-    if r[-1] >= rmax:
-        return (r, *arrs)
-    n_add = int(np.ceil((rmax - r[-1]) / dr))
-    r_new = np.concatenate([r, r[-1] + dr * np.arange(1, n_add + 1)])
-    out = [np.vstack([a, np.zeros((n_add, a.shape[1]))]) for a in arrs]
-    return (r_new, *out)
+    write_thetamode_series(out_file, 0.0, z_offset, dr, dz, [
+        # E uses cos(ωt+φ); Bφ (the H column) uses sin(ωt+φ) — supplied at runtime.
+        ("E", (("r", Er), ("t", zero), ("z", Ez)), E_UNIT),
+        ("B", (("r", zero), ("t", Bphi), ("z", zero)), B_UNIT),
+    ])
 
 
 def _write_b_series(out_file, z_offset, dr, dz, Br, Bz):
-    """Write one single-mesh (B only) openPMD field file in the WarpX RZ layout."""
-    os.makedirs(OUT_DIR, exist_ok=True)
-    series = io.Series(out_file, io.Access.create)
-    it = series.iterations[0]
-    m = it.meshes["B"]
-    m.geometry = io.Geometry.thetaMode
-    m.geometry_parameters = "m=0;imag=+"
-    m.axis_labels = ["r", "z"]
-    m.grid_spacing = [dr, dz]
-    m.grid_global_offset = [0.0, z_offset]
-    m.grid_unit_SI = 1.0
-    m.unit_dimension = B_UNIT
+    """Write one solenoid B-only openPMD field file (r,z components; t=0)."""
     zero = np.zeros_like(Br)
-    for cname, arr in (("r", Br), ("t", zero), ("z", Bz)):
-        data = np.ascontiguousarray(arr[np.newaxis, :, :], dtype=np.float64)
-        comp = m[cname]
-        comp.position = [0.0, 0.0]
-        comp.unit_SI = 1.0
-        comp.reset_dataset(io.Dataset(data.dtype, data.shape))
-        comp.store_chunk(data)
-    series.flush()
-    del series
+    write_thetamode_series(out_file, 0.0, z_offset, dr, dz, [
+        ("B", (("r", Br), ("t", zero), ("z", Bz)), B_UNIT),
+    ])
 
 
 def build_solenoids():
@@ -216,11 +128,9 @@ def build_solenoids():
     which can't catch a bad offset).
     """
     for name in SOL_NAMES:
-        d = easygdf.load(SOL_GDF[name])
-        col = {b["name"]: np.asarray(b["value"]) for b in d["blocks"]}
-        R, Z, Br, Bz = col["R"], col["Z"], col["Br"], col["Bz"]
-        r, z, Br, Bz = _sol_to_grid(R, Z, Br, Bz)
-        r, Br, Bz = _sol_pad_r(r, RMAX, Br, Bz)
+        R, Z, Br, Bz = load_cols(SOL_GDF[name], ["R", "Z", "Br", "Bz"])
+        r, z, Br, Bz = to_grid(R, Z, Br, Bz)
+        r, Br, Bz = pad_r(r, RMAX, Br, Bz)
         dr, dz = float(r[1] - r[0]), float(z[1] - z[0])
         ipk = int(np.argmax(np.abs(Bz[0])))             # peak on the axis (r=0 row)
         z_peak_native = float(z[ipk])
@@ -303,9 +213,7 @@ def main():
     # stored map against the raw GDF column at a fixed off-axis +z point: the sign
     # and magnitude must agree, guarding the descending-z row reversal in
     # load_prebuncher_map.
-    _raw = easygdf.load(GDF_PATH)
-    _rawcol = {b["name"]: np.asarray(b["value"]) for b in _raw["blocks"]}
-    _Rr, _Zr, _Err = _rawcol["R"], _rawcol["Z"], _rawcol["Er"]
+    _Rr, _Zr, _Err = load_cols(GDF_PATH, ["R", "Z", "Er"])
     _iz = int(np.argmax(z))                          # +z end of the ascending axis
     _ir = nr // 2                                    # an off-axis row (Er ≠ 0)
     _m = (np.isclose(_Rr, r[_ir]) & np.isclose(_Zr, z[_iz]))

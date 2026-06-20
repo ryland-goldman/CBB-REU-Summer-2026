@@ -19,6 +19,7 @@ from pywarpx import picmi
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
+from pipeline.constants import MC2_EV
 
 
 def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
@@ -363,7 +364,7 @@ def main():
     # legs collapse to v_beam). The 0.98 margin stops short of the wall while landing a dump on
     # the 2.03 m plane.
     base1 = np.pi / 2.0 if PHASE == "zc" else np.pi
-    MC2_KEV = m_e * c**2 / q_e / 1e3
+    MC2_KEV = MC2_EV / 1e3
     kick_frac1 = -np.cos(base1 + np.radians(PREB1_PHI_OFF))
     ke_after1 = max(ke_mean + (kick_frac1 * scale1 * V1J_KEV if PREB1_KW > 0 else 0.0), 1.0)
     v_after1 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after1 / MC2_KEV) ** 2)

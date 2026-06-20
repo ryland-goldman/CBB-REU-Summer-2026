@@ -75,10 +75,15 @@ the anode grounded, so we scale by a **negative** factor, `SCALE = -150` → a *
 cathode. After scaling the on-axis field is `Ez(cathode) ≈ -1.94 MV/m`, peaking at
 `-4.88 MV/m` near z ≈ 28 mm, and the 150 kV potential drop accelerates electrons in +z.
 
-`build_gun_field.py` writes the scaled field as an openPMD file in the layout WarpX's
-`read_from_file` external-field reader requires for RZ: geometry `thetaMode` with a single
+`build_gun_field.py` writes the scaled field as an openPMD file (via the shared
+`pipeline/fieldio.py` writer) in this RZ layout: geometry `thetaMode` with a single
 `m = 0` mode, mesh record `E` with components `r`,`t`,`z`, axis labels `["r","z"]`, dataset
-shape `(1, nr, nz)`. `gun_sim.py` then loads it via the raw WarpX inputs
+shape `(1, nr, nz)`. This `["r","z"]`/`m=0` order is a **deliberate, reader-validated
+deviation** from WarpX's own RZ field *diagnostic*, which emits the opposite (`["z","r"]`,
+`m=1;imag=+`, shape `(modes, nz, nr)`); both load correctly because the `read_from_file`
+reader is axis-labels-aware, so this convention is a choice (one shared across all three
+build scripts), not something the reader strictly requires. `gun_sim.py` then loads it via
+the raw WarpX inputs
 
 ```
 particles.E_ext_particle_init_style = read_from_file

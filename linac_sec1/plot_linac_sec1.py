@@ -15,11 +15,11 @@ import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline.beam_metrics import screen_profile
+from pipeline.constants import E_CHARGE as Q_E, MC2_EV
 from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R
 from . import DEFAULT_OUTDIR
 
-MC2 = 0.51099895                 # electron rest energy [MeV]
-Q_E = 1.602176634e-19
+MC2 = MC2_EV / 1e6               # electron rest energy [MeV]
 RF_NORM_MW = 0.001
 POWER_MW = 11.0                  # config()-overridable; mirrors the sim default
 L_STRUCT = 3.016                 # structure length [m]

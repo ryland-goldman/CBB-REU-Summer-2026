@@ -13,16 +13,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import PowerNorm
 from openpmd_viewer import OpenPMDTimeSeries
-from scipy.constants import e as q_e, epsilon_0, m_e
-from scipy.constants import k as k_B, c
 
-# Display/overlay constants for theory curves and titles; kept in sync with
-# cathode_diode.py by hand (not read by the sim).
-V_anode   = 60.0
-gap_d     = 200.0e-6
-R_cathode = 8.0e-3
-over_inject = 2.0
-T_cathode = 1425.0
+from pipeline.constants import C_LIGHT as c, MC2_EV
+from pipeline.emission import child_langmuir_current_density, thermal_velocity_sigma
+# Operating-point constants single-sourced from the sim (config()-overridable on both
+# modules), so the Child–Langmuir / over-injection overlays can never drift from the data.
+from cathode.cathode_diode import V_anode, gap_d, R_cathode, over_inject, T_cathode
 
 RESULTS = "cathode/results"
 
@@ -32,7 +28,7 @@ def main():
 
     # Computed here (not at module top) so a config() override applied via setattr
     # after import is reflected, matching cathode_diode.main().
-    J_CL = (4.0 / 9.0) * epsilon_0 * np.sqrt(2.0 * q_e / m_e) * V_anode**1.5 / gap_d**2
+    J_CL = float(child_langmuir_current_density(V_anode, gap_d))
 
     ts  = OpenPMDTimeSeries("cathode/diags/fields")
     it  = ts.iterations[-1]            # final (steady-state) snapshot
@@ -224,9 +220,9 @@ def main():
     emit_n_mm_mrad = emit_n * 1e6                         # m·rad → mm·mrad
 
     # p_x = γβ_x · m_ec² in keV/c (p_x·c = γβ_x·m_ec² is an energy).
-    MC2_keV = m_e * c ** 2 / q_e / 1e3                   # electron rest energy [keV]
+    MC2_keV = MC2_EV / 1e3                               # electron rest energy [keV]
     px = uxp * MC2_keV                                   # transverse momentum [keV/c]
-    u_th  = np.sqrt(k_B * T_cathode / (m_e * c ** 2))    # rms of γβ_x (dimensionless)
+    u_th  = thermal_velocity_sigma(T_cathode) / c        # rms of γβ_x (dimensionless)
     p_th  = u_th * MC2_keV                               # rms thermal momentum [keV/c]
 
     fig, (b1, b2) = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True)

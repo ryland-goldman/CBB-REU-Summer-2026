@@ -16,11 +16,12 @@ import numpy as np
 
 from pipeline.impact_io import read_warpx_dump, write_openpmd_particles
 from pipeline._impact_runner import terminal_progress
+from pipeline.constants import MC2_EV
 from . import build_linac_rest_lattice as L
 from . import calibration as cal
 from . import DEFAULT_OUTDIR
 
-MC2_MEV = 0.51099895069          # electron rest energy [MeV]
+MC2_MEV = MC2_EV / 1e6           # electron rest energy [MeV]
 
 # Read from the helper's signature default so the recorded μ can't drift from what
 # fodo_quad_gradients() actually uses (the sim calls it with the default).

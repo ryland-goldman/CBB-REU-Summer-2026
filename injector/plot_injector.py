@@ -39,12 +39,21 @@ def _retry_io(fn, *args, tries=6, base=0.25, **kwargs):
 # re-derived scale/phase cannot drift from the run.
 from .build_injector_field import (
     V1J_KEV, F_RF, Q_L_1, Z_GAP_CENTER_1, Z_GAP_CENTER_2, Z_HANDOFF)
+from pipeline.constants import C_LIGHT as c, E_CHARGE as Q_E, MC2_EV
 
-c = 299792458.0
-MC2 = 0.51099895e3                # electron rest energy [keV]
-Q_E = 1.602176634e-19            # elementary charge [C]
+MC2 = MC2_EV / 1e3                # electron rest energy [keV]
 DIAG_ROOT = "injector/diags"
 RESULTS = "injector/results"
+
+
+def _fig_path(stem, name):
+    """Per-case figure path: the default 'main' case keeps the bare
+    injector_<stem>.png (the stable name the chain/FIGURES.md reference); any scan
+    case gets injector_<stem>_<case>.png so a multi-case scan preserves every figure."""
+    suffix = "" if name == "main" else f"_{name}"
+    return f"{RESULTS}/injector_{stem}{suffix}.png"
+
+
 PREB1_FIELD = "injector/injector_field/preb1_EB.h5"
 Z_GAP_CENTER = Z_GAP_CENTER_1
 
@@ -252,7 +261,7 @@ def cavity_figure(name, rec, power, phase):
                  + (f", φ2={phi2:.2f}" if have2 else "") + " rad)")
     a2.legend(fontsize=8, loc="upper right")
 
-    path = f"{RESULTS}/injector_cavity.png"
+    path = _fig_path("cavity", name)
     fig.savefig(path, dpi=140); plt.close(fig)
     print(f"wrote {path}")
 
@@ -298,7 +307,7 @@ def bunch_profile_figure(name, rec, base):
         if base_snaps is not None:
             ax.legend(fontsize=8, loc="upper left")
     fig.suptitle(f"{name}: longitudinal line-charge density λ(z)", fontsize=12)
-    path = f"{RESULTS}/injector_bunch_profile.png"
+    path = _fig_path("bunch_profile", name)
     fig.savefig(path, dpi=140); plt.close(fig)
     print(f"wrote {path}")
 
@@ -328,7 +337,7 @@ def per_case_figure(name, rec, base):
     a2.set_ylabel("peak current  [A]", color="C2")
     a2b.set_ylabel("mean KE  [keV]", color="C4")
     a2.set_title(f"{name}: peak current & mean energy")
-    fig.savefig(f"{RESULTS}/injector_line.png", dpi=140); plt.close(fig)
+    fig.savefig(_fig_path("line", name), dpi=140); plt.close(fig)
 
     snaps, its = rec["snaps"], rec["it"]
     picks, titles = snapshot_picks(rec, base)
@@ -365,7 +374,7 @@ def per_case_figure(name, rec, base):
         ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("KE − ⟨KE⟩  [keV]")
         ax.set_title(f"{ti}  (⟨z⟩={rec['zmean'][zi]*1e3:.0f} mm)")
     fig.suptitle(f"{name}: longitudinal phase space", fontsize=12)
-    fig.savefig(f"{RESULTS}/injector_phasespace.png", dpi=140); plt.close(fig)
+    fig.savefig(_fig_path("phasespace", name), dpi=140); plt.close(fig)
 
     out = dict(szmin=float(rec["sigz"].min()),
                sz0=float(rec["sigz"][0]),
@@ -418,9 +427,10 @@ def main(cases=None):
 
     powered = [(d, lab) for d, lab in cases if lab[1] != "drift"]
     if len(powered) > 1:
-        print(f"note: {len(powered)} non-baseline cases present — the injector_*.png "
-              f"per-case figures use fixed filenames and are OVERWRITTEN (last case "
-              f"wins); see compare_power_phase.png for the cross-case scan.", flush=True)
+        print(f"note: {len(powered)} non-baseline cases present — per-case figures are "
+              f"keyed by case name (injector_<fig>_<case>.png); the 'main' case keeps the "
+              f"bare injector_<fig>.png. See compare_power_phase.png for the cross-case scan.",
+              flush=True)
 
     summary = []
     for d, (power, phase) in sorted(powered, key=lambda x: (str(x[1][1]), str(x[1][0]))):

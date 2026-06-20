@@ -14,11 +14,9 @@ byte-layout (openPMD 1.1.0, integer ED-PIC ext). Output species is "electrons"
 import numpy as np
 import openpmd_api as io
 
-# Physical constants (SI), matched to the WarpX stages / plot_chain.
-M_E = 9.1093837015e-31          # electron rest mass [kg]
-C = 299792458.0                 # speed of light [m/s]
-Q_E = 1.602176634e-19           # elementary charge [C]
-MC2_EV = 510998.95069           # electron rest energy [eV] (ParticleGroup mass unit)
+# Physical constants — single-sourced from pipeline.constants (scipy) so no stage
+# carries a divergent literal. C/M_E/Q_E kept as local aliases for the existing call sites.
+from pipeline.constants import C_LIGHT as C, E_CHARGE as Q_E, M_E, MC2_EV
 
 
 def _is_electron_species(pg):

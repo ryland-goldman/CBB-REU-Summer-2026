@@ -11,6 +11,11 @@ and parameters. Use the gun facade (`import gun; gun.run()`); direct
 
 import os
 import shutil
+import sys
+
+# Self-insert the repo root so `python gun/gun_sim.py` resolves pipeline.* standalone
+# (the stage facade normally runs this in a subprocess with the root already on the path).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import pywarpx
@@ -18,6 +23,8 @@ from pywarpx import picmi, callbacks, particle_containers
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline._runner import run_step
+from pipeline.constants import MC2_EV
+from gun.build_gun_field import GUN_VOLTAGE   # single-source: field-map scale + kinematics agree
 
 c = picmi.constants.c
 m_e = picmi.constants.m_e
@@ -26,7 +33,6 @@ ep0 = picmi.constants.ep0
 
 # ── Gun / field-map parameters (must match build_gun_field.py) ────────────────
 GUN_FIELD = "gun/gun_field/gun_E.h5"
-GUN_VOLTAGE = 150.0e3        # [V]
 RMAX = 0.015                 # field-map R extent [m]
 ZMAX_FIELD = 0.051765        # field-map Z extent [m]; Ez→0 at the map edge (the exit plane)
 # Field-free drift pad past the map (WarpX zero-fills applied field beyond it). Required so
@@ -154,7 +160,6 @@ def build_exit_handoff():
     from pmd_beamphysics import ParticleGroup
     from pipeline.impact_io import write_openpmd_particles
 
-    MC2_EV = 510998.95069
     pdir = os.path.join(DIAG_DIR, "particles")
     ts = OpenPMDTimeSeries(pdir)
     if len(ts.iterations) == 0:

@@ -14,6 +14,8 @@ import os
 from impact import Impact
 from impact.fieldmaps import read_fieldmap_rfdata
 
+from pipeline.constants import MC2_EV
+
 # ── RF / operating point (shared across all 7 sections) ──────────────────────
 RF_FREQ_HZ = 2856e6          # S-band drive frequency [Hz]
 POWER_MW = 11.0             # RF input power [MW] per section; √P-scaled below
@@ -146,7 +148,7 @@ def _solve_doublet_k1(mu_deg, l_q, l_drift, k1_max):
     return 0.5 * (lo + hi)
 
 
-def fodo_quad_gradients(*, phase_adv_deg=50.0, k1_max=14.0, mc2_mev=0.510998950,
+def fodo_quad_gradients(*, phase_adv_deg=50.0, k1_max=14.0, mc2_mev=MC2_EV / 1e6,
                         ke_in_mev=25.0):
     """Energy-scaled FODO doublet base gradients [T/m] (PLACEHOLDER optics — guessed K1, A→T
     undocumented; exploratory, see README -> "Space charge & quads").
@@ -404,7 +406,7 @@ def build_impact(power_mw=None, phase_deg=None, drift_m=None, np_particles=None,
     h["Perdlen"] = total_len + 1.0                   # > total lattice length
     h["Bkenergy"] = 25.0e6                           # ref energy [eV] (~sec-1 exit; sim resets)
     h["Bfreq"] = RF_FREQ_HZ
-    h["Bmass"] = 0.51099895e6
+    h["Bmass"] = MC2_EV
     h["Bcharge"] = -1.0
 
     I.configure()

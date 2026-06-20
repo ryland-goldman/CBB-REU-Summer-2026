@@ -18,9 +18,9 @@ import matplotlib.pyplot as plt
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline.beam_metrics import rms_emit   # shared normalized-rms-emittance helper
+from pipeline.constants import C_LIGHT as c, MC2_EV
 
-c = 299792458.0
-MC2_KEV = 0.51099895e3           # electron rest energy [keV]
+MC2_KEV = MC2_EV / 1e3           # electron rest energy [keV]
 Q_E = 1.602176634e-19           # elementary charge [C]
 RESULTS = "results"             # repo-root results/ (git-ignored; git add -f)
 
