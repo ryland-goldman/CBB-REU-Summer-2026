@@ -40,8 +40,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from openpmd_viewer import OpenPMDTimeSeries
 from pmd_beamphysics import ParticleGroup
 
-# ── Physical constants (single-sourced from pipeline.constants) ───────────────
-from pipeline.constants import MC2_EV, E_CHARGE as Q_E
+# ── Shared beam-handoff helpers (γβ→eV/c ParticleGroup build) ─────────────────
+from pipeline.beam_io import make_particle_group
 
 # ── Stages, in chain order ───────────────────────────────────────────────────
 # Dumps store positions [m] and momenta u = γβ. The cathode is 2D (x–z, no y); rest RZ.
@@ -135,14 +135,7 @@ class StageData:
                 ["x", "z", "ux", "uz", "w"], species=self.species, iteration=iteration)
             y = np.zeros_like(x)
             uy = np.zeros_like(x)
-        P = ParticleGroup(data=dict(
-            x=x, y=y, z=z,
-            px=ux * MC2_EV, py=uy * MC2_EV, pz=uz * MC2_EV,   # γβ → eV/c
-            t=np.zeros_like(x),
-            status=np.ones_like(x, dtype=int),
-            weight=w * Q_E,                                   # macro-weight → charge [C]
-            species="electron",
-        ))
+        P = make_particle_group(x, y, z, ux, uy, uz, w)       # γβ → eV/c, count → charge [C]
         # Bounded LRU: keep 16 most-recent dumps so a full-stage sweep doesn't pin RAM.
         if len(self._pg_cache) > 16:
             self._pg_cache.pop(next(iter(self._pg_cache)))

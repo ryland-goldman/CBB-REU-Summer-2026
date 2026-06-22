@@ -158,11 +158,9 @@ def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
     See pipeline/README.md.
     """
     from pmd_beamphysics import ParticleGroup
-    from openpmd_viewer import OpenPMDTimeSeries
+    from pipeline.beam_io import open_particle_series
 
-    ts = OpenPMDTimeSeries(particles_dir)
-    if len(ts.iterations) == 0:
-        raise RuntimeError(f"{particles_dir} has no iterations")
+    ts = open_particle_series(particles_dir)
     it = ts.iterations[-1] if iteration is None else iteration
 
     x, y, z, ux, uy, uz, w = ts.get_particle(

@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from openpmd_viewer import OpenPMDTimeSeries
 
-from pipeline.constants import C_LIGHT as c, M_E as m_e, E_CHARGE as q_e, MC2_EV
+from pipeline.constants import C_LIGHT as c, M_E as m_e, E_CHARGE as q_e
+from pipeline.beam_io import make_particle_group, downsample, open_particle_series
 from gun.build_gun_field import GUN_VOLTAGE   # single-source: field-map scale + kinematics agree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,9 +36,7 @@ def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, beam_releas
     Returns dict of x, y, z, ux, uy, uz, w, t arrays for the seed + time-release callback
     (ux/uy/uz are proper velocity u = γβc [m/s]).
     """
-    ts = OpenPMDTimeSeries(CATHODE_DIAG)
-    if len(ts.iterations) == 0:
-        raise RuntimeError(f"{CATHODE_DIAG} has no iterations — did the cathode stage run?")
+    ts = open_particle_series(CATHODE_DIAG, "cathode")
     it = ts.iterations[-1]
     x, z, ux, uy, uz, w = ts.get_particle(
         ["x", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
@@ -51,11 +50,7 @@ def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, beam_releas
     xk = x[keep]
     r, z, ux, uy, uz, w = (a[keep] for a in (r, z, ux, uy, uz, w))
 
-    if max_part and r.size > max_part:
-        sel = rng.choice(r.size, max_part, replace=False)
-        scale_w = r.size / max_part
-        xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
-        w = w * scale_w
+    (xk, r, z, ux, uy, uz), w = downsample((xk, r, z, ux, uy, uz), w, max_part, rng)
 
     # slab(x) → RZ disc: importance-resample (with replacement) by r·w to supply the 2πr
     # revolution Jacobian the naive r=|x| map omits (else n(r) ∝ 1/r on-axis cusp).
@@ -101,7 +96,6 @@ def build_exit_handoff(zmax_field):
     common reference time. Sampling in the pad (not the last in-field dump) preserves εn,x.
     Writes an openPMD dump to HANDOFF_DIR via pipeline.impact_io. See README → Exit-beam handoff.
     """
-    from pmd_beamphysics import ParticleGroup
     from pipeline.impact_io import write_openpmd_particles
 
     ts = OpenPMDTimeSeries(os.path.join(DIAG_DIR, "particles"))
@@ -155,11 +149,7 @@ def build_exit_handoff(zmax_field):
     dtau = t_s.max() - t_s
     xh, yh, zh = x + vx * dtau, y + vy * dtau, z + vz * dtau
 
-    pg = ParticleGroup(data=dict(
-        x=xh, y=yh, z=zh,
-        px=ux * MC2_EV, py=uy * MC2_EV, pz=uz * MC2_EV,   # γβ·(mc² in eV) [eV/c]
-        t=np.zeros(xh.size), weight=w * q_e,              # macro count → charge [C]
-        status=np.ones(xh.size, dtype=np.int64), species="electron"))
+    pg = make_particle_group(xh, yh, zh, ux, uy, uz, w)
     if os.path.isdir(HANDOFF_DIR):
         shutil.rmtree(HANDOFF_DIR)
     write_openpmd_particles(pg, HANDOFF_DIR, iteration=0, time=0.0)

@@ -14,10 +14,11 @@ import os
 import json
 import shutil
 import numpy as np
-from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline.collimator import pipe_violator_ids, survivor_mask
 from pipeline.constants import C_LIGHT as c, E_CHARGE as q_e, MC2_EV
+from pipeline.beam_io import (
+    make_particle_group, downsample, beam_kinematics, rf_time_functions, open_particle_series)
 from .build_linac_sec1_field import Z_STRUCT, RMAX, BORE_R, V1KW_KEV
 from . import DEFAULT_OUTDIR
 
@@ -33,9 +34,7 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
     Selects the dump whose bunch ⟨z⟩ is nearest z_handoff, applies the multi-plane iris scrape,
     and returns (dict [γβ momenta], v_beam, mean KE [keV], inj summary).
     """
-    ts = OpenPMDTimeSeries(INJECTOR_DIAG)
-    if len(ts.iterations) == 0:
-        raise RuntimeError(f"{INJECTOR_DIAG} has no iterations — did the injector stage run?")
+    ts = open_particle_series(INJECTOR_DIAG, "injector")
 
     # Find the well-populated dump nearest the handoff plane (the n ≥ 0.8·nmax gate avoids a
     # depleted late dump that happens to sit near 2.03 m).
@@ -68,17 +67,11 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
     q_dom = float(w.sum()) * q_e                         # in-iris survivors
     q_bore = float(w[r <= BORE_R].sum()) * q_e           # of those, within the RF bore
 
-    if z.size > max_part:
-        rng = np.random.default_rng(rng_seed)
-        sel = rng.choice(z.size, max_part, replace=False)
-        scale_w = z.size / max_part
-        x, y, z, ux, uy, uz, w = (a[sel] for a in (x, y, z, ux, uy, uz, w))
-        w = w * scale_w
+    (x, y, z, ux, uy, uz), w = downsample(
+        (x, y, z, ux, uy, uz), w, max_part, np.random.default_rng(rng_seed))
     z = z - z.min() + z_inject                          # bunch tail (smallest z) → z_inject
 
-    gb = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)           # γ (ux/uy/uz are γβ)
-    v_beam = float(np.average(uz / gb, weights=w) * c)
-    ke_mean = float(np.average(gb - 1.0, weights=w) * MC2_KEV)
+    v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
     sz = float(np.sqrt(np.average((z - np.average(z, weights=w)) ** 2, weights=w)))
     rmax = float(np.hypot(x, y).max())
     inj = dict(it_handoff=int(it_handoff), z_handoff_m=float(zm_handoff),
@@ -96,7 +89,6 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
 
 def main():
     from warpx import WarpX
-    from pmd_beamphysics import ParticleGroup
 
     w = WarpX(input_file=CONFIG, path="linac_sec1")
     NR, NZ = w.get("grid/number_of_cells")
@@ -122,11 +114,8 @@ def main():
     with open(os.path.join(outdir, "injection_summary.json"), "w") as fh:
         json.dump(inj, fh, indent=2)
 
-    pg = ParticleGroup(data=dict(
-        x=bunch["x"], y=bunch["y"], z=bunch["z"],
-        px=bunch["ux"] * MC2_EV, py=bunch["uy"] * MC2_EV, pz=bunch["uz"] * MC2_EV,
-        t=np.zeros(bunch["x"].size), weight=bunch["w"] * q_e,
-        status=np.ones(bunch["x"].size, dtype=np.int64), species="electron"))
+    pg = make_particle_group(bunch["x"], bunch["y"], bunch["z"],
+                             bunch["ux"], bunch["uy"], bunch["uz"], bunch["w"])
     w.initial_particles = pg
 
     # ── RF amplitude + phase (field2 is the 90° quadrature half) ──────────────
@@ -134,10 +123,8 @@ def main():
     t_in = (Z_STRUCT - z_center) / v_beam
     phi = -omega * t_in + np.deg2rad(p["PHASE_DEG"])
     phi2 = phi + np.pi / 2.0
-    e1 = f"{scale:.8e}*cos({omega:.10e}*t + ({phi:.8e}))"
-    b1 = f"{scale:.8e}*sin({omega:.10e}*t + ({phi:.8e}))"
-    e2 = f"{scale:.8e}*cos({omega:.10e}*t + ({phi2:.8e}))"
-    b2 = f"{scale:.8e}*sin({omega:.10e}*t + ({phi2:.8e}))"
+    e1, b1 = rf_time_functions(scale, omega, phi, amp_prec=8, phase_prec=8)
+    e2, b2 = rf_time_functions(scale, omega, phi2, amp_prec=8, phase_prec=8)
     print(f"Case: P={p['POWER_MW']:g} MW (scale={scale:.1f}), phase_off={p['PHASE_DEG']:g}°, "
           f"f_RF={p['F_RF']/1e6:.0f} MHz → {outdir}/", flush=True)
 

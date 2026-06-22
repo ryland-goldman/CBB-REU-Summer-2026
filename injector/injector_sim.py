@@ -18,7 +18,9 @@ import numpy as np
 import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
-from pipeline.constants import C_LIGHT as c, M_E as m_e, E_CHARGE as q_e, MC2_EV
+from pipeline.constants import C_LIGHT as c, E_CHARGE as q_e, MC2_EV
+from pipeline.beam_io import (
+    make_particle_group, downsample, beam_kinematics, rf_time_functions, open_particle_series)
 from .build_injector_field import (
     Z_GAP_CENTER_1, Z_GAP_CENTER_2, V1J_KEV, F_RF, Q_L_1, Q_L_2, SOL_FILES, Z_HANDOFF)
 from . import DEFAULT_OUTDIR
@@ -48,23 +50,15 @@ def load_gun_bunch(max_part, rng_seed, z_inject):
     Returns (dict [γβ momenta], v_beam, mean KE [keV], z_centroid). The cavities are phased to
     put the CENTROID (not the tail) at the zero-crossing. See README -> RF drive.
     """
-    ts = OpenPMDTimeSeries(GUN_DIAG)
-    if len(ts.iterations) == 0:
-        raise RuntimeError(f"{GUN_DIAG} has no iterations — did the gun stage run?")
+    ts = open_particle_series(GUN_DIAG, "gun")
     it = ts.iterations[-1]
     x, y, z, ux, uy, uz, w = _retry_io(
         ts.get_particle, ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
-    if z.size > max_part:
-        rng = np.random.default_rng(rng_seed)
-        sel = rng.choice(z.size, max_part, replace=False)
-        scale_w = z.size / max_part
-        x, y, z, ux, uy, uz, w = (a[sel] for a in (x, y, z, ux, uy, uz, w))
-        w = w * scale_w
+    (x, y, z, ux, uy, uz), w = downsample(
+        (x, y, z, ux, uy, uz), w, max_part, np.random.default_rng(rng_seed))
     z = z - z.min() + z_inject                         # bunch tail (smallest z) → z_inject
 
-    gb = np.sqrt(1.0 + ux**2 + uy**2 + uz**2)          # γ (ux/uy/uz are γβ)
-    v_beam = float(np.average(uz / gb, weights=w) * c)
-    ke_mean = float(np.average(gb - 1.0, weights=w) * m_e * c**2 / q_e / 1e3)
+    v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
     z_centroid = float(np.average(z, weights=w))
     print(f"Imported {z.size} macroparticles from gun (iter {it}); "
           f"z {z.min()*1e3:.1f}–{z.max()*1e3:.1f} mm, ⟨z⟩ {z_centroid*1e3:.1f} mm, "
@@ -85,8 +79,7 @@ def cavity_drive(power, q_l, z_gap, v_at_gap, phi_off_deg, phase, omega,
     t_gap = t_offset + (z_gap - z_ref) / v_at_gap
     base = np.pi / 2.0 if phase == "zc" else np.pi
     phi = -omega * t_gap + base + np.radians(phi_off_deg) + rev_phase
-    e_time = f"{scale:.10e}*cos({omega:.10e}*t + ({phi:.10e}))"
-    b_time = f"{scale:.10e}*sin({omega:.10e}*t + ({phi:.10e}))"
+    e_time, b_time = rf_time_functions(scale, omega, phi)   # amp/phase precision .10e
     return e_time, b_time, scale, phi, t_gap
 
 
@@ -121,7 +114,6 @@ def _report_collimated_handoff(outdir, collim_r, collim_z):
 
 def main():
     from warpx import WarpX
-    from pmd_beamphysics import ParticleGroup
 
     w = WarpX(input_file=CONFIG, path="injector")
     NR, NZ = w.get("grid/number_of_cells")
@@ -142,11 +134,8 @@ def main():
         shutil.rmtree(outdir)
 
     bunch, v_beam, ke_mean, z_centroid = load_gun_bunch(p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
-    pg = ParticleGroup(data=dict(
-        x=bunch["x"], y=bunch["y"], z=bunch["z"],
-        px=bunch["ux"] * MC2_EV, py=bunch["uy"] * MC2_EV, pz=bunch["uz"] * MC2_EV,
-        t=np.zeros(bunch["x"].size), weight=bunch["w"] * q_e,
-        status=np.ones(bunch["x"].size, dtype=np.int64), species="electron"))
+    pg = make_particle_group(bunch["x"], bunch["y"], bunch["z"],
+                             bunch["ux"], bunch["uy"], bunch["uz"], bunch["w"])
     w.initial_particles = pg                           # imported beam for FromInitialParticles
 
     for nm, cur in (("0A", p["I_LENS0A"]), ("0B", p["I_LENS0B"]), ("0C", p["I_LENS0C"]),

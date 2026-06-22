@@ -158,9 +158,9 @@ emittance in mm (NOT mm·mrad). Capture is reported vs the TRUE injected charge
 
 ## Shared modules (single source of truth)
 
-To stop physical constants, emission physics, and the field-map writer from drifting between
-the ~13 stage scripts that used to re-literal them, three small in-process helpers are imported
-across the stages:
+To stop physical constants, emission physics, the field-map writer, and the beam-handoff
+idioms from drifting between the stage scripts that used to re-literal them, four small
+in-process helpers are imported across the stages:
 
 - `pipeline/constants.py` — SI + eV physical constants from `scipy.constants`
   (`C_LIGHT`, `E_CHARGE`, `M_E`, `EPS0`, `K_B`/`K_B_EV`, `MC2_EV`). Every stage's rest-energy /
@@ -173,3 +173,11 @@ across the stages:
   `build_*_field.py`. `to_grid(..., reverse_descending_z=True)` row-reverses a z-descending GDF
   (the prebuncher map) so its odd `Er` is not negated. The extraction was verified to reproduce
   every field map data-identically.
+- `pipeline/beam_io.py` — the WarpX beam-handoff idioms the three space-charge stages repeated in
+  their `load_*_bunch` / exit-handoff paths: `open_particle_series` (open an openPMD particle series,
+  raising a stage-tagged error if it has no iterations), `make_particle_group` (γβ momenta + macro
+  counts → a `pmd_beamphysics.ParticleGroup`, px/py/pz in eV/c, weight in C), `downsample` (weighted
+  thin to `MAX_PART`, rescaling weights to conserve charge), `beam_kinematics` (weighted mean v_z and
+  KE from γβ), and `rf_time_functions` (the `warpx_E/B_time_function` `scale·cos/sin(ωt+φ)` strings,
+  per-caller `amp_prec`/`phase_prec`). Shared by `gun/gun_sim.py`, `injector/injector_sim.py`,
+  `linac_sec1/linac_sec1_sim.py`, `pipeline/impact_io.py`, and `pipeline/beam_gui.py`.
