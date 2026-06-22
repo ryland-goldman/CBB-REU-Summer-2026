@@ -114,7 +114,8 @@ that peak (`V_anode = 30 V`); `Vpulse` alone (60 V) is the swing amplitude, not 
 
 ## The figures (`plot_cathode.py` → `results/`)
 
-Generated entirely with lume-warpx's plotting helpers:
+Generated in three layers — lume-warpx's plotting helpers, the shared custom figures in
+`pipeline/plot_extras.py`, and the stage-specific emission-physics figures (raw openPMD):
 
 - **`phase_space_z_KE.png`** — `plot2D("z","kinetic_energy")`: longitudinal phase space across the gap.
 - **`transverse_x_px.png`** — `plot2D("x","px")`: transverse phase space (the source's thermal emittance).
@@ -122,6 +123,11 @@ Generated entirely with lume-warpx's plotting helpers:
 - **`charge_density_xz.png`** — `plot_fields("rho","x","z")`: the space-charge / virtual-cathode layer.
 - **`centroid_vs_t.png`** — `plot1D("t","mean_z")`: the emitted cloud filling the gap.
 - **`charge_vs_t.png`** — `plot1D("t","charge")`: tracked charge as emission self-limits at J_CL.
+- **`energy_spectrum.png`** — `plot_extras.energy_spectrum`: charge-weighted KE histogram (⟨E⟩/σ_E) — the broad low-energy emitted spectrum.
+- **`current_profile.png`** — `plot_extras.current_profile`: longitudinal current I(z) = Σ(w·v_z)/dz — the flat continuous-DC emission stream (the SCL diode emits a steady current, not a bunch).
+- **`child_langmuir.png`** — on-axis φ(z) and E_z(z) vs the planar Child–Langmuir law and the vacuum reference: the space-charge depression below vacuum and the CL z^(4/3)/z^(1/3) shape (with the near-cathode field reversal).
+- **`current_saturation.png`** — transmitted current density at the anode vs time, held toward J_CL despite 2× J_CL injected.
+- **`emission_phase_space.png`** — the intrinsic thermal transverse phase space (x, p_x) + p_x histogram with ε_n,x and the ±√(kT·mₑc²) thermal scale (the source quality the gun inherits; the gun's disc remap receives ×√(3/4)).
 
 ---
 

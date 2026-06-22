@@ -181,3 +181,15 @@ in-process helpers are imported across the stages:
   KE from γβ), and `rf_time_functions` (the `warpx_E/B_time_function` `scale·cos/sin(ωt+φ)` strings,
   per-caller `amp_prec`/`phase_prec`). Shared by `gun/gun_sim.py`, `injector/injector_sim.py`,
   `linac_sec1/linac_sec1_sim.py`, `pipeline/impact_io.py`, and `pipeline/beam_gui.py`.
+- `pipeline/plot_extras.py` — the physics-overlay beam figures the cathode/gun/injector `plot_*.py`
+  share beyond lume-warpx's generic helpers, each taking a `ParticleGroup` (one diagnostic dump) →
+  a matplotlib Figure: `energy_spectrum` (charge-weighted KE histogram with ⟨E⟩/σ_E), `current_profile`
+  (longitudinal current I(z) = Σ(w·v_z)/dz — keyed on z, not the σ_t≈0 snapshot time, with per-particle
+  v_z), `beam_spot` (transverse x–y joint plot), and `energy_chirp` (slice ⟨KE⟩ vs z), plus the
+  shared `gamma_from_u`/`ke_kev_from_u` kinematics helpers (γ and KE [keV] from openPMD u = γβ) the
+  stage rich figures use.
+- `pipeline/beam_metrics.py` — pure-numpy beam moments: `rms_emit` (charge-weighted normalized rms
+  emittance for one phase plane) and `screen_profile` (charge-weighted moments on **fixed-z virtual
+  screens** — id-track each macroparticle across the volumetric dumps and interpolate its phase space
+  to every z-plane it crosses, so each screen sees a particle exactly once: a true local-in-z phase
+  space with no z-binning, used by `gun/plot_gun.py`'s `energy_gain`/`beam_envelope`).

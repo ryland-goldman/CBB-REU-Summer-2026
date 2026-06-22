@@ -1,22 +1,33 @@
 """
-Figures for the WarpX RZ CESR injector (injector_sim.py), generated entirely with
-lume-warpx's plotting helpers (WarpX.plot2D / plot1D) over injector/diags/main/. Writes
-PNGs to injector/results/. (No field diagnostic is dumped, so no plot_fields here.)
+Figures for the WarpX RZ CESR injector (injector_sim.py) over injector/diags/main/. Writes
+PNGs to injector/results/.
 
-See injector/README.md for the physics each figure shows (velocity bunching to the
-σ_z waist at the 2.03 m handoff).
+Two layers: generic phase-space / trend figures via lume-warpx's helpers and the shared
+`pipeline.plot_extras` beam figures, plus the stage-specific rich figures (the prebuncher RF
+field lobes, the longitudinal line metrics σ_z / peak-current / energy vs ⟨z⟩, the bunch
+line-charge profile λ(z), and the longitudinal phase space at four stations along the line).
+See injector/README.md for the physics each figure shows.
 """
 
 import os
+import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
+
+from pipeline import plot_extras as px
+from pipeline.constants import C_LIGHT, E_CHARGE
+from injector.build_injector_field import (
+    Z_GAP_CENTER_1, Z_GAP_CENTER_2, Z_HANDOFF, V1J_KEV, F_RF, Q_L_1, Q_L_2)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "injector.yaml")
 RESULTS = "injector/results"
 DIAG = "injector/diags/main/particles"
+PREB1_FIELD = "injector/injector_field/preb1_EB.h5"
+PREB2_FIELD = "injector/injector_field/preb2_EB.h5"
 
 
 def _last_populated(diag, species="electrons"):
@@ -31,6 +42,174 @@ def _last_populated(diag, species="electrons"):
     return int(ts.iterations[-1])
 
 
+def _save(fig, name):
+    fig.savefig(f"{RESULTS}/injector_{name}.png", dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {RESULTS}/injector_{name}.png")
+
+
+def _wmean_std(v, w):
+    mean = np.average(v, weights=w)
+    return mean, np.sqrt(np.average((v - mean) ** 2, weights=w))
+
+
+def _peak_current(z, w, v_beam, n_bins=400):
+    """Peak longitudinal current I = max(λ)·v_beam from the line-charge density λ(z)."""
+    if z.max() <= z.min():
+        return 0.0
+    charge, edges = np.histogram(z, bins=n_bins, weights=w * E_CHARGE)
+    return float(charge.max() / (edges[1] - edges[0]) * v_beam)
+
+
+def rf_scale(power_kw, q_l):
+    """Field scale √(stored energy / 1 J), stored energy = 1e3·Q·P/(2π f_RF). Mirrors injector_sim."""
+    return float(np.sqrt(1e3 * q_l * power_kw / (2.0 * np.pi * F_RF))) if power_kw > 0 else 0.0
+
+
+def analyse(diag):
+    """Per-dump beam metrics (sorted by ⟨z⟩) plus the raw (z, KE, w) snapshot of each dump."""
+    ts = OpenPMDTimeSeries(diag)
+    rec = {k: [] for k in ("zmean", "sigz", "ke", "dke", "ipk", "it")}
+    snaps = {}
+    v_beam = None
+    for it in ts.iterations:
+        z, ux, uy, uz, w = ts.get_particle(
+            ["z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
+        if len(z) < 50:                                     # skip near-empty boundary dumps
+            continue
+        gamma = px.gamma_from_u(ux, uy, uz)
+        ke = (gamma - 1.0) * px.MC2_KEV
+        if v_beam is None:
+            v_beam = float(np.average(uz / gamma, weights=w) * C_LIGHT)
+        zmean, sigz = _wmean_std(z, w)
+        kmean, dke = _wmean_std(ke, w)
+        rec["zmean"].append(zmean); rec["sigz"].append(sigz)
+        rec["ke"].append(kmean); rec["dke"].append(dke)
+        rec["ipk"].append(_peak_current(z, w, v_beam)); rec["it"].append(it)
+        snaps[it] = (z, ke, w)
+    if not rec["zmean"]:
+        return None, None, None
+    order = np.argsort(rec["zmean"])
+    for k in ("zmean", "sigz", "ke", "dke", "ipk"):
+        rec[k] = np.asarray(rec[k])[order]
+    rec["it"] = [rec["it"][i] for i in order]
+    return rec, snaps, v_beam
+
+
+def station_picks(rec):
+    """Four representative dumps along the line, with labels (used by both station figures)."""
+    its, zmean = rec["it"], rec["zmean"]
+    nearest = lambda z: its[int(np.argmin(np.abs(zmean - z)))]
+    post = zmean > Z_GAP_CENTER_2
+    z_focus = zmean[np.where(post)[0][np.argmin(rec["sigz"][post])]] if post.any() else zmean[-1]
+    picks = [its[0], nearest(Z_GAP_CENTER_2 + 0.06), nearest(z_focus), nearest(Z_HANDOFF)]
+    titles = ["injection", "after Preb 2", "best focus (min σ_z)", "handoff (2.03 m)"]
+    return picks, titles
+
+
+def line_figure(rec):
+    """σ_z, peak current, and mean energy along the line (vs ⟨z⟩)."""
+    z_mm = rec["zmean"] * 1e3
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.4), constrained_layout=True)
+    a1.plot(z_mm, rec["sigz"] * 1e3, "o-", ms=3, color="C0")
+    for z_gap, c in ((Z_GAP_CENTER_1, "C3"), (Z_GAP_CENTER_2, "C5")):
+        a1.axvline(z_gap * 1e3, color=c, ls=":")
+    a1.set_xlabel("⟨z⟩  [mm]"); a1.set_ylabel(r"$\sigma_z$  [mm]")
+    a1.set_title("Bunch length along the line (velocity bunching → waist)")
+
+    a2b = a2.twinx()
+    a2.plot(z_mm, rec["ipk"], "o-", ms=3, color="C2")
+    a2b.plot(z_mm, rec["ke"], "s--", ms=3, color="C4")
+    for z_gap in (Z_GAP_CENTER_1, Z_GAP_CENTER_2):
+        a2.axvline(z_gap * 1e3, color="0.6", ls=":")
+    a2.set_xlabel("⟨z⟩  [mm]")
+    a2.set_ylabel("peak current  [A]", color="C2"); a2.tick_params(axis="y", labelcolor="C2")
+    a2b.set_ylabel("mean KE  [keV]", color="C4"); a2b.tick_params(axis="y", labelcolor="C4")
+    a2.set_title("Peak current and mean energy")
+    _save(fig, "line")
+
+
+def bunch_profile_figure(rec, snaps, picks, titles):
+    """Longitudinal line-charge density λ(z) at each station."""
+    fig, axs = plt.subplots(1, len(picks), figsize=(3.4 * len(picks), 4.0), constrained_layout=True)
+    for ax, it, title in zip(np.atleast_1d(axs), picks, titles):
+        z, _, w = snaps[it]
+        zc = z - np.average(z, weights=w)
+        sigz = np.sqrt(np.average(zc ** 2, weights=w))
+        span = max(4.0 * sigz, 5e-4)
+        charge, edges = np.histogram(zc, bins=np.linspace(-span, span, 121), weights=w * E_CHARGE)
+        lam = charge / (edges[1] - edges[0]) * 1e9         # C/m → nC/m
+        centres = 0.5 * (edges[:-1] + edges[1:])
+        ax.fill_between(centres * 1e3, lam, color="C0", alpha=0.25)
+        ax.plot(centres * 1e3, lam, color="C0", lw=1.4)
+        zmean = rec["zmean"][rec["it"].index(it)]
+        ax.set_title(f"{title}\n(⟨z⟩={zmean*1e3:.0f} mm)")
+        ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("λ  [nC/m]")
+        ax.annotate(f"peak {lam.max():.2f} nC/m\nσ_z = {sigz*1e3:.2f} mm",
+                    xy=(0.96, 0.95), xycoords="axes fraction", ha="right", va="top",
+                    fontsize=8, bbox=dict(boxstyle="round", fc="white", alpha=0.8))
+    fig.suptitle("Longitudinal line-charge density λ(z)", fontsize=12)
+    _save(fig, "bunch_profile")
+
+
+def phasespace_figure(rec, snaps, picks, titles):
+    """Charge-weighted longitudinal phase space (z − ⟨z⟩, KE − ⟨KE⟩) at each station."""
+    def wpercentile(v, w, q):
+        order = np.argsort(v)
+        cdf = np.cumsum(w[order]); cdf /= cdf[-1]
+        return np.interp(q, cdf, v[order])
+
+    fig, axs = plt.subplots(1, len(picks), figsize=(3.6 * len(picks), 4.0), constrained_layout=True)
+    for ax, it, title in zip(np.atleast_1d(axs), picks, titles):
+        z, ke, w = snaps[it]
+        zc = (z - np.average(z, weights=w)) * 1e3
+        kc = ke - np.average(ke, weights=w)
+        h = ax.hist2d(zc, kc, bins=120, weights=w * E_CHARGE * 1e9,
+                      cmap="inferno", cmin=np.finfo(float).tiny)
+        fig.colorbar(h[3], ax=ax, label="charge  [nC/bin]", fraction=0.046, pad=0.02)
+        for set_lim, vals in ((ax.set_xlim, zc), (ax.set_ylim, kc)):
+            lo, hi = wpercentile(vals, w, 1e-3), wpercentile(vals, w, 1 - 1e-3)
+            pad = 0.05 * (hi - lo) or 1.0
+            set_lim(lo - pad, hi + pad)
+        zmean = rec["zmean"][rec["it"].index(it)]
+        ax.set_title(f"{title}  (⟨z⟩={zmean*1e3:.0f} mm)")
+        ax.set_xlabel("z − ⟨z⟩  [mm]"); ax.set_ylabel("KE − ⟨KE⟩  [keV]")
+    fig.suptitle("Longitudinal phase space along the injector", fontsize=12)
+    _save(fig, "phasespace")
+
+
+def _on_axis_ez(field_path):
+    """On-axis E_z(z) of a raw 1-J cavity map, in lab z."""
+    s = io.Series(field_path, io.Access.read_only)
+    mesh = s.iterations[0].meshes["E"]
+    ez = mesh["z"].load_chunk()
+    s.flush()
+    dz = mesh.grid_spacing[1]
+    z0 = mesh.grid_global_offset[1] if mesh.grid_global_offset else 0.0
+    return z0 + np.arange(ez[0].shape[1]) * dz, ez[0][0]
+
+
+def cavity_figure(w):
+    """Spatial RF field lobes of both prebunchers (scaled by their drive amplitude), in lab z."""
+    p1, p2 = w.get("params/PREB1_KW"), w.get("params/PREB2_KW")
+    scale1, scale2 = rf_scale(p1, Q_L_1), rf_scale(p2, Q_L_2)
+    z1, ez1 = _on_axis_ez(PREB1_FIELD)
+    z2, ez2 = _on_axis_ez(PREB2_FIELD)
+
+    fig, ax = plt.subplots(figsize=(8.6, 4.4), constrained_layout=True)
+    ax.plot(z1 * 1e3, ez1 * scale1 / 1e6, color="C3",
+            label=f"Preb 1 ({p1:g} kW, $V_g$≈{scale1*V1J_KEV:.0f} kV)")
+    if scale2 > 0:
+        ax.plot(z2 * 1e3, ez2 * scale2 / 1e6, color="C4",
+                label=f"Preb 2 reversed ({p2:g} kW, $V_g$≈{scale2*V1J_KEV:.0f} kV)")
+    ax.axhline(0, color="k", lw=0.6)
+    ax.axvline(Z_HANDOFF * 1e3, color="C2", ls="--", label="handoff (2.03 m)")
+    ax.set_xlabel("lab z  [mm]"); ax.set_ylabel(r"on-axis $E_z \times$ scale  [MV/m]")
+    ax.set_title("Prebuncher RF field lobes")
+    ax.legend(fontsize=9)
+    _save(fig, "cavity")
+
+
 def main():
     from warpx import WarpX
     os.makedirs(RESULTS, exist_ok=True)
@@ -38,18 +217,31 @@ def main():
     w = WarpX(input_file=CONFIG, path="injector")
     w.load_output(diag_dir=DIAG)
     it = _last_populated(DIAG)
+    pg = w._particle_group(iteration=it)
 
-    figs = [
-        ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),   # energy-flat ~150 keV
+    # Generic phase-space / trend figures (lume-warpx helpers + shared plot_extras).
+    for name, fig in [
+        ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
         ("transverse_x_px",  w.plot2D("x", "px", iteration=it)),
         ("centroid_vs_t",    w.plot1D("t", "mean_z")),
-        ("bunch_length_vs_t", w.plot1D("t", "sigma_z")),                       # velocity bunching → waist
+        ("bunch_length_vs_t", w.plot1D("t", "sigma_z")),
         ("emittance_vs_t",   w.plot1D("t", "norm_emit_x")),
-    ]
-    for name, fig in figs:
-        fig.savefig(f"{RESULTS}/injector_{name}.png", dpi=140, bbox_inches="tight")
-        print(f"wrote {RESULTS}/injector_{name}.png")
-    plt.close("all")
+        ("beamsize_vs_t",    w.plot1D("t", "sigma_x")),
+        ("energy_spectrum",  px.energy_spectrum(pg)),
+        ("current_profile",  px.current_profile(pg)),
+        ("energy_chirp",     px.energy_chirp(pg)),
+        ("beam_spot_xy",     px.beam_spot(pg)),
+    ]:
+        _save(fig, name)
+
+    # Stage-specific rich figures (raw openPMD over the whole run).
+    cavity_figure(w)
+    rec, snaps, _ = analyse(DIAG)
+    if rec is not None:
+        picks, titles = station_picks(rec)
+        line_figure(rec)
+        bunch_profile_figure(rec, snaps, picks, titles)
+        phasespace_figure(rec, snaps, picks, titles)
 
 
 if __name__ == "__main__":

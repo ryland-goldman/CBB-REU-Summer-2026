@@ -85,7 +85,8 @@ the z–(γβ_z) emittance in mm — NOT mm·mrad.)
 
 Finite-extent, space-charge-limited (Child–Langmuir) diode in **2D x–z** (cathode 0 V, anode +30 V
 at z = 0.2 mm, emission from `|x| < 8 mm`, over-injected at 2× J_CL). `plot_cathode.py` generates
-every figure with lume-warpx's `WarpX.plot2D` / `plot_fields` / `plot1D` helpers:
+three layers — lume-warpx's `WarpX.plot2D` / `plot_fields` / `plot1D` helpers, the shared
+`pipeline.plot_extras` beam figures, and the stage-specific emission-physics figures (raw openPMD):
 
 - `phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: longitudinal phase space of the beam
   streaming across the gap toward the anode.
@@ -95,6 +96,11 @@ every figure with lume-warpx's `WarpX.plot2D` / `plot_fields` / `plot1D` helpers
 - `charge_density_xz.png` — `plot_fields("rho","x","z")`: the space-charge layer hugging the emitting strip.
 - `centroid_vs_t.png` — `plot1D("t","mean_z")`: the emitted cloud filling the gap.
 - `charge_vs_t.png` — `plot1D("t","charge")`: total tracked charge as emission self-limits at J_CL.
+- `energy_spectrum.png` — `plot_extras.energy_spectrum`: charge-weighted KE histogram with ⟨E⟩/σ_E — the broad low-energy emitted spectrum across the gap.
+- `current_profile.png` — `plot_extras.current_profile`: longitudinal current I(z) = Σ(w·v_z)/dz — the flat continuous-DC emission stream (the SCL diode emits a steady current, not a bunch).
+- `child_langmuir.png` — on-axis φ(z) and E_z(z) against the planar Child–Langmuir law and the vacuum reference: the field is space-charge-depressed below vacuum and tracks the CL z^(4/3)/z^(1/3) shape (with the near-cathode field reversal, the virtual-cathode signature).
+- `current_saturation.png` — transmitted current density at the anode vs time: space charge holds it toward J_CL even though 2× J_CL is injected.
+- `emission_phase_space.png` — the intrinsic thermal transverse phase space (x, p_x) hexbin + p_x histogram with ε_n,x and the ±√(kT·mₑc²) thermal scale: the source quality the gun inherits.
 
 ---
 
@@ -103,7 +109,8 @@ every figure with lume-warpx's `WarpX.plot2D` / `plot_fields` / `plot1D` helpers
 CESR electrostatic gun ("Chili Gun Mk II", ~150 kV) in **RZ**, using the Poisson–Superfish field
 map `CESR_gun.gdf` scaled to a −150 kV cathode (applied electrode field + self-consistent space
 charge; the cathode beam is slab→radius remapped, renormalized to 1 nC, and time-released over the
-2 ns grid pulse). `plot_gun.py` generates every figure with lume-warpx's helpers:
+2 ns grid pulse). `plot_gun.py` generates three layers — lume-warpx's helpers, the shared
+`pipeline.plot_extras` beam figures, and the stage-specific rich figures (raw openPMD):
 
 - `phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: the exit longitudinal phase space, the
   beam accelerated to ~150 keV.
@@ -112,6 +119,15 @@ charge; the cathode beam is slab→radius remapped, renormalized to 1 nC, and ti
 - `self_charge_rz.png` — `plot_fields("rho","z","r")`: the beam self charge density.
 - `centroid_vs_t.png` — `plot1D("t","mean_z")`: the bunch marching down the gun.
 - `emittance_vs_t.png` — `plot1D("t","norm_emit_x")`: normalized transverse emittance over the run.
+- `beamsize_vs_t.png` — `plot1D("t","sigma_x")`: the transverse envelope σ_x across the gun.
+- `energy_spectrum.png` — `plot_extras.energy_spectrum`: charge-weighted exit KE histogram with ⟨E⟩/σ_E — the ~150 keV beam's energy spread.
+- `current_profile.png` — `plot_extras.current_profile`: longitudinal current I(z) of the time-released 2 ns pulse stream.
+- `beam_spot_xy.png` — `plot_extras.beam_spot`: the transverse x–y spot (RZ-reconstructed y) with marginals — a roundness check.
+- `gun_field.png` — the on-axis applied E_z(z) and the potential it implies (cathode → exit), read from `gun_E.h5`.
+- `beam_rz.png` — the beam shape in r–z at launch / mid-gun / exit (id-tracked volumetric dumps).
+- `energy_gain.png` — mean and max KE vs z on **fixed-z virtual screens** (`beam_metrics.screen_profile`): a local-in-z energy gain saturating at the 150 keV gun voltage, with no quasi-DC pooling jitter.
+- `beam_envelope.png` — σ_x and ε_n,x vs z on the same virtual screens: the transverse focusing (σ_x ~4→1.3 mm) and emittance evolution.
+- `space_charge.png` — the beam **self-field** ρ(r,z) and φ(r,z) (the dumped self-consistent fields) near launch, separate from the applied gun field.
 
 ---
 
@@ -120,8 +136,8 @@ charge; the cathode beam is slab→radius remapped, renormalized to 1 nC, and ti
 The full LinacSim injector subsection in **one RZ** space-charge run: Lens 0A → Prebuncher 1
 (8 kW @ 0.534 m) → Prebuncher 2 (10 kW, reversed, @ 1.318 m) → Sol 0 / Lens 0E, then the 9.547 mm
 collimator. Two-cavity velocity bunching + solenoid focusing over ~2 m; hands a focused, collimated
-beam to the linac at z ≈ 2.03 m. `plot_injector.py` generates every figure with lume-warpx's helpers
-(particle diagnostics only — no field diag, so no `plot_fields`):
+beam to the linac at z ≈ 2.03 m. `plot_injector.py` generates three layers — lume-warpx's helpers,
+the shared `pipeline.plot_extras` beam figures, and the stage-specific rich figures (raw openPMD):
 
 - `injector_phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: the exit longitudinal phase
   space — the energy-flat (~150 keV, zero net kick) velocity-bunched beam at the 2.03 m handoff.
@@ -129,6 +145,15 @@ beam to the linac at z ≈ 2.03 m. `plot_injector.py` generates every figure wit
 - `injector_centroid_vs_t.png` — `plot1D("t","mean_z")`: the bunch traversing the ~2 m line.
 - `injector_bunch_length_vs_t.png` — `plot1D("t","sigma_z")`: σ_z compressing to its waist at the handoff.
 - `injector_emittance_vs_t.png` — `plot1D("t","norm_emit_x")`: transverse emittance over the run.
+- `injector_beamsize_vs_t.png` — `plot1D("t","sigma_x")`: the transverse envelope σ_x — the solenoid (Sol 0 / Lens 0E) focusing.
+- `injector_energy_spectrum.png` — `plot_extras.energy_spectrum`: charge-weighted handoff KE histogram — the energy-flat (~150 keV, zero net kick) spectrum.
+- `injector_current_profile.png` — `plot_extras.current_profile`: longitudinal current I(z) — the velocity-bunched peak at the waist.
+- `injector_energy_chirp.png` — `plot_extras.energy_chirp`: slice ⟨KE⟩ vs z (with density) — the longitudinal energy chirp that drives the velocity bunching.
+- `injector_beam_spot_xy.png` — `plot_extras.beam_spot`: the transverse x–y spot (RZ-reconstructed y) with marginals.
+- `injector_cavity.png` — the on-axis E_z field lobes of both prebunchers (scaled by their drive amplitude V_g), in lab z, with the 2.03 m handoff plane marked.
+- `injector_line.png` — σ_z, peak current, and mean KE vs ⟨z⟩ along the line: the velocity-bunching story (σ_z 108→27 mm, peak current → ~16 A) with the energy modulation at each cavity gap.
+- `injector_bunch_profile.png` — the longitudinal line-charge density λ(z) at four stations (injection / after Preb 2 / best focus / handoff).
+- `injector_phasespace.png` — the charge-weighted longitudinal phase space (z−⟨z⟩, KE−⟨KE⟩) at the same four stations: the chirp imposed by the cavities rotating to the bunched S-curve at the waist.
 
 ---
 

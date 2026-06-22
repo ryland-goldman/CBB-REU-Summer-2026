@@ -370,8 +370,10 @@ Three caveats frame this number:
 ## Outputs
 
 `injector.plot()` reads `injector/diags/main/particles` and writes to `injector/results/`,
-generating every figure with lume-warpx's plotting helpers (particle diagnostics only — no
-field diagnostic is dumped, so no `plot_fields`):
+generating three layers — lume-warpx's plotting helpers (particle diagnostics only — no field
+diagnostic is dumped, so no `plot_fields`), the shared custom figures in `pipeline/plot_extras.py`,
+and the stage-specific rich figures (raw openPMD over the whole run; the prebuncher field lobes
+read from the `preb1/2_EB.h5` maps):
 
 - `injector_phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: the energy-flat (~150 keV)
   velocity-bunched exit beam at the 2.03 m handoff.
@@ -379,6 +381,15 @@ field diagnostic is dumped, so no `plot_fields`):
 - `injector_centroid_vs_t.png` — `plot1D("t","mean_z")`: the bunch traversing the ~2 m line.
 - `injector_bunch_length_vs_t.png` — `plot1D("t","sigma_z")`: σ_z compressing to its waist at the handoff.
 - `injector_emittance_vs_t.png` — `plot1D("t","norm_emit_x")`: transverse emittance over the run.
+- `injector_beamsize_vs_t.png` — `plot1D("t","sigma_x")`: the transverse envelope σ_x — the Sol 0 / Lens 0E focusing.
+- `injector_energy_spectrum.png` — `plot_extras.energy_spectrum`: charge-weighted handoff KE histogram — the energy-flat (~150 keV, zero net kick) spectrum.
+- `injector_current_profile.png` — `plot_extras.current_profile`: longitudinal current I(z) — the velocity-bunched current peak at the waist.
+- `injector_energy_chirp.png` — `plot_extras.energy_chirp`: slice ⟨KE⟩ vs z (with density) — the longitudinal energy chirp that drives the velocity bunching.
+- `injector_beam_spot_xy.png` — `plot_extras.beam_spot`: the transverse x–y spot (RZ-reconstructed y) with marginals.
+- `injector_cavity.png` — the on-axis E_z field lobes of both prebunchers (scaled by their drive amplitude V_g), in lab z, with the 2.03 m handoff plane marked.
+- `injector_line.png` — σ_z, peak current, and mean KE vs ⟨z⟩ along the line: the velocity-bunching story (σ_z 108→27 mm, peak current → ~16 A) with the energy modulation at each cavity gap.
+- `injector_bunch_profile.png` — the longitudinal line-charge density λ(z) at four stations (injection / after Preb 2 / best focus / handoff).
+- `injector_phasespace.png` — the charge-weighted longitudinal phase space (z−⟨z⟩, KE−⟨KE⟩) at the same four stations: the cavity chirp rotating to the bunched S-curve at the waist.
 
 ## Notes / caveats
 
