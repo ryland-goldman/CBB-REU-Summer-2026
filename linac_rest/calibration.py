@@ -12,8 +12,9 @@ import math
 from scipy.optimize import brentq
 
 from . import build_linac_rest_lattice as L
+from pipeline.constants import MC2_EV
 
-ELECTRON_REST_MEV = 0.51099895069  # electron rest energy [MeV]
+ELECTRON_REST_MEV = MC2_EV / 1e6   # electron rest energy [MeV]
 
 
 # Delegate naming to build_linac_rest_lattice (single source of truth for deck element names).

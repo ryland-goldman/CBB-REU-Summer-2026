@@ -18,6 +18,12 @@
 # Core PIC engine
 pywarpx==26.4
 
+# LUME wrapper that the four WarpX stages (cathode/gun/injector/linac_sec1) drive via a
+# static YAML config + runtime overrides. Needs pywarpx (above) at import. 1.0.1 carries the
+# AppliedFromFile field, FromInitialParticles distribution, install_callback, and set/get/update
+# override API the stages rely on. (Develop against a local editable clone: pip install -e .)
+lume-warpx==1.0.1
+
 # openPMD I/O and visualization
 openpmd-api==0.17.0
 openpmd-viewer==1.11.0

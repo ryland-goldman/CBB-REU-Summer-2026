@@ -1,6 +1,6 @@
-"""Cornell Linac Section 1 stage facade: config/run/plot over the WarpX RZ SLAC
-3 m traveling-wave structure. config() keys match the module-level constants in
-linac_sec1/build_linac_sec1_field.py and linac_sec1/linac_sec1_sim.py.
+"""Cornell Linac Section 1 stage facade: run/plot over the WarpX RZ SLAC 3 m
+traveling-wave structure (driven via lume-warpx). Constants live in
+linac_sec1/linac_sec1.yaml (edit it to retune); config() is not the knob API here.
 
 See linac_sec1/README.md for physics, parameters, and gotchas.
 """

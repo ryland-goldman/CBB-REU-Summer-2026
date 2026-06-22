@@ -6,6 +6,11 @@ its emitted electrons and accelerate them through the **CESR gun** — the elect
 accelerating structure modelled in Adam Bartnik's Linac GUI with the Poisson–Superfish field
 map `CESR_gun.gdf` (the "Chili Gun Mk II", ~150 kV).
 
+Driven through **lume-warpx**: every constant lives in `gun.yaml` and `gun_sim.py` reads them
+back, overriding only the runtime-computed values (`dt`, step count, the seed arrays, diagnostic
+periods) and building the time-release beam with a `beforestep` callback. Edit `gun.yaml` to
+retune (the `config()` knob API is bypassed for this stage).
+
 The gun field is applied as an external **electrode field** on the particles; WarpX's
 **electromagnetostatic** solver supplies the self-consistent beam **space charge** on top —
 both the electrostatic self-field (∇²φ = −ρ/ε₀) and, from the beam current, the self
@@ -28,33 +33,33 @@ python -m gun.gun_sim           # RZ WarpX run  ->  diags/{fields,particles}/
 python -m gun.plot_gun          # figures       ->  results/*.png
 ```
 
-To override the gun voltage or bunch charge: `gun.config(GUN_VOLTAGE=150e3,
-BUNCH_CHARGE=1.0e-9)` before `gun.run()`. Keys must match the module-level constants in
-`gun/build_gun_field.py` and `gun/gun_sim.py`. `build_gun_field.py` reads
-`fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
+`GUN_VOLTAGE` is a `build_gun_field.py` module constant (it sets the field-map scale), so
+`gun.config(GUN_VOLTAGE=150e3)` before `gun.run()` still works. **Every other knob lives in
+`gun/gun.yaml`** — the `config()` API is bypassed for this WarpX stage; to retune, edit the YAML.
+`build_gun_field.py` reads `fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
 `cathode/diags/particles/`. All paths are repo-root-relative.
 
-**Performance knobs** (`config()`-overridable module constants; defaults reproduce the
-original run): `REQUIRED_PRECISION` (1e-5) and `MAX_ITERS` (None) for the MLMG solve;
-`CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and `AVG_SPEED_FRAC` (0.6) for
-the auto-derived run length, or `MAX_STEPS` (>0) to fix it (`AVG_SPEED_FRAC=0.6` is
-hand-tuned for the 150 kV point — `v_exit` is recomputed from `GUN_VOLTAGE`, but the
-average-speed fraction is not, so re-check it if `GUN_VOLTAGE` is changed substantially
-via `config()`); `N_DIAGS` (40) for the openPMD
-dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (reweighted,
-charge-preserving); `BEAM_RELEASE` (`"timed"`/`"snapshot"`) and `PULSE_WIDTH` (2 ns) for the
-beam representation (see *Beam source*; `"timed"` runs ~5× longer than `"snapshot"` because the
-run spans the full pulse + a transit instead of one transit); the grid `nr, nz`; and
-`SPACE_CHARGE` (default `True`). Setting
-`SPACE_CHARGE=False` passes `warpx_do_not_deposit` (beam self-field off, only the applied gun field
-acts) — but note the self-field is *dominant* here at 146 keV (it "dwarfs the gun field," ~17% of
-charge is already lost to it), so SC-off is a large physics change, not a mild diagnostic. Runtime ≈
-`nz²` (per-step cost ∝ cells, and
-`dz = ZMAX/nz` ⇒ fewer steps as `nz` drops), so halving `nz` ≈ 4× faster. This holds because the
-gun's cells are near-isotropic (`dz/dr ≈ 1.3`) so the MLMG solve stays well-conditioned as `nz`
-drops — **unlike the injector's long-thin box**, where coarsening `NZ` slows the solve instead
-(see `injector/README.md`). Keep `N_DIAGS ≥ 20` so `space_charge.png` still finds its
-near-launch field snapshot (it self-skips otherwise).
+**Performance knobs** (in `gun.yaml`): `required_precision` / `warpx_magnetostatic_required_precision`
+(`solver:`, ship **1e-4** — the Balanced profile; the Conservative/benchmark value is 1e-5) for the
+MLMG solve; in `params:`, `CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and
+`AVG_SPEED_FRAC` (0.6) for the auto-derived run length, or `MAX_STEPS` (>0) to fix it
+(`AVG_SPEED_FRAC=0.6` is hand-tuned for the 150 kV point — `v_exit` is recomputed from
+`GUN_VOLTAGE`, but the average-speed fraction is not, so re-check it if `GUN_VOLTAGE` changes
+substantially); `N_DIAGS` (40) for the openPMD dump count; `MAX_PART` (0 = no cap) to downsample
+the imported cathode bunch (reweighted, charge-preserving); `BEAM_RELEASE` (`"timed"`/`"snapshot"`)
+and `PULSE_WIDTH` (2 ns) for the beam representation (see *Beam source*; `"timed"` runs ~5× longer
+than `"snapshot"`); and the grid `number_of_cells` `[nr, nz]`. The species
+`warpx_do_not_deposit` flag (default `false` = space charge ON): `true` turns the self-field off
+(only the applied gun field acts) — but the self-field is *dominant* here at 149 keV (it "dwarfs
+the gun field," ~17% of charge is already lost to it), so it is a large physics change, not a mild
+diagnostic. Runtime ≈ `nz²` (per-step cost ∝ cells, and `dz = ZMAX/nz` ⇒ fewer steps as `nz`
+drops), so halving `nz` ≈ 4× faster — the reason the **shipped Balanced default is `nz = 384`**
+(dz ≈ 0.19 mm). The cross-code-converged grid is `nz = 712` (dz ≈ 0.10 mm; see *Cross-code
+validation* and *Simulation parameters*) — set it for a Conservative near-cathode-εn,x run. The
+gun's cells are near-isotropic so the MLMG solve stays well-conditioned at either `nz` — **unlike
+the injector's long-thin box**, where coarsening `NZ` slows the solve (see `injector/README.md`).
+The `fields` diagnostic (`Ez_rz.png`, `self_charge_rz.png`) needs a few dumps to be meaningful, so
+keep `N_DIAGS` reasonable.
 
 ## The gun field map
 
@@ -75,10 +80,15 @@ the anode grounded, so we scale by a **negative** factor, `SCALE = -150` → a *
 cathode. After scaling the on-axis field is `Ez(cathode) ≈ -1.94 MV/m`, peaking at
 `-4.88 MV/m` near z ≈ 28 mm, and the 150 kV potential drop accelerates electrons in +z.
 
-`build_gun_field.py` writes the scaled field as an openPMD file in the layout WarpX's
-`read_from_file` external-field reader requires for RZ: geometry `thetaMode` with a single
+`build_gun_field.py` writes the scaled field as an openPMD file (via the shared
+`pipeline/fieldio.py` writer) in this RZ layout: geometry `thetaMode` with a single
 `m = 0` mode, mesh record `E` with components `r`,`t`,`z`, axis labels `["r","z"]`, dataset
-shape `(1, nr, nz)`. `gun_sim.py` then loads it via the raw WarpX inputs
+shape `(1, nr, nz)`. This `["r","z"]`/`m=0` order is a **deliberate, reader-validated
+deviation** from WarpX's own RZ field *diagnostic*, which emits the opposite (`["z","r"]`,
+`m=1;imag=+`, shape `(modes, nz, nr)`); both load correctly because the `read_from_file`
+reader is axis-labels-aware, so this convention is a choice (one shared across all three
+build scripts), not something the reader strictly requires. `gun_sim.py` then loads it via
+the raw WarpX inputs
 
 ```
 particles.E_ext_particle_init_style = read_from_file
@@ -116,7 +126,7 @@ bunch charge. We:
 **Why renormalize:** injecting the full 82 nC as one instantaneous bunch is unphysical — its
 radial space-charge field dwarfs the gun field and blows the beam apart before it
 accelerates (observed directly: the beam is absorbed within ~50 steps). At 1 nC the beam still
-transports and accelerates to ~146 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
+transports and accelerates to ~149 keV. Set `BUNCH_CHARGE` at the top of `gun_sim.py` to
 explore the space-charge regime.
 
 ### Beam representation — time-release vs snapshot (`BEAM_RELEASE`)
@@ -161,9 +171,8 @@ in-field dump — is essential: a field-free drift preserves εn,x, but drifting
 particle as if field-free manufactures a spurious x–u correlation and inflates εn,x ~8× (the
 reason the domain carries the `ZPAD` drift pad). Note εn,x of the reconstructed *instantaneous*
 beam is the **projected** emittance of the ~0.4 m drifting bunch (head drifted longer than tail):
-≈ 45 mm·mrad, physically ~8× the **per-slice** beam quality (≈ 5.7 mm·mrad, the steady-state
-plateau in `beam_envelope.png`, flat through the exit and into the pad — confirming the drift
-preserves per-slice εn,x). That head–tail projection is real (an instantaneous diagnostic of the
+≈ 45 mm·mrad, physically ~8× the **per-slice** beam quality (≈ 5.7 mm·mrad steady-state — the
+drift preserves per-slice εn,x). That head–tail projection is real (an instantaneous diagnostic of the
 2 ns beam would measure it), not an artifact; the injector's prebunchers compress the beam
 longitudinally and recover it. Do **not** read the 45 mm·mrad handoff number as the beam quality. Particles that never reach the pad are classified as a
 radial (`r=RMAX`) loss or, for the last sliver of the pulse, an un-flushed tail (run ends first,
@@ -185,7 +194,7 @@ beam is treated as a single injected bunch.
 | parameter | value |
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
-| grid | 128 (r) × 712 (z), r ∈ [0, 15 mm], z ∈ [0, 71.77 mm] = field map (`ZMAX_FIELD`=51.77 mm) + `ZPAD`=20 mm field-free drift pad; dz≈0.10 mm (finer than the old 96×384 to resolve the near-cathode dynamics, and padded so the exit beam is sampled in field-free space — see *Cross-code validation* and *Beam source*) |
+| grid | 128 (r) × **384 (z)** shipped Balanced default (dz≈0.19 mm); **712** is the cross-code-converged grid (dz≈0.10 mm), set it in `gun.yaml` `number_of_cells` for a Conservative near-cathode-εn,x run. r ∈ [0, 15 mm], z ∈ [0, 71.77 mm] = field map (`ZMAX_FIELD`=51.77 mm) + `ZPAD`=20 mm field-free drift pad, padded so the exit beam is sampled in field-free space (see *Cross-code validation* and *Beam source*) |
 | boundaries (fields) | axis at r=0; **dirichlet** (grounded) outer radial wall + both z plates |
 | solver | electromagnetostatic, lab frame, Multigrid (self E **and** B from beam current) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
@@ -202,7 +211,7 @@ on the PICMI `ElectrostaticSolver`): on top of the electrostatic Poisson solve (
 (∇²**A** = −μ₀**j**, **B** = ∇×**A**), so the beam's **self magnetic field** is included. The
 resulting magnetic-pinch force `qβ×B` partially cancels the radial electric repulsion, giving the
 correct relativistic net transverse self-force `qE_r/γ²` rather than the pure-electrostatic `qE_r`.
-At the gun exit (146 keV, γ ≈ 1.29) the plain labframe-electrostatic solver would **overestimate
+At the gun exit (149 keV, γ ≈ 1.29) the plain labframe-electrostatic solver would **overestimate
 the transverse space-charge force by ≈ γ² = 1.66×, i.e. ~66 %** (ramping from a few % near the
 cathode at 10 keV to ~66 % at exit); the electromagnetostatic solver removes that error
 self-consistently. (WarpX's per-species *relativistic* ES mode is an alternative for a single
@@ -218,7 +227,7 @@ for a quick check.) **Boundary requirement:** the outer radial wall is
 would otherwise have an all-Neumann singular operator and the MLMG bottom solve **diverges**
 (`MLMG failed`). Grounding the pipe at r = 15 mm — well outside the r ≲ 8 mm beam — makes it
 well-posed (it also models φ as a grounded conductor rather than a Neumann mirror, physically
-the real beampipe); the headline exit energy is unchanged (146 keV). Transmission depends on the
+the real beampipe); the headline exit energy is unchanged (149 keV). Transmission depends on the
 beam representation: ≈ 81 % for the over-dense `snapshot` beam (halo blown to the wall), ≈ 100 %
 for the realistic `timed` release (the low line-density beam barely diverges) — see *Beam
 representation*.
@@ -240,9 +249,11 @@ the physics choices this stage makes:
   opposite-sign image partly cancels the bunch self-field; a Neumann plane gives a *same*-sign
   image that adds to it (a +12 % error in the benchmark). This stage's z = 0 plate is dirichlet.
 - **Grid must resolve the near-cathode dynamics.** εn,x falls and only converges once the grid
-  is fine enough near the cathode (the benchmark converged by nz ≈ 720 over 55 mm); the old
-  nz = 384 over 51.77 mm sat on the unconverged side, so the grid here is **128 × 712** (over
-  the 71.77 mm field-free-padded domain; dz≈0.10 mm).
+  is fine enough near the cathode (the benchmark converged by nz ≈ 720 over 55 mm); nz = 384 over
+  51.77 mm sat on the unconverged side, so the **converged grid is 128 × 712** (over the 71.77 mm
+  field-free-padded domain; dz≈0.10 mm). The shipped **Balanced** default coarsens this to
+  `nz = 384` (dz≈0.19 mm) for ~4× speed — the same effective default the pre-YAML pipeline ran via
+  its Balanced `config()` block; set `nz = 712` in `gun.yaml` for a converged-εn,x Conservative run.
 - **Match the beam representation.** The benchmark's single largest term (~28 %) is snapshot vs
   time-release — implemented here as `BEAM_RELEASE` (see *Beam source*).
 
@@ -252,32 +263,20 @@ recipe, not just a WarpX convention.
 
 ## Figures (`results/`)
 
-1. **`gun_field.png`** — on-axis `Ez(z)` and implied potential of the scaled field map: the
-   accelerating field the beam sees (Ez < 0, 150 kV total drop).
-2. **`beam_rz.png`** — `r–z` beam distribution at launch / mid-gun / exit: transport through
-   the gun, including the near-cathode radial focusing.
-3. **`energy_gain.png`** — mean and max kinetic energy vs. z, climbing toward ~150 keV.
-4. **`exit_phase_space.png`** — longitudinal `z–KE` phase space and the energy spectrum at the
-   last dump.
-5. **`beam_envelope.png`** — per-plane RMS size `σ_x = √⟨x²⟩` and normalized transverse emittance
-   `εn,x` vs. `z`: the near-cathode radial focusing of `beam_rz.png` made quantitative, plus the
-   space-charge / aberration emittance growth along the gun. (`σ_x` is the single-plane RMS that
-   pairs with `εn,x`; the radial RMS is `√⟨r²⟩ = √2·σ_x`.) The profile is reconstructed on **fixed-z
-   virtual screens** (`pipeline/beam_metrics.screen_profile`), NOT a z-histogram: each macroparticle's
-   id-trajectory across the volumetric dumps is interpolated to every z-plane it crosses (gun motion
-   is forward/monotonic-z, so each particle hits each screen exactly once), and the charge-weighted
-   moments are accumulated per screen. This is a true local phase space — no z-binning and no
-   pooling-stream assumption — so `εn,x` (a small difference of large moments) is smooth in z rather
-   than carrying the bin-to-bin sampling jitter a z-histogram of the pooled quasi-DC stream produces.
-   `energy_gain.png` shares the same screen reconstruction.
-6. **`space_charge.png`** — `r–z` maps of the beam **self-field** (`ρ` and the space-charge
-   potential well `φ`, ≈ −250 V) at a near-launch snapshot — the dumped self-field nothing else
-   plots, and the well that motivates renormalizing the bunch to 1 nC.
+Generated by `plot_gun.py` entirely with lume-warpx's plotting helpers:
+
+1. **`phase_space_z_KE.png`** — `plot2D("z","kinetic_energy")`: exit longitudinal phase space, the beam at ~150 keV.
+2. **`transverse_x_px.png`** — `plot2D("x","px")`: exit transverse phase space.
+3. **`Ez_rz.png`** — `plot_fields("E","z","r")`: field in the gun gap (applied electrode + self-field).
+4. **`self_charge_rz.png`** — `plot_fields("rho","z","r")`: the beam self charge density.
+5. **`centroid_vs_t.png`** — `plot1D("t","mean_z")`: the bunch marching down the gun.
+6. **`emittance_vs_t.png`** — `plot1D("t","norm_emit_x")`: normalized transverse emittance over the run.
 
 ## Notes / extensions
 
 - The beam energy gain tracks `∫ e·|Ez| dz` (≈ 7.5 keV by z ≈ 4 mm), approaching the ~150 keV
-  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~146 keV mean).
+  set by the cathode→exit potential drop (the space-charge-loaded beam lands at ~149 keV mean,
+  cross-validated against GPT at 148.9 keV — see *Cross-code validation*).
 - To approach the continuous-emission picture, inject a train of bunches or feed the cathode
   current directly rather than a single snapshot.
 - A solenoid (magnetic focusing) could be added via a second `read_from_file` B map if the

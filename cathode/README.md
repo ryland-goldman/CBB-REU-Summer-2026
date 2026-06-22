@@ -3,7 +3,10 @@
 A WarpX model of the **electron source** at the front of the Cornell Linac —
 Adam Bartnik's "Region 1": a hot thermionic cathode a short distance from a
 positively biased grid/anode, operating in the **space-charge-limited (SCL)**
-regime. Built with the Python/PICMI interface (`pywarpx`).
+regime. Built on `pywarpx`, driven through **lume-warpx**: every constant lives in
+`cathode.yaml` and `cathode_diode.py` reads them back, overriding only the
+runtime-computed values (flux, thermal velocity, `dt`, diagnostic periods). Edit
+`cathode.yaml` to retune (the `config()` knob API is bypassed for this stage).
 
 Unlike the canonical 1D [Pierce-diode example](../reference/WarpX%20Documentation/usage/examples/pierce_diode/README.md),
 the cathode here has a **finite transverse extent** and is simulated in 2D (x–z).
@@ -23,24 +26,24 @@ python cathode/cathode_diode.py   # ~1 min, writes openPMD to diags/
 python cathode/plot_cathode.py    # writes the figures to results/
 ```
 
-To override the operating point without editing the source, call
-`cathode.config(V_anode=..., gap_d=..., R_cathode=..., T_cathode=..., MAX_STEPS=...)`
-before `cathode.run()`. Keys must match the module-level constants at the top of
-`cathode/cathode_diode.py`.
+To retune the operating point, **edit `cathode/cathode.yaml`** — the `config()` knob API is
+bypassed for this WarpX stage. The anode bias is `grid: warpx_potential_hi_z` (30 V); the
+gap is `grid: upper_bound[1]` (200 µm); the cathode patch is the flux `lower/upper_bound`
+(±8 mm); and `T_cathode` (1425 K), `over_inject` (2×), `CFL` (0.4), `DIAG_PERIOD` live in the
+`params:` block.
 
-**Performance knobs** (also `config()`-overridable module constants; defaults reproduce
-the original run): `REQUIRED_PRECISION` (1e-5, MLMG tolerance), `MAX_ITERS` (None →
-PICMI default), `PPC` (10, macroparticles/cell), `CFL` (0.4, `dt = CFL·dz/v_final`),
-`DIAG_PERIOD` (None), and the grid `nx, nz`. There is also a `SPACE_CHARGE` flag (default `True`):
-**keep it `True`** — `False` passes `warpx_do_not_deposit`, which disables the space-charge-limited
+**Performance knobs** (in `cathode.yaml`): `required_precision` (`solver:`, ships **3e-5** —
+the Balanced profile; the Conservative/benchmark value is 1e-5), `n_macroparticles_per_cell`
+(`species:`, ships **6** — Balanced; Conservative 10), `CFL` and `DIAG_PERIOD` (`params:`), and
+the grid `number_of_cells` `[nx, nz]`. There is also a `warpx_do_not_deposit` flag on the species
+(default `false` = space charge ON): **keep it `false`** — `true` disables the space-charge-limited
 (Child–Langmuir) mechanism this stage exists to demonstrate, so the diode passes the full 2×J_CL
 over-injection (~double the physical current) and the validation figures become invalid. It is a
 forces-off sanity check only, not a meaningful cathode operating point (the run prints a warning).
 The cathode is only ~7% of pipeline runtime;
-**leave `DIAG_PERIOD=None`** — `current_saturation.png` and `rho_z_time.png` iterate every
-field dump over the 0–0.15 ns turn-on window and need the default dense-early union slice
-(`0:470:5, 470:MAX_STEPS:80`). An integer `DIAG_PERIOD` applies one uniform period to both
-diagnostics and under-resolves those two figures.
+**leave `DIAG_PERIOD: null`** — the field diagnostic iterates every dump over the 0–0.15 ns
+turn-on window and needs the default dense-early union slice (`0:470:5, 470:MAX_STEPS:80`). An
+integer `DIAG_PERIOD` applies one uniform period to both diagnostics and under-resolves it.
 
 ---
 
@@ -71,7 +74,7 @@ we do not impose the answer.
 ## What the simulation does (`cathode_diode.py`)
 
 - **Geometry**: 2D x–z, cathode plane at `z = 0` held at 0 V, anode at `z = d = 0.2 mm`
-  (200 µm) held at `+60 V`. Electrons are emitted only from the finite cathode patch
+  (200 µm) held at `+30 V`. Electrons are emitted only from the finite cathode patch
   `|x| < 8 mm` (the `lower_bound`/`upper_bound` of the flux distribution).
 - **Emission**: continuous flux injection (PICMI `UniformFluxDistribution`) at `2 × J_CL`,
   with a small thermal velocity spread set by a 1425 K cathode and a half-Maxwellian
@@ -86,67 +89,39 @@ we do not impose the answer.
 
 | Parameter | Value |
 |-----------|-------|
-| Anode bias `V` | 60 V |
+| Anode bias `V` | 30 V (peak grid potential = `Voff` + `Vpulse`) |
 | Gap `d` | 0.2 mm (200 µm) |
 | Cathode width `2R` | 16 mm (80× the gap → 1D limit on axis) |
 | Cathode temperature | 1425 K |
-| Injected current | 2 × J_CL ≈ 5.42 × 10⁴ A/m² |
-| Child–Langmuir J_CL | ≈ 2.71 × 10⁴ A/m² |
+| Injected current | 2 × J_CL ≈ 1.92 × 10⁴ A/m² |
+| Child–Langmuir J_CL | ≈ 9.59 × 10³ A/m² |
 | Grid | 128 × 64 cells (x, z), domain ±16 mm × 0.2 mm |
 | Steps | 2000 (gap-fill ≈ 480 steps) |
 
 These parameters now match Adam's Region-1 cathode geometry from the original LinacSim inputs
-(`reference/Linac Simulation Documentation/input_files/`): cathode diameter 16 mm, cathode–grid
-distance 0.2 mm, cathode temperature 1425 K, and the 60 V pulse voltage (`Vpulse`). The 16 mm /
-0.2 mm geometry still sits deep in the 1D limit (80× the gap) so the on-axis result recovers planar
-Child–Langmuir. It remains a **DC** 2D demo — the grid voltage pulsing is not modelled.
+(`reference/Linac Simulation Documentation/input_files/cathode_master.in`): cathode diameter 16 mm,
+cathode–grid distance 0.2 mm, and cathode temperature 1425 K. The 16 mm / 0.2 mm geometry sits deep
+in the 1D limit (80× the gap) so the on-axis result recovers planar Child–Langmuir. It remains a
+**DC** 2D demo — the grid voltage pulsing is not modelled.
+
+**Gap voltage = 30 V, not `Vpulse` = 60 V.** LinacSim drives the grid with a *pulse*
+`V(t) = Voff + Vpulse·f(t)` (`details.md` voltage-pulse model), where `Voff = −30 V` is the
+off-bias and `Vpulse = 60 V` is the peak *swing*. The pulse shape `f` peaks at 1, so the actual
+peak cathode→grid potential difference is `Voff + Vpulse = −30 + 60 = +30 V`. This DC demo uses
+that peak (`V_anode = 30 V`); `Vpulse` alone (60 V) is the swing amplitude, not the absolute bias.
 
 ---
 
 ## The figures (`plot_cathode.py` → `results/`)
 
-### `child_langmuir.png` — the validation
-On-axis (center of the cathode) `φ(z)` and `Ez(z)` overlaid with the
-Child–Langmuir laws and the vacuum reference. The WarpX curve sits right on the
-4/3-power potential, and the field is **driven to ~0 at the cathode** — the
-defining signature of space-charge-limited emission.
+Generated entirely with lume-warpx's plotting helpers:
 
-### `cathode_2d.png` — the 2D structure
-Maps of charge density, potential, and `|E|`. You can see (1) the dense
-space-charge / virtual-cathode layer hugging the emitting strip, (2) the potential
-depression in the beam column, and (3) the **field transition at the cathode edges**
-`x = ±8 mm`, where the field-suppressed emitting strip meets the full vacuum field
-outside — the finite-cathode signature absent from planar theory.
-
-### `current_saturation.png` — self-limiting
-Transmitted current (integrated across the beam, referenced to the cathode width)
-vs. time. Despite injecting **2× J_CL**, the transmitted current self-limits to the
-Child–Langmuir scale — it settles near J_CL (slightly above the cold-emission value,
-≈ 108% in this run, with the finite cathode temperature and near-1D geometry). The
-cathode does **not** pass the 2× current it is fed — space charge regulates it.
-
-### `rho_z_time.png` — space-charge cloud build-up
-On-axis charge density `|ρ|(z, t)` (√ scale) over the turn-on transient: the
-space-charge cloud building up and filling the gap (gap-fill ≈ 480 steps), drawn
-with `pcolormesh` on the true (non-uniform) time coordinates.
-
-### `field_lines.png` — the 2D cathode-edge field transition
-φ equipotential contours + E-field streamlines across the gap, with a zoom on the `+x` edge. At the
-cathode edges `x = ±8 mm` the equipotentials **crowd together** and the streamlines **splay** as
-`|E|` climbs from its space-charge-suppressed value on the emitting surface to the full vacuum field
-outside — the field **transition** at the emission edge (monotonic, no overshoot above `V/d`), the
-finite-cathode effect the 1D Child–Langmuir picture omits. (Contour companion to the `φ` panel of
-`cathode_2d.png`.)
-
-### `emission_phase_space.png` — intrinsic thermal emittance
-Transverse phase space `x` vs. `ux = γβ_x` and the histogram of `ux`, from the last particle
-snapshot. The RMS normalized emittance `εn,x ≈ 2.29 mm·mrad` (annotated) is the source's intrinsic
-thermal emittance, set by the 1425 K cathode and the 8 mm emitting half-width. The run reproduces
-the expected thermal momentum spread `√(kT/mₑc²)`. **Note:** this is the *2D-slab* value
-(`x` uniform on `[−R, R]` ⇒ `⟨x²⟩ = R²/3`). The gun's RZ remap importance-resamples the slab into a
-uniform *disc* (`⟨x²⟩ = R²/4`, the more physical cathode geometry), so the beam the gun actually
-receives has `εn,x ≈ 2.29·√(3/4) ≈ 1.96 mm·mrad` — a geometry correction, not emittance loss (see
-the cathode→gun seam note on `results/emittance_budget.png`).
+- **`phase_space_z_KE.png`** — `plot2D("z","kinetic_energy")`: longitudinal phase space across the gap.
+- **`transverse_x_px.png`** — `plot2D("x","px")`: transverse phase space (the source's thermal emittance).
+- **`potential_xz.png`** — `plot_fields("phi","x","z")`: gap potential, depressed in the beam column.
+- **`charge_density_xz.png`** — `plot_fields("rho","x","z")`: the space-charge / virtual-cathode layer.
+- **`centroid_vs_t.png`** — `plot1D("t","mean_z")`: the emitted cloud filling the gap.
+- **`charge_vs_t.png`** — `plot1D("t","charge")`: tracked charge as emission self-limits at J_CL.
 
 ---
 

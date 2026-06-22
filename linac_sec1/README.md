@@ -7,15 +7,20 @@ accelerating section** (later sections → `linac_sec2`, … as their field maps
 cathode (cathode/) -> gun (gun/) -> injector (injector/) -> linac_sec1 (this)
 ```
 
+Driven through **lume-warpx**: every constant lives in `linac_sec1.yaml` and `linac_sec1_sim.py`
+reads them back, imports the captured injector beam via `WarpX(initial_particles=...)`, and
+overrides only the runtime-computed values (the two quadrature RF time functions, step count,
+`dt`, diagnostic period). Edit `linac_sec1.yaml` to retune (the `config()` knob API is bypassed).
+
 The **injector's** focused, velocity-bunched beam — read at the **z ≈ 2.03 m handoff plane**,
 already collimated to the 9.547 mm iris — enters a 3 m, 86-cell, 2π/3 **traveling-wave** SLAC
 accelerating structure with self-consistent space charge. **Transverse focusing is upstream now**
 (the injector's three real lenses at their true lab z); this stage carries **no solenoid**. The
 linac selects the injector dump whose ⟨z⟩ is nearest 2.03 m and applies the **multi-plane 9.547 mm
 iris scrape at injection** (`pipeline/collimator.py`) — that scrape IS the physical
-injector→linac iris collimation. At the faithful 11 MW point the captured charge is **~7 % of the
-true injected charge** to **⟨KE⟩ ≈ 25 MeV** (max ~32 MeV, σ_KE ≈ 8 MeV). That capture is faithful
-machine behavior — the Sol 0 / Lens 0E matching telescope focuses ~32 % of the handoff charge
+injector→linac iris collimation. At the faithful 11 MW point the captured charge is **~10 % of the
+true injected charge** to **⟨KE⟩ ≈ 21 MeV** (max ~32 MeV, σ_KE ≈ 8 MeV). That capture is faithful
+machine behavior — the Sol 0 / Lens 0E matching telescope focuses ~64 % of the handoff charge
 through the 9.547 mm iris, and the linac then captures the in-bucket fraction — and is a
 **conservative lower bound** (the lab-frame ES
 self-field overestimates transverse space charge by ~γ²≈1.66×, so the real machine captures more),
@@ -33,10 +38,11 @@ linac_sec1.run()         # build field + sim + plots -> diags/main, results/
 ```
 
 `run()` runs **one case** at the default operating point — the original LinacSim values
-(`PHASE_DEG=0`, `POWER_MW=11`). The operating point and grid are module-level constants at the top
-of `linac_sec1/linac_sec1_sim.py` (`POWER_MW`, `PHASE_DEG`, `NZ`, …), overridable via `config()` —
-e.g. a `PHASE_DEG` sweep in a Python loop for the acceptance curve. (There is no `I_SOL` — focusing
-moved upstream to the injector.)
+(`PHASE_DEG=0`, `POWER_MW=11`). The operating point and grid live in **`linac_sec1/linac_sec1.yaml`**
+(`POWER_MW`, `PHASE_DEG`, `F_RF` in `params:`; `number_of_cells` in `grid:`) — the `config()` knob
+API is bypassed for this WarpX stage, so edit the YAML to retune (e.g. a `PHASE_DEG` sweep for the
+acceptance curve: edit the key and re-run per point). (There is no `I_SOL` — focusing moved upstream
+to the injector.)
 
 `build_linac_sec1_field` reads the two SLAC maps from `fieldmaps/`; the sim reads the injector
 output from `injector/diags/main/particles/` (repo-root-relative), selecting the dump nearest the
@@ -89,8 +95,9 @@ particles. Parameters fixed by details.md:
   "37 MeV @ 15 MW").
 - **Phase** `PHASE_DEG` — the absolute synchronous phase is undocumented (capture from β ≈ 0.63
   into a β_phase = 1 wave), so it is an offset relative to the bunch arrival; the default
-  `PHASE_DEG = 0` is on the crest (max energy / capture). Sweep it in a `config()` loop to map the
-  acceptance: capture/energy peak in a broad plateau near 0° and collapse ~180° away.
+  `PHASE_DEG = 0` is on the crest (max energy / capture). Sweep it (edit `linac_sec1.yaml`
+  `params: PHASE_DEG` and re-run per point) to map the acceptance: capture/energy peak in a broad
+  plateau near 0° and collapse ~180° away.
 
 ## RF capture (focusing is upstream)
 
@@ -103,12 +110,12 @@ Lens 0E) at their true lab z focus the beam upstream and hand it across the 9.54
   cut at the real 1.922 m iris plane (the beam converges through the 1.922→2.03 m tail, so a single
   2.03 m radial cut would overstate transmission; see `injector/README.md` and
   `pipeline/collimator.py`). At the faithful currents the Sol 0 / Lens 0E matching telescope
-  focuses the beam through the iris, so **~32 % of the handoff charge passes** the 9.547 mm aperture.
+  focuses the beam through the iris, so **~64 % of the handoff charge passes** the 9.547 mm aperture.
 - **Capture + adiabatic damping:** the captured fraction locks to the wave within the first
   ~0.4 m (β → 1), after which it accelerates and the transverse size **damps** (σ_r ∝ 1/√(γβ)).
-  At the faithful 11 MW point capture is **~7 % of the true injected charge** to **⟨KE⟩ ≈
-  25 MeV** (max ~32 MeV, σ_KE ≈ 8 MeV). The Sol 0 / Lens 0E matching telescope at z ≈ 1.9 m
-  focuses ~32 % of the handoff charge through the 9.547 mm iris; the linac then captures the
+  At the faithful 11 MW point capture is **~10 % of the true injected charge** to **⟨KE⟩ ≈
+  21 MeV** (max ~32 MeV, σ_KE ≈ 8 MeV). The Sol 0 / Lens 0E matching telescope at z ≈ 1.9 m
+  focuses ~64 % of the handoff charge through the 9.547 mm iris; the linac then captures the
   fraction that lands in the RF bucket. It is a **conservative lower bound** (the lab-frame ES
   self-field overestimates transverse SC by ~γ²≈1.66×, so the real machine captures more) and is
   **tune-sensitive to the upstream lens currents**. The optional injector current/phase scans
@@ -122,7 +129,7 @@ Lens 0E) at their true lab z focus the beam upstream and hand it across the 9.54
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
 | grid | `NR`=16 (r) × `NZ`=1664 (z), r ∈ [0, 9.547 mm], z ∈ [0, 3.5 m] |
-| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200; `SPACE_CHARGE` (default `True`) — `False` passes `warpx_do_not_deposit` (only the RF maps act), a diagnostic-only mode; the self-field is largest at the ~220 keV injection (overstated ~γ² by the lab-frame ES solver), not negligible, so keep it on |
+| solver | electrostatic, lab frame, Multigrid (self-field only), `REQUIRED_PRECISION`=1e-4, `MAX_ITERS`≤200; `SPACE_CHARGE` (default `True`) — `False` passes `warpx_do_not_deposit` (only the RF maps act), a diagnostic-only mode; the self-field is largest at the ~150 keV injection (overstated ~γ² by the lab-frame ES solver), not negligible, so keep it on |
 | applied fields | `linac_rf1/rf2.h5` × `scale` × cos/sin(ωt+φ) (E+B) — two quadrature RF maps only (no solenoid) |
 | beam | injector snapshot nearest the **z ≈ 2.03 m handoff**, downsampled to `MAX_PART`=50k (reweighted), z head at `Z_INJECT` = 5 mm |
 | time step | `dt = CFL · Δz / v_inject` (`CFL`=0.5; ≈ 5 ps; RF period 0.35 ns) |
@@ -155,8 +162,8 @@ figures/log report both:
 The **capture fraction is reported against the true injected charge** (the honest denominator):
 `plot_linac_sec1.py` and the `run_pipeline.py` final-beam summary read the sidecar and fall back
 to the first dump only if it is absent (old runs). So the two-stage loss is legible: iris
-transmission (in-iris / true-injected ≈ 32 %) × in-iris capture (≈ 22 %) = end-to-end capture vs
-true injected (~7 %, a conservative γ² lower bound).
+transmission (in-iris / true-injected ≈ 64 %) × in-iris capture (≈ 15.7 %) = end-to-end capture vs
+true injected (~10 %, a conservative γ² lower bound).
 
 ## Gotchas
 
@@ -188,28 +195,15 @@ true injected (~7 %, a conservative γ² lower bound).
 
 ## Outputs
 
-`linac_sec1.run()` writes `diags/main/particles/` and `linac_sec1.plot()` reads it,
-writing five figures to `results/`:
+`linac_sec1.run()` writes `diags/main/particles/` and `linac_sec1.plot()` reads it, generating
+every figure with lume-warpx's plotting helpers (particle diagnostics only — no field diagnostic
+is dumped, so no `plot_fields`):
 
-- `linac_field.png` — the on-axis traveling-wave `|Ez|` amplitude (× scale) and a fixed-t field
-  snapshot showing the 2π/3 cell structure.
-- `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~220 keV → ~25 MeV mean / ~32 MeV max for the
-  captured slice) with β → 1; the structure shaded.
-- `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
-- `beam_envelope.png` — σ_x and surviving charge vs z with the bore line. σ_x is the **local**
-  envelope reconstructed on fixed-z virtual screens (`pipeline/beam_metrics.screen_profile`):
-  each macroparticle's id-trajectory across the volumetric dumps is interpolated to every z-plane
-  it crosses (forward/monotonic z), so σ_x(z) is local rather than the per-dump **projected** RMS
-  (which mixes the beam's whole z-extent at each dump). Real envelope oscillation from the
-  injection mismatch survives; the projection smear does not. Each screen describes only the
-  particles that reach it, so downstream of the RF-capture loss σ_x(z) is the **surviving-slice**
-  envelope, not the full injected beam (the RF-rejected slipping tail, which can be locally
-  non-monotonic in z, drops out of its downstream screens rather than biasing them). The survival panel is per-dump,
-  normalised to the **injected** charge, showing the iris-collimation drop at the first dump
-  (r > RMAX = 9.547 mm scrape) followed by the RF-capture loss.
-- `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured fraction **of the
-  true injected charge** (~7 % at the faithful 11 MW point), annotated with how much charge
-  passed the 9.547 mm iris (~32 %).
+- `linac_sec1_phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: the captured slice at
+  ⟨KE⟩ ≈ 21 MeV (a broad ~5–32 MeV spread; only a phase slice locks to the crest).
+- `linac_sec1_transverse_x_px.png` — `plot2D("x","px")`: the exit transverse phase space within the bore.
+- `linac_sec1_centroid_vs_t.png` — `plot1D("t","mean_z")`: the bunch crossing the 3 m structure + drift.
+- `linac_sec1_emittance_vs_t.png` — `plot1D("t","norm_emit_x")`: transverse emittance over the run.
 
 ## Notes / caveats
 
@@ -222,8 +216,8 @@ writing five figures to `results/`:
   and hands a focused, 9.547 mm-collimated beam across the 2.03 m plane; the linac carries only the
   two RF maps. RF power (11 MW) is the original LinacSim `sec1_input_power`; the absolute RF phase
   is undocumented (`PHASE_DEG` scanned for the crest).
-- **Capture is ~7 % of true injected, a conservative lower bound, tune-sensitive.** The Sol 0 /
-  Lens 0E matching telescope focuses ~32 % of the handoff charge through the 9.547 mm iris, and the
+- **Capture is ~10 % of true injected, a conservative lower bound, tune-sensitive.** The Sol 0 /
+  Lens 0E matching telescope focuses ~64 % of the handoff charge through the 9.547 mm iris, and the
   fraction landing in the RF bucket is captured. The lab-frame ES self-field overestimates
   transverse SC by ~γ²≈1.66× ⇒ the real machine captures more; capture also responds strongly to
   the upstream lens currents. Not a precision-tuned number — the injector current/phase scans
@@ -235,7 +229,7 @@ writing five figures to `results/`:
   accounted for via the injected-charge denominator — see *Capture bookkeeping*.
 - The lab-frame electrostatic self-field omits the `1/γ²` magnetic-pinch cancellation (it applies
   the rest-frame Coulomb force `qE_r`, not `qE_r/γ²`), so it overestimates the transverse
-  space-charge force by ~γ² — largest at the low-energy injection (~220 keV handoff; cf. the gun's
+  space-charge force by ~γ² — largest at the low-energy injection (~150 keV handoff; cf. the gun's
   β≈0.63 → ~66 % overestimate in `gun/README.md`) and
   shrinking toward negligible once captured (γ ≫ 1). Space charge is a small perturbation here, so
   this is acceptable for the demonstration.

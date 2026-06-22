@@ -5,7 +5,7 @@ each stage's top-level facade module and calling `.run()`:
 
 ```
 cathode.run()      # SCL emission (2D Child–Langmuir diode) + plots
-gun.run()          # build gun field map + RZ acceleration (~146 keV) + plots
+gun.run()          # build gun field map + RZ acceleration (~149 keV) + plots
 injector.run()     # build injector fields (2 cavities + 3 solenoids) + RZ run + plots
 linac_sec1.run()   # build linac field maps + RZ SLAC TW section (~25 MeV captured) + plots
 linac_rest.run()   # sections 2–8 (Impact-T): captured core → ≈308 MeV at 11 MW + plots
@@ -45,7 +45,7 @@ python pipeline/run_pipeline.py
 - **Override physics inputs** at the top of `run_pipeline.py` using each stage's `config()`:
 
   ```python
-  cathode.config(V_anode=60.0, gap_d=200e-6)
+  cathode.config(V_anode=30.0, gap_d=200e-6)
   gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)
   injector.config(PREB1_KW=8, PREB2_KW=10, PHASE="crest")   # default OUTDIR -> diags/main
   linac_sec1.config(POWER_MW=11.0)                            # no I_SOL — focusing is upstream
@@ -83,7 +83,7 @@ python pipeline/run_pipeline.py
     `SPACE_CHARGE=False` there disables Child–Langmuir limiting, so the diode passes the full
     2×J_CL over-injection (~double the physical current) and the validation figures become invalid —
     it is **not a meaningful operating point**, only a forces-off sanity check (the stage prints a
-    warning). For `gun` the self-field is *dominant* at 146 keV (it "dwarfs the gun field"), so
+    warning). For `gun` the self-field is *dominant* at 149 keV (it "dwarfs the gun field"), so
     SC-off is a large change there too, not a mild diagnostic.
   - **Caveat — `linac_rest` SC-on is exploratory/unvalidated.** The per-section ΔE gates were
     validated SC-off; the calibration always runs SC-free (energy gain is SC-independent at γ>49)
@@ -155,3 +155,21 @@ Impact-T dumps, so the σ_z/I_peak evolution panels exclude it). Notes: the cath
 emittance in mm (NOT mm·mrad). Capture is reported vs the TRUE injected charge
 (`linac_sec1/diags/main/injection_summary.json`), and the σ_x / capture panels carry the
 γ²≈1.7× ES-self-field conservative-lower-bound caveat.
+
+## Shared modules (single source of truth)
+
+To stop physical constants, emission physics, and the field-map writer from drifting between
+the ~13 stage scripts that used to re-literal them, three small in-process helpers are imported
+across the stages:
+
+- `pipeline/constants.py` — SI + eV physical constants from `scipy.constants`
+  (`C_LIGHT`, `E_CHARGE`, `M_E`, `EPS0`, `K_B`/`K_B_EV`, `MC2_EV`). Every stage's rest-energy /
+  charge / mass value derives from here; no file carries its own `510998…`/`0.51099895…` literal.
+- `pipeline/emission.py` — `child_langmuir_current_density(V, gap)` and
+  `thermal_velocity_sigma(T)`, shared by `cathode/cathode_diode.py` (the sim) and
+  `cathode/plot_cathode.py` (its theory overlays) so the two cannot drift.
+- `pipeline/fieldio.py` — the GDF→openPMD thetaMode (RZ, m=0) parse + writer
+  (`load_cols`, `to_grid`, `pad_r`, `write_thetamode_series`, `E_UNIT`, `B_UNIT`) used by all three
+  `build_*_field.py`. `to_grid(..., reverse_descending_z=True)` row-reverses a z-descending GDF
+  (the prebuncher map) so its odd `Er` is not negated. The extraction was verified to reproduce
+  every field map data-identically.

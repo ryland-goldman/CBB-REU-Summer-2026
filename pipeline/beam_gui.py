@@ -40,9 +40,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from openpmd_viewer import OpenPMDTimeSeries
 from pmd_beamphysics import ParticleGroup
 
-# ── Physical constants ───────────────────────────────────────────────────────
-MC2_EV = 0.51099895e6          # electron rest energy [eV]
-Q_E = 1.602176634e-19          # elementary charge [C]
+# ── Physical constants (single-sourced from pipeline.constants) ───────────────
+from pipeline.constants import MC2_EV, E_CHARGE as Q_E
 
 # ── Stages, in chain order ───────────────────────────────────────────────────
 # Dumps store positions [m] and momenta u = γβ. The cathode is 2D (x–z, no y); rest RZ.

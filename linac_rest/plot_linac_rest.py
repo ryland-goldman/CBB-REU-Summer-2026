@@ -19,8 +19,9 @@ from openpmd_viewer import OpenPMDTimeSeries
 
 from . import DEFAULT_OUTDIR
 from . import build_linac_rest_lattice as L
+from pipeline.constants import MC2_EV
 
-MC2 = 0.51099895069              # electron rest energy [MeV]
+MC2 = MC2_EV / 1e6               # electron rest energy [MeV]
 OUTDIR = None                    # config(OUTDIR=...) sets this; None → DEFAULT_OUTDIR
 RESULTS = "linac_rest/results"
 

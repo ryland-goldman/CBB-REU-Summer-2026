@@ -18,9 +18,9 @@ import matplotlib.pyplot as plt
 from openpmd_viewer import OpenPMDTimeSeries
 
 from pipeline.beam_metrics import rms_emit   # shared normalized-rms-emittance helper
+from pipeline.constants import C_LIGHT as c, MC2_EV
 
-c = 299792458.0
-MC2_KEV = 0.51099895e3           # electron rest energy [keV]
+MC2_KEV = MC2_EV / 1e3           # electron rest energy [keV]
 Q_E = 1.602176634e-19           # elementary charge [C]
 RESULTS = "results"             # repo-root results/ (git-ignored; git add -f)
 
@@ -192,7 +192,7 @@ def render_chain_evolution(tables):
                       textcoords="axes fraction", fontsize=7, color="0.3",
                       arrowprops=dict(arrowstyle="->", color="0.5", lw=0.8))
     a_sx.set_ylabel("σ_x  [mm]"); a_sx.set_title("Transverse size (per-plane RMS)")
-    a_sx.annotate("gun+injector: EMS (γ² pinch in);\nlinac_sec1 ES but SC small @25 MeV",
+    a_sx.annotate("gun+injector: EMS (γ² pinch in);\nlinac_sec1 ES but SC small @~21 MeV",
                   xy=(0.50, 0.92), xycoords="axes fraction", fontsize=7, color="0.3")
     a_sz.set_yscale("log"); a_sz.set_ylabel("σ_z  [mm]")
     a_sz.set_title("Bunch length (linac_rest excluded: only 2 Impact-T dumps)")
@@ -284,7 +284,7 @@ def render_transmission_waterfall(tables, linac_inj):
         bars.append("passes iris\n(9.547mm)"); vals.append(linac_inj["q_in_domain_C"] * 1e9)
         lin = tables.get("linac") or []
         if lin:
-            bars.append("captured\n(~26 MeV)"); vals.append(lin[-1]["q"] * 1e9)
+            bars.append(f"captured\n(~{lin[-1]['ke_mean']/1e3:.0f} MeV)"); vals.append(lin[-1]["q"] * 1e9)
     if not bars:
         return
     fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
@@ -308,7 +308,7 @@ def render_transmission_waterfall(tables, linac_inj):
         "Starts at gun exit (physical ~1 nC renorm); cathode dump weight (~82 nC, "
         "pre-renorm, not physical) excluded. 'injector exit' is the recorded 2.03 m "
         "handoff charge (q_injected_C; dump fallback). "
-        "Capture vs TRUE injected (injector now relativistic EMS; linac_sec1 SC small at 25 MeV).")
+        "Capture vs TRUE injected (injector now relativistic EMS; linac_sec1 SC small at ~21 MeV).")
     ax.annotate(textwrap.fill(footnote, width=165),
                 xy=(0.0, -0.13), xycoords="axes fraction", va="top",
                 fontsize=7, color="0.3")
@@ -343,7 +343,8 @@ def render_scorecard(tables, linac_inj):
                     f"({qcap*1e9:.4f}/{qinj*1e9:.4f} nC); "
                     f"iris transmission = {linac_inj['q_in_domain_C']/qinj*100:.1f}% "
                     f"(multi-plane 9.547 mm scrape). "
-                    f"capture vs TRUE injected (injector now EMS; linac_sec1 SC small @25 MeV). "
+                    f"capture vs TRUE injected (injector now EMS; linac_sec1 SC small "
+                    f"@~{tables['linac'][-1]['ke_mean']/1e3:.0f} MeV). "
                     f"σ_KE charge-conditional.")
     # Two reader notes (physics-flagged) so adjacent-dump and emittance effects aren't misread:
     note_handoff = ("the injector-exit row is the dump at the 2.03 m handoff plane, not the drained "

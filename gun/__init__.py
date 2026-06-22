@@ -1,7 +1,7 @@
-"""Cornell Linac gun stage facade — WarpX RZ CESR gun.
+"""Cornell Linac gun stage facade — WarpX RZ CESR gun (driven via lume-warpx).
 
-Exposes config()/run()/plot() over the build+sim+plot scripts. config() keys
-match the module-level constants in gun/build_gun_field.py and gun/gun_sim.py.
+Exposes run()/plot() over the build+sim+plot scripts. Constants live in gun/gun.yaml
+(edit it to retune); config() is not the knob API for this WarpX stage.
 See gun/README.md for physics, parameters, and gotchas.
 """
 
