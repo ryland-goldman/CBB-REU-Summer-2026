@@ -3,7 +3,10 @@
 A WarpX model of the **electron source** at the front of the Cornell Linac —
 Adam Bartnik's "Region 1": a hot thermionic cathode a short distance from a
 positively biased grid/anode, operating in the **space-charge-limited (SCL)**
-regime. Built with the Python/PICMI interface (`pywarpx`).
+regime. Built on `pywarpx`, driven through **lume-warpx**: every constant lives in
+`cathode.yaml` and `cathode_diode.py` reads them back, overriding only the
+runtime-computed values (flux, thermal velocity, `dt`, diagnostic periods). Edit
+`cathode.yaml` to retune (the `config()` knob API is bypassed for this stage).
 
 Unlike the canonical 1D [Pierce-diode example](../reference/WarpX%20Documentation/usage/examples/pierce_diode/README.md),
 the cathode here has a **finite transverse extent** and is simulated in 2D (x–z).
@@ -111,48 +114,14 @@ that peak (`V_anode = 30 V`); `Vpulse` alone (60 V) is the swing amplitude, not 
 
 ## The figures (`plot_cathode.py` → `results/`)
 
-### `child_langmuir.png` — the validation
-On-axis (center of the cathode) `φ(z)` and `Ez(z)` overlaid with the
-Child–Langmuir laws and the vacuum reference. The WarpX curve sits right on the
-4/3-power potential, and the field is **driven to ~0 at the cathode** — the
-defining signature of space-charge-limited emission.
+Generated entirely with lume-warpx's plotting helpers:
 
-### `cathode_2d.png` — the 2D structure
-Maps of charge density, potential, and `|E|`. You can see (1) the dense
-space-charge / virtual-cathode layer hugging the emitting strip, (2) the potential
-depression in the beam column, and (3) the **field transition at the cathode edges**
-`x = ±8 mm`, where the field-suppressed emitting strip meets the full vacuum field
-outside — the finite-cathode signature absent from planar theory.
-
-### `current_saturation.png` — self-limiting
-Transmitted current (integrated across the beam, referenced to the cathode width)
-vs. time. Despite injecting **2× J_CL**, the transmitted current self-limits to the
-Child–Langmuir scale — it settles near J_CL (slightly above the cold-emission value,
-≈ 108% in this run, with the finite cathode temperature and near-1D geometry). The
-cathode does **not** pass the 2× current it is fed — space charge regulates it.
-
-### `rho_z_time.png` — space-charge cloud build-up
-On-axis charge density `|ρ|(z, t)` (√ scale) over the turn-on transient: the
-space-charge cloud building up and filling the gap (gap-fill ≈ 480 steps), drawn
-with `pcolormesh` on the true (non-uniform) time coordinates.
-
-### `field_lines.png` — the 2D cathode-edge field transition
-φ equipotential contours + E-field streamlines across the gap, with a zoom on the `+x` edge. At the
-cathode edges `x = ±8 mm` the equipotentials **crowd together** and the streamlines **splay** as
-`|E|` climbs from its space-charge-suppressed value on the emitting surface to the full vacuum field
-outside — the field **transition** at the emission edge (monotonic, no overshoot above `V/d`), the
-finite-cathode effect the 1D Child–Langmuir picture omits. (Contour companion to the `φ` panel of
-`cathode_2d.png`.)
-
-### `emission_phase_space.png` — intrinsic thermal emittance
-Transverse phase space `x` vs. `ux = γβ_x` and the histogram of `ux`, from the last particle
-snapshot. The RMS normalized emittance `εn,x ≈ 2.29 mm·mrad` (annotated) is the source's intrinsic
-thermal emittance, set by the 1425 K cathode and the 8 mm emitting half-width. The run reproduces
-the expected thermal momentum spread `√(kT/mₑc²)`. **Note:** this is the *2D-slab* value
-(`x` uniform on `[−R, R]` ⇒ `⟨x²⟩ = R²/3`). The gun's RZ remap importance-resamples the slab into a
-uniform *disc* (`⟨x²⟩ = R²/4`, the more physical cathode geometry), so the beam the gun actually
-receives has `εn,x ≈ 2.29·√(3/4) ≈ 1.96 mm·mrad` — a geometry correction, not emittance loss (see
-the cathode→gun seam note on `results/emittance_budget.png`).
+- **`phase_space_z_KE.png`** — `plot2D("z","kinetic_energy")`: longitudinal phase space across the gap.
+- **`transverse_x_px.png`** — `plot2D("x","px")`: transverse phase space (the source's thermal emittance).
+- **`potential_xz.png`** — `plot_fields("phi","x","z")`: gap potential, depressed in the beam column.
+- **`charge_density_xz.png`** — `plot_fields("rho","x","z")`: the space-charge / virtual-cathode layer.
+- **`centroid_vs_t.png`** — `plot1D("t","mean_z")`: the emitted cloud filling the gap.
+- **`charge_vs_t.png`** — `plot1D("t","charge")`: tracked charge as emission self-limits at J_CL.
 
 ---
 

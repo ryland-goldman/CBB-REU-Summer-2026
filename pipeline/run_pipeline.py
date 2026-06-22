@@ -33,43 +33,15 @@ import linac_rest
 from pipeline._runner import setup_logging, _cl, _BOLD, _RESET
 from pipeline.constants import MC2_EV
 
-# ── Operating-point overrides (physics; defaults live in the stage modules) ──
-cathode.config(V_anode=30.0)
-gun.config(GUN_VOLTAGE=150e3, BUNCH_CHARGE=1.0e-9)
-# Zero-crossing (centroid-referenced) velocity bunching — the documented default operating
-# point (PHASE="zc", φ_off=0, PREB2_REV_PHASE=π): both cavities sit on the RF zero-crossing of
-# the bunch centroid, so they bunch at net-zero mean-energy change (149→152 keV). Do NOT force
-# PHASE="crest" here without also resetting PREB2_REV_PHASE=0 — in crest the reversed-PB2 install
-# is auto-absorbed, so the module's zc PREB2_REV_PHASE=π double-counts and decelerates PB2 to ~70 keV.
-injector.config(PREB1_KW=8, PREB2_KW=10)
-linac_sec1.config(POWER_MW=11.0)
+# ── Operating point + performance knobs for the four WarpX stages live in their YAML configs
+#    (cathode/cathode.yaml, gun/gun.yaml, injector/injector.yaml, linac_sec1/linac_sec1.yaml);
+#    the shipped defaults are the documented operating point + the Balanced profile. Edit the
+#    YAML to retune. linac_rest is the Impact-T stage and keeps the config() knob API.
 linac_rest.config(POWER_MW=11.0)
-
-# ── Space charge (beam self-field) per stage; see pipeline/README.md § Configuration.
-#    Uncomment to override the per-stage defaults:
-# cathode.config(SPACE_CHARGE=True)
-# gun.config(SPACE_CHARGE=True)
-# injector.config(SPACE_CHARGE=True)
-# linac_sec1.config(SPACE_CHARGE=True)
-# linac_rest.config(SPACE_CHARGE=True)   # turn ON Impact-T space charge (headline is OFF)
-
-# ── Performance knobs (accuracy ↔ speed); see pipeline/README.md § Configuration. ──
-# Balanced profile: ACTIVE. Comment these 3 lines for the baseline.
-cathode.config(PPC=6, REQUIRED_PRECISION=3e-5)
-gun.config(nz=384, MAX_PART=50000, REQUIRED_PRECISION=1e-4)
-injector.config(CFL=0.95, MAX_ITERS=150, REQUIRED_PRECISION=1e-3)
-# Conservative (~1.3×, near-identical):
-# gun.config(MAX_PART=80000, REQUIRED_PRECISION=1e-4)
-# injector.config(REQUIRED_PRECISION=2e-4, MAX_ITERS=400)
-# Aggressive (~2.2×, looser space-charge solve):
-# cathode.config(nz=48, PPC=4, REQUIRED_PRECISION=5e-5, MAX_STEPS=1200)
-# gun.config(nz=192, MAX_PART=40000, REQUIRED_PRECISION=3e-4, N_DIAGS=20)
-# injector.config(CFL=0.97, MAX_ITERS=80, REQUIRED_PRECISION=3e-3, N_DIAGS=20)
-# linac_sec1.config(NZ=1024, CFL=0.6)   # coarser/faster linac run (default NZ=1664, ~40 s)
 # Np = tracked macroparticle count; Ntstep sized for the ~36 m line.
 linac_rest.config(Np=4000, Ntstep=200000)
-# Exploratory FODO (headline stays quads OFF); see linac_rest/README.md. Leave commented.
-# linac_rest.config(QUADS_ON=True)                     # exploratory FODO
+# linac_rest.config(SPACE_CHARGE=True)                 # turn ON Impact-T space charge (headline is OFF)
+# linac_rest.config(QUADS_ON=True)                     # exploratory FODO (headline stays quads OFF)
 
 
 def _beam_summary(diag, label, unit="keV"):

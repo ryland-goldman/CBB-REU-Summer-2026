@@ -1,6 +1,7 @@
-"""Cornell Linac cathode stage facade — WarpX 2D Child–Langmuir diode.
+"""Cornell Linac cathode stage facade — WarpX 2D Child–Langmuir diode (driven via lume-warpx).
 
-Exposes config()/run()/plot() over the Stage runner.
+Exposes run()/plot() over the Stage runner. Constants live in cathode/cathode.yaml
+(edit it to retune); config() is not the knob API for this WarpX stage.
 See cathode/README.md for physics, parameters, and gotchas.
 """
 

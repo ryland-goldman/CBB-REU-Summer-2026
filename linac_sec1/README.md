@@ -7,6 +7,11 @@ accelerating section** (later sections → `linac_sec2`, … as their field maps
 cathode (cathode/) -> gun (gun/) -> injector (injector/) -> linac_sec1 (this)
 ```
 
+Driven through **lume-warpx**: every constant lives in `linac_sec1.yaml` and `linac_sec1_sim.py`
+reads them back, imports the captured injector beam via `WarpX(initial_particles=...)`, and
+overrides only the runtime-computed values (the two quadrature RF time functions, step count,
+`dt`, diagnostic period). Edit `linac_sec1.yaml` to retune (the `config()` knob API is bypassed).
+
 The **injector's** focused, velocity-bunched beam — read at the **z ≈ 2.03 m handoff plane**,
 already collimated to the 9.547 mm iris — enters a 3 m, 86-cell, 2π/3 **traveling-wave** SLAC
 accelerating structure with self-consistent space charge. **Transverse focusing is upstream now**
@@ -188,28 +193,15 @@ true injected (~10 %, a conservative γ² lower bound).
 
 ## Outputs
 
-`linac_sec1.run()` writes `diags/main/particles/` and `linac_sec1.plot()` reads it,
-writing five figures to `results/`:
+`linac_sec1.run()` writes `diags/main/particles/` and `linac_sec1.plot()` reads it, generating
+every figure with lume-warpx's plotting helpers (particle diagnostics only — no field diagnostic
+is dumped, so no `plot_fields`):
 
-- `linac_field.png` — the on-axis traveling-wave `|Ez|` amplitude (× scale) and a fixed-t field
-  snapshot showing the 2π/3 cell structure.
-- `energy_gain.png` — ⟨KE⟩ and max KE vs ⟨z⟩ (~150 keV → ~21 MeV mean / ~32 MeV max for the
-  captured slice) with β → 1; the structure shaded.
-- `long_phase_space.png` — (z − ⟨z⟩) vs KE at injection / mid / exit: capture into the RF bucket.
-- `beam_envelope.png` — σ_x and surviving charge vs z with the bore line. σ_x is the **local**
-  envelope reconstructed on fixed-z virtual screens (`pipeline/beam_metrics.screen_profile`):
-  each macroparticle's id-trajectory across the volumetric dumps is interpolated to every z-plane
-  it crosses (forward/monotonic z), so σ_x(z) is local rather than the per-dump **projected** RMS
-  (which mixes the beam's whole z-extent at each dump). Real envelope oscillation from the
-  injection mismatch survives; the projection smear does not. Each screen describes only the
-  particles that reach it, so downstream of the RF-capture loss σ_x(z) is the **surviving-slice**
-  envelope, not the full injected beam (the RF-rejected slipping tail, which can be locally
-  non-monotonic in z, drops out of its downstream screens rather than biasing them). The survival panel is per-dump,
-  normalised to the **injected** charge, showing the iris-collimation drop at the first dump
-  (r > RMAX = 9.547 mm scrape) followed by the RF-capture loss.
-- `exit_spectrum_capture.png` — exit energy spectrum (pC/bin) and the captured fraction **of the
-  true injected charge** (~10 % at the faithful 11 MW point), annotated with how much charge
-  passed the 9.547 mm iris (~64 %).
+- `linac_sec1_phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: the captured slice at
+  ⟨KE⟩ ≈ 21 MeV (a broad ~5–32 MeV spread; only a phase slice locks to the crest).
+- `linac_sec1_transverse_x_px.png` — `plot2D("x","px")`: the exit transverse phase space within the bore.
+- `linac_sec1_centroid_vs_t.png` — `plot1D("t","mean_z")`: the bunch crossing the 3 m structure + drift.
+- `linac_sec1_emittance_vs_t.png` — `plot1D("t","norm_emit_x")`: transverse emittance over the run.
 
 ## Notes / caveats
 

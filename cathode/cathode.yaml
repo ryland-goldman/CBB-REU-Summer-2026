@@ -1,0 +1,61 @@
+# Cathode diode — lume-warpx config (WarpX 2D x–z). All constants live here; cathode_diode.py
+# reads them back and overrides only runtime-computed values (flux, thermal velocity, dt, the
+# diagnostic periods). See cathode/README.md for physics, parameters, and gotchas.
+
+grid:
+  grid_type: Cartesian2DGrid
+  number_of_cells: [128, 64]           # [nx, nz]
+  lower_bound: [-0.016, 0.0]           # [-W, 0]
+  upper_bound: [0.016, 200.0e-6]       # [ W, gap_d]
+  lower_boundary_conditions: [neumann, dirichlet]   # x insulating; z plates fixed potential
+  upper_boundary_conditions: [neumann, dirichlet]
+  lower_boundary_conditions_particles: [absorbing, absorbing]
+  upper_boundary_conditions_particles: [absorbing, absorbing]
+  warpx_potential_lo_z: 0.0            # cathode
+  warpx_potential_hi_z: 30.0           # anode / grid bias [V]
+  warpx_blocking_factor: 8
+
+solver:
+  solver_type: ES_MLMG_LF
+  required_precision: 3.0e-5
+  warpx_self_fields_verbosity: 0
+
+simulation:
+  max_steps: 2000
+  time_step_size: 1.0e-12              # overridden (dt = CFL·dz/v_final)
+  particle_shape: linear
+
+species:
+  - particle_type: electron
+    name: electrons
+    distribution-type: UniformFlux
+    flux: 1.0e24                        # overridden (over_inject·J_CL/q_e)
+    flux_normal_axis: z
+    surface_flux_position: 0.0
+    flux_direction: 1
+    lower_bound: [-0.008, null, null]   # finite cathode patch (±R_cathode)
+    upper_bound: [0.008, null, null]
+    rms_velocity: [1.0e5, 1.0e5, 1.0e5] # overridden (thermal v_th)
+    directed_velocity: [0.0, 0.0, 0.0]
+    gaussian_flux_momentum_distribution: true
+    warpx_do_not_deposit: false        # KEEP false — space charge is the sole current limiter
+    layout: PseudoRandom
+    n_macroparticles_per_cell: 6
+
+diagnostics:
+  - diagnostic_type: Field
+    name: fields
+    period: 80                          # overridden (dense-early union slice)
+    data_list: [phi, rho, E, J]
+  - diagnostic_type: Particle
+    name: particles
+    period: 200                         # overridden
+    species: [electrons]
+    data_list: [position, momentum, weighting]
+
+# Stage knobs with no WarpX-native home (read by cathode_diode.py).
+params:
+  T_cathode: 1425.0                    # cathode temperature [K]
+  over_inject: 2.0                     # inject this multiple of the Child–Langmuir current
+  CFL: 0.4                             # dt = CFL · dz / v_final
+  DIAG_PERIOD: null                    # null → dense-early union slice; an int → uniform period

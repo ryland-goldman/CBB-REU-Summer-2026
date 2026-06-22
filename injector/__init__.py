@@ -21,17 +21,16 @@ plot = _stage.plot
 
 
 def faithful_gpt_deck():
-    """Switch to the GPT master-deck GUI working point instead of the shipped default.
+    """Print how to switch to the GPT master-deck GUI working point.
 
-    The committed default is the energy-flat zero-crossing (`PHASE="zc"`, centroid on the
-    RF zero-crossing) chosen so the σ_z waist lands at the 2.03 m handoff. This preset
-    reproduces the deck's GUI-saved phases instead: crest-referenced Preb-1 −70° / Preb-2
-    −45° from crest (net-accelerating), with the reversed-install +π absorbed into the
-    crest reference (`PREB2_REV_PHASE=0`). CAVEAT: this re-introduces Preb-1's non-zero net
-    kick, which desyncs the analytic Preb-2 inter-cavity timing — a hardened study needs the
-    two-pass timing fix (see injector/README.md). Call before run(); does not change the default.
+    The operating point now lives in injector/injector.yaml; to reproduce the deck's GUI-saved
+    phases (crest-referenced Preb-1 −70° / Preb-2 −45°, reversed-install +π absorbed into the
+    crest reference) set these `params:` keys and re-run. CAVEAT: this re-introduces Preb-1's
+    non-zero net kick, which desyncs the analytic Preb-2 inter-cavity timing — a hardened study
+    needs the two-pass timing fix (see injector/README.md).
     """
-    config(PHASE="crest", PREB1_PHI_OFF=-70.0, PREB2_PHI_OFF=-45.0, PREB2_REV_PHASE=0.0)
+    print("Edit injector/injector.yaml params: PHASE: crest, PREB1_PHI_OFF: -70.0, "
+          "PREB2_PHI_OFF: -45.0, PREB2_REV_PHASE: 0.0")
 
 
 def resolve_outdir():

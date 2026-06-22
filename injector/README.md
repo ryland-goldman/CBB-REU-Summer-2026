@@ -6,6 +6,12 @@ Third stage of the Cornell Linac chain modelled in WarpX:
 cathode (cathode/)  ->  gun (gun/)  ->  injector (this)  ->  linac_sec1 (linac_sec1/)
 ```
 
+Driven through **lume-warpx**: every constant lives in `injector.yaml` (operating point + the
+solenoid/prebuncher knobs in its `params:` block) and `injector_sim.py` reads them back,
+imports the gun handoff via `WarpX(initial_particles=...)`, and overrides only the
+runtime-computed values (the per-field RF/solenoid time functions, step count, `dt`, diagnostic
+period). Edit `injector.yaml` to retune (the `config()` knob API is bypassed for this stage).
+
 The injector is the **full LinacSim injector subsection in one self-consistent RZ
 space-charge run** (it replaced the earlier single-cavity `prebuncher/` stage):
 
@@ -363,17 +369,16 @@ Three caveats frame this number:
 
 ## Outputs
 
-`injector.plot()` reads `injector/diags/main` (and any `injector/diags/P*` scan dirs) and
-writes to `injector/results/`:
+`injector.plot()` reads `injector/diags/main/particles` and writes to `injector/results/`,
+generating every figure with lume-warpx's plotting helpers (particle diagnostics only — no
+field diagnostic is dumped, so no `plot_fields`):
 
-- `injector_line.png` — σ_z(z) (vs drift baseline) and peak current / mean energy, with both
-  prebuncher-gap markers (Z1, Z2).
-- `injector_phasespace.png` — z–KE **charge-weighted 2D density heatmaps** (nC/bin, per-panel
-  colorbar) at injection / cavity exit / best focus / injector exit.
-- `injector_cavity.png` — the RF drive: both on-axis Ez(z) lobes (Preb 1 @ 534 mm, Preb 2 @
-  1318 mm) and both RF waveforms at their gap arrivals (scale/phase re-derived as the sim does).
-- `injector_bunch_profile.png` — the longitudinal line-charge density λ(z).
-- `compare_power_phase.png` — cross-case scan summary (when scan dirs are present).
+- `injector_phase_space_z_KE.png` — `plot2D("z","kinetic_energy")`: the energy-flat (~150 keV)
+  velocity-bunched exit beam at the 2.03 m handoff.
+- `injector_transverse_x_px.png` — `plot2D("x","px")`: the solenoid-focused exit transverse phase space.
+- `injector_centroid_vs_t.png` — `plot1D("t","mean_z")`: the bunch traversing the ~2 m line.
+- `injector_bunch_length_vs_t.png` — `plot1D("t","sigma_z")`: σ_z compressing to its waist at the handoff.
+- `injector_emittance_vs_t.png` — `plot1D("t","norm_emit_x")`: transverse emittance over the run.
 
 ## Notes / caveats
 
