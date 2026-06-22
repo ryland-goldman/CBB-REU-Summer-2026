@@ -105,6 +105,11 @@ def main():
     p = w.get("params")
     omega = 2.0 * np.pi * p["F_RF"]
 
+    # The last applied field must load_E or picmi forces the global E_ext style to "none" (RF dark).
+    # Both RF maps load_E here, so this is always satisfied — kept so a future reorder fails loudly.
+    assert w.get("fields")[-1].get("load_E"), \
+        "linac_sec1.yaml: last applied field must have load_E:true"
+
     if os.path.isdir(outdir):                           # fresh diags (WarpX appends per dump)
         shutil.rmtree(outdir)
 
@@ -122,7 +127,7 @@ def main():
         px=bunch["ux"] * MC2_EV, py=bunch["uy"] * MC2_EV, pz=bunch["uz"] * MC2_EV,
         t=np.zeros(bunch["x"].size), weight=bunch["w"] * q_e,
         status=np.ones(bunch["x"].size, dtype=np.int64), species="electron"))
-    w._initial_particles = pg
+    w.initial_particles = pg
 
     # ── RF amplitude + phase (field2 is the 90° quadrature half) ──────────────
     scale = float(np.sqrt(p["POWER_MW"] / p["RF_NORM_MW"]))

@@ -18,8 +18,8 @@ grid:
 
 solver:
   solver_type: ES_MLMG_EMS             # relativistic electromagnetostatic self-field (γ² removed)
-  required_precision: 1.0e-3
-  maximum_iterations: 150
+  required_precision: 1.0e-3           # Balanced; Conservative 1e-5
+  maximum_iterations: 150              # Balanced; Conservative 500 (A_z converges in 3–4 V-cycles)
   warpx_magnetostatic_required_precision: 1.0e-3
   warpx_magnetostatic_max_iters: 150
   warpx_self_fields_verbosity: 0
@@ -61,8 +61,9 @@ diagnostics:
 # Stage knobs with no WarpX-native home (read by injector_sim.py). Solenoid currents [A] and
 # prebuncher powers [kW] are the config-overridable operating point; 0 A/kW ⇒ no field.
 params:
-  CFL: 0.95                            # dt = CFL · Δz / v_beam
+  CFL: 0.95                            # dt = CFL · Δz / v_beam  (Balanced; Conservative 0.8)
   MAX_PART: 50000                      # downsample the gun snapshot (reweighted)
+  MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 0.98                 # stop just before the bunch centre reaches the exit
   HANDOFF_DZ: 0.008                    # [m] target dump spacing near the 2.03 m handoff

@@ -26,24 +26,24 @@ python cathode/cathode_diode.py   # ~1 min, writes openPMD to diags/
 python cathode/plot_cathode.py    # writes the figures to results/
 ```
 
-To override the operating point without editing the source, call
-`cathode.config(V_anode=..., gap_d=..., R_cathode=..., T_cathode=..., MAX_STEPS=...)`
-before `cathode.run()`. Keys must match the module-level constants at the top of
-`cathode/cathode_diode.py`.
+To retune the operating point, **edit `cathode/cathode.yaml`** — the `config()` knob API is
+bypassed for this WarpX stage. The anode bias is `grid: warpx_potential_hi_z` (30 V); the
+gap is `grid: upper_bound[1]` (200 µm); the cathode patch is the flux `lower/upper_bound`
+(±8 mm); and `T_cathode` (1425 K), `over_inject` (2×), `CFL` (0.4), `DIAG_PERIOD` live in the
+`params:` block.
 
-**Performance knobs** (also `config()`-overridable module constants; defaults reproduce
-the original run): `REQUIRED_PRECISION` (1e-5, MLMG tolerance), `MAX_ITERS` (None →
-PICMI default), `PPC` (10, macroparticles/cell), `CFL` (0.4, `dt = CFL·dz/v_final`),
-`DIAG_PERIOD` (None), and the grid `nx, nz`. There is also a `SPACE_CHARGE` flag (default `True`):
-**keep it `True`** — `False` passes `warpx_do_not_deposit`, which disables the space-charge-limited
+**Performance knobs** (in `cathode.yaml`): `required_precision` (`solver:`, ships **3e-5** —
+the Balanced profile; the Conservative/benchmark value is 1e-5), `n_macroparticles_per_cell`
+(`species:`, ships **6** — Balanced; Conservative 10), `CFL` and `DIAG_PERIOD` (`params:`), and
+the grid `number_of_cells` `[nx, nz]`. There is also a `warpx_do_not_deposit` flag on the species
+(default `false` = space charge ON): **keep it `false`** — `true` disables the space-charge-limited
 (Child–Langmuir) mechanism this stage exists to demonstrate, so the diode passes the full 2×J_CL
 over-injection (~double the physical current) and the validation figures become invalid. It is a
 forces-off sanity check only, not a meaningful cathode operating point (the run prints a warning).
 The cathode is only ~7% of pipeline runtime;
-**leave `DIAG_PERIOD=None`** — `current_saturation.png` and `rho_z_time.png` iterate every
-field dump over the 0–0.15 ns turn-on window and need the default dense-early union slice
-(`0:470:5, 470:MAX_STEPS:80`). An integer `DIAG_PERIOD` applies one uniform period to both
-diagnostics and under-resolves those two figures.
+**leave `DIAG_PERIOD: null`** — the field diagnostic iterates every dump over the 0–0.15 ns
+turn-on window and needs the default dense-early union slice (`0:470:5, 470:MAX_STEPS:80`). An
+integer `DIAG_PERIOD` applies one uniform period to both diagnostics and under-resolves it.
 
 ---
 

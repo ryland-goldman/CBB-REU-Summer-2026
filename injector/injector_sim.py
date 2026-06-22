@@ -133,6 +133,11 @@ def main():
     base = np.pi / 2.0 if PHASE == "zc" else np.pi
     MC2_KEV = MC2_EV / 1e3
 
+    # The last applied field MUST load_E or picmi forces the global E_ext style to "none" and the
+    # RF cavities go dark — solenoids (load_E:false) must precede them in the YAML fields list.
+    assert w.get("fields")[-1].get("load_E"), \
+        "injector.yaml: last applied field must have load_E:true (RF cavity), solenoids first"
+
     if os.path.isdir(outdir):                           # fresh diags (WarpX appends per dump)
         shutil.rmtree(outdir)
 
@@ -142,7 +147,7 @@ def main():
         px=bunch["ux"] * MC2_EV, py=bunch["uy"] * MC2_EV, pz=bunch["uz"] * MC2_EV,
         t=np.zeros(bunch["x"].size), weight=bunch["w"] * q_e,
         status=np.ones(bunch["x"].size, dtype=np.int64), species="electron"))
-    w._initial_particles = pg                          # imported beam for FromInitialParticles
+    w.initial_particles = pg                           # imported beam for FromInitialParticles
 
     for nm, cur in (("0A", p["I_LENS0A"]), ("0B", p["I_LENS0B"]), ("0C", p["I_LENS0C"]),
                     ("0D", p["I_LENS0D"]), ("Sol0", p["I_SOL0"]), ("0E", p["I_LENS0E"])):
@@ -175,7 +180,7 @@ def main():
     ke_after1 = max(ke_mean + (kick_frac1 * scale1 * V1J_KEV if p["PREB1_KW"] > 0 else 0.0), 1.0)
     v_after1 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after1 / MC2_KEV) ** 2)
     if p["PREB2_KW"] > 0:
-        kick_frac2 = -np.cos(base + np.radians(p["PREB2_PHI_OFF"]) + p["PREB2_REV_PHASE"])
+        kick_frac2 = -np.cos(base + np.radians(p["PREB2_PHI_OFF"]) + rev_phase)
         ke_after2 = max(ke_after1 + kick_frac2 * scale2 * V1J_KEV, 1.0)
         v_after2 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after2 / MC2_KEV) ** 2)
     else:

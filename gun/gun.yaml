@@ -5,7 +5,8 @@
 
 grid:
   grid_type: CylindricalGrid
-  number_of_cells: [128, 384]          # [nr, nz]
+  number_of_cells: [128, 384]          # [nr, nz]; Balanced (dz≈0.19 mm). Converged grid is nz=712
+                                       # (dz≈0.10 mm) per the WarpX–GPT benchmark — see gun/README.md.
   n_azimuthal_modes: 1                  # gun field is m = 0
   lower_bound: [0.0, 0.0]
   upper_bound: [0.015, 0.071765]       # [RMAX (field-map r), ZMAX = ZMAX_FIELD + ZPAD]
@@ -19,8 +20,8 @@ grid:
 
 solver:
   solver_type: ES_MLMG_EMS             # electromagnetostatic: self-B pinch ⇒ net qE_r/γ²
-  required_precision: 1.0e-4
-  warpx_magnetostatic_required_precision: 1.0e-4
+  required_precision: 1.0e-4           # Balanced; Conservative/benchmark value is 1e-5
+  warpx_magnetostatic_required_precision: 1.0e-4   # Balanced; Conservative 1e-5
   warpx_self_fields_verbosity: 0
   warpx_magnetostatic_verbosity: 0
 

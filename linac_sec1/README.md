@@ -38,10 +38,11 @@ linac_sec1.run()         # build field + sim + plots -> diags/main, results/
 ```
 
 `run()` runs **one case** at the default operating point — the original LinacSim values
-(`PHASE_DEG=0`, `POWER_MW=11`). The operating point and grid are module-level constants at the top
-of `linac_sec1/linac_sec1_sim.py` (`POWER_MW`, `PHASE_DEG`, `NZ`, …), overridable via `config()` —
-e.g. a `PHASE_DEG` sweep in a Python loop for the acceptance curve. (There is no `I_SOL` — focusing
-moved upstream to the injector.)
+(`PHASE_DEG=0`, `POWER_MW=11`). The operating point and grid live in **`linac_sec1/linac_sec1.yaml`**
+(`POWER_MW`, `PHASE_DEG`, `F_RF` in `params:`; `number_of_cells` in `grid:`) — the `config()` knob
+API is bypassed for this WarpX stage, so edit the YAML to retune (e.g. a `PHASE_DEG` sweep for the
+acceptance curve: edit the key and re-run per point). (There is no `I_SOL` — focusing moved upstream
+to the injector.)
 
 `build_linac_sec1_field` reads the two SLAC maps from `fieldmaps/`; the sim reads the injector
 output from `injector/diags/main/particles/` (repo-root-relative), selecting the dump nearest the
@@ -94,8 +95,9 @@ particles. Parameters fixed by details.md:
   "37 MeV @ 15 MW").
 - **Phase** `PHASE_DEG` — the absolute synchronous phase is undocumented (capture from β ≈ 0.63
   into a β_phase = 1 wave), so it is an offset relative to the bunch arrival; the default
-  `PHASE_DEG = 0` is on the crest (max energy / capture). Sweep it in a `config()` loop to map the
-  acceptance: capture/energy peak in a broad plateau near 0° and collapse ~180° away.
+  `PHASE_DEG = 0` is on the crest (max energy / capture). Sweep it (edit `linac_sec1.yaml`
+  `params: PHASE_DEG` and re-run per point) to map the acceptance: capture/energy peak in a broad
+  plateau near 0° and collapse ~180° away.
 
 ## RF capture (focusing is upstream)
 

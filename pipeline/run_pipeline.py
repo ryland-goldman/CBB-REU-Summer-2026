@@ -37,6 +37,10 @@ from pipeline.constants import MC2_EV
 #    (cathode/cathode.yaml, gun/gun.yaml, injector/injector.yaml, linac_sec1/linac_sec1.yaml);
 #    the shipped defaults are the documented operating point + the Balanced profile. Edit the
 #    YAML to retune. linac_rest is the Impact-T stage and keeps the config() knob API.
+#    GOTCHA: in injector.yaml, PREB2_REV_PHASE is coupled to PHASE — the shipped zc/centroid
+#    default needs PREB2_REV_PHASE=π; switching PHASE back to "crest" with the GUI phi_off needs
+#    PREB2_REV_PHASE=0, else Preb-2 double-counts the reversal and DECELERATES the beam (~70 keV).
+#    See injector/README.md → "Reversed install".
 linac_rest.config(POWER_MW=11.0)
 # Np = tracked macroparticle count; Ntstep sized for the ~36 m line.
 linac_rest.config(Np=4000, Ntstep=200000)

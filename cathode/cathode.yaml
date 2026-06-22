@@ -17,7 +17,7 @@ grid:
 
 solver:
   solver_type: ES_MLMG_LF
-  required_precision: 3.0e-5
+  required_precision: 3.0e-5            # Balanced; Conservative 1e-5
   warpx_self_fields_verbosity: 0
 
 simulation:
@@ -40,7 +40,7 @@ species:
     gaussian_flux_momentum_distribution: true
     warpx_do_not_deposit: false        # KEEP false — space charge is the sole current limiter
     layout: PseudoRandom
-    n_macroparticles_per_cell: 6
+    n_macroparticles_per_cell: 6        # Balanced; Conservative 10
 
 diagnostics:
   - diagnostic_type: Field

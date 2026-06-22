@@ -33,33 +33,33 @@ python -m gun.gun_sim           # RZ WarpX run  ->  diags/{fields,particles}/
 python -m gun.plot_gun          # figures       ->  results/*.png
 ```
 
-To override the gun voltage or bunch charge: `gun.config(GUN_VOLTAGE=150e3,
-BUNCH_CHARGE=1.0e-9)` before `gun.run()`. Keys must match the module-level constants in
-`gun/build_gun_field.py` and `gun/gun_sim.py`. `build_gun_field.py` reads
-`fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
+`GUN_VOLTAGE` is a `build_gun_field.py` module constant (it sets the field-map scale), so
+`gun.config(GUN_VOLTAGE=150e3)` before `gun.run()` still works. **Every other knob lives in
+`gun/gun.yaml`** — the `config()` API is bypassed for this WarpX stage; to retune, edit the YAML.
+`build_gun_field.py` reads `fieldmaps/CESR_gun.gdf`; `gun_sim.py` reads the cathode output from
 `cathode/diags/particles/`. All paths are repo-root-relative.
 
-**Performance knobs** (`config()`-overridable module constants; defaults reproduce the
-original run): `REQUIRED_PRECISION` (1e-5) and `MAX_ITERS` (None) for the MLMG solve;
-`CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and `AVG_SPEED_FRAC` (0.6) for
-the auto-derived run length, or `MAX_STEPS` (>0) to fix it (`AVG_SPEED_FRAC=0.6` is
-hand-tuned for the 150 kV point — `v_exit` is recomputed from `GUN_VOLTAGE`, but the
-average-speed fraction is not, so re-check it if `GUN_VOLTAGE` is changed substantially
-via `config()`); `N_DIAGS` (40) for the openPMD
-dump count; `MAX_PART` (0 = no cap) to downsample the imported cathode bunch (reweighted,
-charge-preserving); `BEAM_RELEASE` (`"timed"`/`"snapshot"`) and `PULSE_WIDTH` (2 ns) for the
-beam representation (see *Beam source*; `"timed"` runs ~5× longer than `"snapshot"` because the
-run spans the full pulse + a transit instead of one transit); the grid `nr, nz`; and
-`SPACE_CHARGE` (default `True`). Setting
-`SPACE_CHARGE=False` passes `warpx_do_not_deposit` (beam self-field off, only the applied gun field
-acts) — but note the self-field is *dominant* here at 149 keV (it "dwarfs the gun field," ~17% of
-charge is already lost to it), so SC-off is a large physics change, not a mild diagnostic. Runtime ≈
-`nz²` (per-step cost ∝ cells, and
-`dz = ZMAX/nz` ⇒ fewer steps as `nz` drops), so halving `nz` ≈ 4× faster. This holds because the
-gun's cells are near-isotropic (`dz/dr ≈ 0.86`) so the MLMG solve stays well-conditioned as `nz`
-drops — **unlike the injector's long-thin box**, where coarsening `NZ` slows the solve instead
-(see `injector/README.md`). The `fields` diagnostic (`Ez_rz.png`, `self_charge_rz.png`) needs a few
-dumps to be meaningful, so keep `N_DIAGS` reasonable.
+**Performance knobs** (in `gun.yaml`): `required_precision` / `warpx_magnetostatic_required_precision`
+(`solver:`, ship **1e-4** — the Balanced profile; the Conservative/benchmark value is 1e-5) for the
+MLMG solve; in `params:`, `CFL` (0.4, `dt = CFL·dz/v_exit`), `TRANSIT_MARGIN` (1.15) and
+`AVG_SPEED_FRAC` (0.6) for the auto-derived run length, or `MAX_STEPS` (>0) to fix it
+(`AVG_SPEED_FRAC=0.6` is hand-tuned for the 150 kV point — `v_exit` is recomputed from
+`GUN_VOLTAGE`, but the average-speed fraction is not, so re-check it if `GUN_VOLTAGE` changes
+substantially); `N_DIAGS` (40) for the openPMD dump count; `MAX_PART` (0 = no cap) to downsample
+the imported cathode bunch (reweighted, charge-preserving); `BEAM_RELEASE` (`"timed"`/`"snapshot"`)
+and `PULSE_WIDTH` (2 ns) for the beam representation (see *Beam source*; `"timed"` runs ~5× longer
+than `"snapshot"`); and the grid `number_of_cells` `[nr, nz]`. The species
+`warpx_do_not_deposit` flag (default `false` = space charge ON): `true` turns the self-field off
+(only the applied gun field acts) — but the self-field is *dominant* here at 149 keV (it "dwarfs
+the gun field," ~17% of charge is already lost to it), so it is a large physics change, not a mild
+diagnostic. Runtime ≈ `nz²` (per-step cost ∝ cells, and `dz = ZMAX/nz` ⇒ fewer steps as `nz`
+drops), so halving `nz` ≈ 4× faster — the reason the **shipped Balanced default is `nz = 384`**
+(dz ≈ 0.19 mm). The cross-code-converged grid is `nz = 712` (dz ≈ 0.10 mm; see *Cross-code
+validation* and *Simulation parameters*) — set it for a Conservative near-cathode-εn,x run. The
+gun's cells are near-isotropic so the MLMG solve stays well-conditioned at either `nz` — **unlike
+the injector's long-thin box**, where coarsening `NZ` slows the solve (see `injector/README.md`).
+The `fields` diagnostic (`Ez_rz.png`, `self_charge_rz.png`) needs a few dumps to be meaningful, so
+keep `N_DIAGS` reasonable.
 
 ## The gun field map
 
@@ -194,7 +194,7 @@ beam is treated as a single injected bunch.
 | parameter | value |
 |-----------|-------|
 | geometry | RZ, `n_azimuthal_modes = 1` |
-| grid | 128 (r) × 712 (z), r ∈ [0, 15 mm], z ∈ [0, 71.77 mm] = field map (`ZMAX_FIELD`=51.77 mm) + `ZPAD`=20 mm field-free drift pad; dz≈0.10 mm (finer than the old 96×384 to resolve the near-cathode dynamics, and padded so the exit beam is sampled in field-free space — see *Cross-code validation* and *Beam source*) |
+| grid | 128 (r) × **384 (z)** shipped Balanced default (dz≈0.19 mm); **712** is the cross-code-converged grid (dz≈0.10 mm), set it in `gun.yaml` `number_of_cells` for a Conservative near-cathode-εn,x run. r ∈ [0, 15 mm], z ∈ [0, 71.77 mm] = field map (`ZMAX_FIELD`=51.77 mm) + `ZPAD`=20 mm field-free drift pad, padded so the exit beam is sampled in field-free space (see *Cross-code validation* and *Beam source*) |
 | boundaries (fields) | axis at r=0; **dirichlet** (grounded) outer radial wall + both z plates |
 | solver | electromagnetostatic, lab frame, Multigrid (self E **and** B from beam current) |
 | applied field | scaled `CESR_gun.gdf`, −150 kV, read from file |
@@ -249,9 +249,11 @@ the physics choices this stage makes:
   opposite-sign image partly cancels the bunch self-field; a Neumann plane gives a *same*-sign
   image that adds to it (a +12 % error in the benchmark). This stage's z = 0 plate is dirichlet.
 - **Grid must resolve the near-cathode dynamics.** εn,x falls and only converges once the grid
-  is fine enough near the cathode (the benchmark converged by nz ≈ 720 over 55 mm); the old
-  nz = 384 over 51.77 mm sat on the unconverged side, so the grid here is **128 × 712** (over
-  the 71.77 mm field-free-padded domain; dz≈0.10 mm).
+  is fine enough near the cathode (the benchmark converged by nz ≈ 720 over 55 mm); nz = 384 over
+  51.77 mm sat on the unconverged side, so the **converged grid is 128 × 712** (over the 71.77 mm
+  field-free-padded domain; dz≈0.10 mm). The shipped **Balanced** default coarsens this to
+  `nz = 384` (dz≈0.19 mm) for ~4× speed — the same effective default the pre-YAML pipeline ran via
+  its Balanced `config()` block; set `nz = 712` in `gun.yaml` for a converged-εn,x Conservative run.
 - **Match the beam representation.** The benchmark's single largest term (~28 %) is snapshot vs
   time-release — implemented here as `BEAM_RELEASE` (see *Beam source*).
 

@@ -11,6 +11,8 @@ grid:
   lower_bound: [0.0, 0.0]
   upper_bound: [0.009547, 3.50]        # [RMAX (SLAC bore), ZMAX]
   lower_boundary_conditions: [none, dirichlet]
+  # Outer radial wall neumann (OK here): ES_MLMG_LF has no A_z solve, so unlike the EMS gun/injector
+  # (which need dirichlet for A_z well-posedness) the plain ES Poisson solve is fine with neumann.
   upper_boundary_conditions: [neumann, dirichlet]
   lower_boundary_conditions_particles: [none, absorbing]
   upper_boundary_conditions_particles: [absorbing, absorbing]
@@ -57,6 +59,7 @@ params:
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW)
   CFL: 0.5                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the injected snapshot (reweighted)
+  MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 1.0
   Z_INJECT: 0.005                      # lab z of the bunch tail [m]
