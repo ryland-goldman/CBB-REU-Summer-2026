@@ -1,0 +1,85 @@
+# CESR gun — lume-warpx config (WarpX RZ, single azimuthal mode). All constants live here;
+# sim/gun.py reads them back and overrides only runtime-computed values (dt, step count, the
+# seed macroparticle arrays, diagnostic periods); the time-release beam is built up by a
+# beforestep callback. See docs/gun.md for physics, the beam representation, and gotchas. The
+# shipped values ARE the single Balanced operating point.
+
+grid:
+  grid_type: CylindricalGrid
+  number_of_cells: [128, 384]          # [nr, nz]; Balanced (dz≈0.19 mm). Converged grid is nz=712
+                                       # (dz≈0.10 mm) per the WarpX–GPT benchmark — see docs/gun.md.
+  n_azimuthal_modes: 1                  # gun field is m = 0
+  lower_bound: [0.0, 0.0]
+  upper_bound: [0.015, 0.071765]       # [RMAX (field-map r), ZMAX = ZMAX_FIELD + ZPAD]
+  # OUTER radial wall MUST be dirichlet (not neumann): the magnetostatic A_z solve is otherwise
+  # an all-Neumann singular operator and MLMG diverges.
+  lower_boundary_conditions: [none, dirichlet]
+  upper_boundary_conditions: [dirichlet, dirichlet]
+  lower_boundary_conditions_particles: [none, absorbing]
+  upper_boundary_conditions_particles: [absorbing, absorbing]
+  warpx_blocking_factor: 8
+
+solver:
+  solver_type: ES_MLMG_EMS             # electromagnetostatic: self-B pinch ⇒ net qE_r/γ²
+  required_precision: 1.0e-4           # Balanced; Conservative/benchmark value is 1e-5
+  warpx_magnetostatic_required_precision: 1.0e-4   # Balanced; Conservative 1e-5
+  warpx_self_fields_verbosity: 0
+  warpx_magnetostatic_verbosity: 0
+
+simulation:
+  max_steps: 1000                      # overridden (auto-derived from CFL/transit)
+  time_step_size: 1.0e-12              # overridden (dt = CFL·dz/v_exit)
+  particle_shape: linear
+
+fields:
+  # Applied gun electrode field (pre-scaled CESR_gun.gdf → gun_E.h5); DC, so no time function.
+  - field_type: AppliedFromFile
+    path: fieldmaps/h5/gun_E.h5
+    load_E: true
+    load_B: false
+
+species:
+  # Time-release mode seeds only the earliest macroparticle (PICMI needs a non-empty initial
+  # distribution) and injects the rest over the pulse via a beforestep callback. The
+  # x/y/z/ux/uy/uz/weight arrays are overridden.
+  - particle_type: electron
+    name: electrons
+    distribution-type: ParticleList
+    x: [0.0]
+    y: [0.0]
+    z: [0.0]
+    ux: [0.0]
+    uy: [0.0]
+    uz: [0.0]
+    weight: [1.0]
+    warpx_do_not_deposit: false        # space charge on (false → deposits self-field)
+    layout: PseudoRandom
+    n_macroparticles_per_cell: 1        # inert — ParticleList supplies the macroparticles
+
+diagnostics:
+  - diagnostic_type: Field
+    name: fields
+    period: 25                          # overridden (max_steps // N_DIAGS)
+    data_list: [phi, rho, E]
+    write_dir: logs/diags/gun           # → logs/diags/gun/fields
+  - diagnostic_type: Particle
+    name: particles
+    period: 25                          # overridden
+    species: [electrons]
+    data_list: [position, momentum, weighting]
+    write_dir: logs/diags/gun           # → logs/diags/gun/particles
+
+# Stage knobs with no WarpX-native home (read by sim/gun.py).
+params:
+  GUN_VOLTAGE: 150.0e3                  # cathode high voltage [V]; sets the field-map scale + kinematics
+  ZMAX_FIELD: 0.051765                 # field-map z-extent [m]; Ez→0 here (exit plane)
+  ZPAD: 0.020                          # field-free drift pad past the map [m]
+  BUNCH_CHARGE: 1.0e-9                 # renormalized gun bunch charge [C]
+  RNG_SEED: 0
+  PULSE_WIDTH: 2.0e-9                  # grid-pulse emission window [s]
+  CFL: 0.4                             # dt = CFL · dz / v_exit
+  TRANSIT_MARGIN: 1.15                 # run length = TRANSIT_MARGIN × gun-transit time
+  AVG_SPEED_FRAC: 0.6                  # bunch average speed as a fraction of v_exit
+  MAX_STEPS: 0                         # 0 → auto-derive from CFL/margins; >0 → fixed
+  N_DIAGS: 40                          # openPMD dumps over the run
+  MAX_PART: 50000                      # 0 → keep all cathode particles; >0 → cap

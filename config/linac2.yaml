@@ -1,0 +1,71 @@
+# Cornell Linac Section 2 (CEA 2) — lume-warpx config (WarpX RZ, single azimuthal mode). All
+# constants live here; sim/linac1-3.py (run as `python sim/linac1-3.py 2`) reads them back,
+# imports linac section 1's captured exit beam via WarpX(initial_particles=...), and overrides
+# only runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
+# period). The geometry/grid are IDENTICAL to section 1 (the SAME shared SLAC 3 m maps are
+# reused); only the beam energy and the FROZEN RF setpoints differ. See docs/linac1-3.md.
+
+grid:
+  grid_type: CylindricalGrid
+  number_of_cells: [16, 1664]          # [NR, NZ]; keep ≈3:1 cells or MLMG diverges
+  n_azimuthal_modes: 1
+  lower_bound: [0.0, 0.0]
+  upper_bound: [0.009547, 3.50]        # [RMAX (SLAC bore), ZMAX]; field-free drift past the 3.12 m exit
+  lower_boundary_conditions: [none, dirichlet]
+  upper_boundary_conditions: [neumann, dirichlet]
+  lower_boundary_conditions_particles: [none, absorbing]
+  upper_boundary_conditions_particles: [absorbing, absorbing]
+  warpx_blocking_factor: 8
+
+solver:
+  solver_type: ES_MLMG_LF              # space charge is a small perturbation at ~21–49 MeV
+  required_precision: 1.0e-4
+  maximum_iterations: 200
+  warpx_self_fields_verbosity: 0
+
+simulation:
+  max_steps: 1000                      # overridden (auto-derived from transit)
+  time_step_size: 1.0e-12              # overridden (dt = CFL·Δz/v_inject)
+  particle_shape: linear
+
+# The two SLAC quadrature RF maps, summed by WarpX (field2 is the 90° quadrature half). Both
+# load E+B; the cos/sin drive strings (amplitude scale + phase) are overridden at runtime. These
+# are the SAME shared maps as sections 1 and 3.
+fields:
+  - {field_type: AppliedFromFile, path: fieldmaps/h5/linac_rf1.h5, load_E: true, load_B: true, warpx_E_time_function: "0.0", warpx_B_time_function: "0.0"}
+  - {field_type: AppliedFromFile, path: fieldmaps/h5/linac_rf2.h5, load_E: true, load_B: true, warpx_E_time_function: "0.0", warpx_B_time_function: "0.0"}
+
+species:
+  - particle_type: electron
+    name: electrons
+    distribution-type: FromInitialParticles   # linac section 1 exit beam via initial_particles
+    warpx_do_not_deposit: true                # SC off: 1/gamma^2-negligible at >20 MeV (identical beam, ~50x faster); set false for a self-consistent run
+    layout: PseudoRandom
+    n_macroparticles_per_cell: 1
+
+diagnostics:
+  - diagnostic_type: Particle
+    name: particles
+    period: 100                                # overridden (max_steps // N_DIAGS)
+    species: [electrons]
+    data_list: [position, momentum, weighting]
+    write_dir: logs/diags/linac1-3/sec2/main   # → logs/diags/linac1-3/sec2/main/particles
+
+# Stage knobs with no WarpX-native home (read by sim/linac1-3.py).
+params:
+  # FROZEN RF setpoints — derived ONCE from the old linac_sec1 exit (the runtime crest-finding /
+  # ΔE-target field-scale loop is dropped). CREST_PHASE_DEG is the bunch-averaged relativistic
+  # crest base phase; FIELD_SCALE is the field-map amplitude scale that hit the DE_TARGET_MEV.
+  CREST_PHASE_DEG: 147.0536            # frozen on-crest base phase [deg]
+  FIELD_SCALE: 9.307480e+01            # frozen field-map amplitude scale
+  DE_TARGET_MEV: 28.3                  # reference only — per-section ΔE target [MeV] the scale was derived to hit
+  PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
+  F_RF: 2856.0e6                       # SLAC S-band [Hz]
+  RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW); report-only here
+  CFL: 0.5                             # dt = CFL · Δz / v_inject
+  MAX_PART: 50000                      # downsample the imported exit beam (reweighted)
+  MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
+  N_DIAGS: 60
+  TRANSIT_MARGIN: 1.0
+  Z_INJECT: 0.005                      # lab z of the bunch tail [m]
+  RNG_SEED: 0

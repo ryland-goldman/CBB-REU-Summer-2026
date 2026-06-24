@@ -1,0 +1,70 @@
+# SLAC Linac Section 1 (capture) — lume-warpx config (WarpX RZ, single azimuthal mode). All
+# constants live here; sim/linac1-3.py (run as `python sim/linac1-3.py 1`) reads them back,
+# imports the captured injector beam via WarpX(initial_particles=...), and overrides only
+# runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
+# period). The two SLAC quadrature maps are the SAME shared fieldmaps used by sections 2 and 3.
+# See docs/linac1-3.md for physics, the iris scrape, and gotchas. The shipped values ARE the
+# single Balanced operating point.
+
+grid:
+  grid_type: CylindricalGrid
+  number_of_cells: [16, 1664]          # [NR, NZ]; keep ≈3:1 cells or MLMG diverges
+  n_azimuthal_modes: 1
+  lower_bound: [0.0, 0.0]
+  upper_bound: [0.009547, 3.50]        # [RMAX (SLAC bore), ZMAX]; field-free drift past the 3.12 m exit
+  lower_boundary_conditions: [none, dirichlet]
+  # Outer radial wall neumann (OK here): ES_MLMG_LF has no A_z solve, so unlike the EMS gun/injector
+  # (which need dirichlet for A_z well-posedness) the plain ES Poisson solve is fine with neumann.
+  upper_boundary_conditions: [neumann, dirichlet]
+  lower_boundary_conditions_particles: [none, absorbing]
+  upper_boundary_conditions_particles: [absorbing, absorbing]
+  warpx_blocking_factor: 8
+
+solver:
+  solver_type: ES_MLMG_LF              # space charge is a small perturbation
+  required_precision: 1.0e-4
+  maximum_iterations: 200
+  warpx_self_fields_verbosity: 0
+
+simulation:
+  max_steps: 1000                      # overridden (auto-derived from transit)
+  time_step_size: 1.0e-12              # overridden (dt = CFL·Δz/v_inject)
+  particle_shape: linear
+
+# The two SLAC quadrature RF maps, summed by WarpX (field2 is the 90° quadrature half). Both
+# load E+B; the cos/sin drive strings (amplitude scale + phase) are overridden at runtime.
+fields:
+  - {field_type: AppliedFromFile, path: fieldmaps/h5/linac_rf1.h5, load_E: true, load_B: true, warpx_E_time_function: "0.0", warpx_B_time_function: "0.0"}
+  - {field_type: AppliedFromFile, path: fieldmaps/h5/linac_rf2.h5, load_E: true, load_B: true, warpx_E_time_function: "0.0", warpx_B_time_function: "0.0"}
+
+species:
+  - particle_type: electron
+    name: electrons
+    distribution-type: FromInitialParticles   # injector handoff (iris survivors) via initial_particles
+    warpx_do_not_deposit: false               # space charge on
+    layout: PseudoRandom
+    n_macroparticles_per_cell: 1
+
+diagnostics:
+  - diagnostic_type: Particle
+    name: particles
+    period: 100                                # overridden (max_steps // N_DIAGS)
+    species: [electrons]
+    data_list: [position, momentum, weighting]
+    write_dir: logs/diags/linac1-3/sec1/main   # → logs/diags/linac1-3/sec1/main/particles
+
+# Stage knobs with no WarpX-native home (read by sim/linac1-3.py).
+params:
+  POWER_MW: 11.0                       # RF input power [MW]
+  PHASE_DEG: 0.0                       # injection RF phase offset [deg]; crest is on-arrival (capture beam)
+  F_RF: 2856.0e6                       # SLAC S-band [Hz]
+  RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW)
+  CFL: 0.5                             # dt = CFL · Δz / v_inject
+  MAX_PART: 50000                      # downsample the injected snapshot (reweighted)
+  MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
+  N_DIAGS: 60
+  TRANSIT_MARGIN: 1.0
+  Z_INJECT: 0.005                      # lab z of the bunch tail [m]
+  Z_HANDOFF: 2.03                      # [m] injector→linac handoff plane (selector target)
+  COLLIM_Z: 1.922                      # [m] iris start (multi-plane scrape from here)
+  RNG_SEED: 0

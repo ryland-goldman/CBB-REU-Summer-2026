@@ -1,0 +1,17 @@
+# Generated simulation outputs (regenerate by re-running)
+logs/diags/
+logs/plots/
+logs/pipeline/
+fieldmaps/h5/
+
+# Engine scratch / generated input echoes
+fort.*
+rfdata*.in
+warpx_used_inputs
+Backtrace.*
+diags/
+
+# Python
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,99 @@
+# Cornell Linac Beam Simulation
+
+Beam-dynamics simulation of the **Cornell High Energy Synchrotron Source (CHESS)** electron source
+front end — a from-first-principles rebuild of Adam Bartnik's
+[LinacSim](https://cesrwww.lepp.cornell.edu/wiki/CESR/LinacSim) **cathode → gun → injector → linac**
+chain. The first six stages run in [WarpX](https://warpx.readthedocs.io) (the particle-in-cell code,
+via `pywarpx` / lume-warpx); the final stage runs in
+[Impact-T](https://github.com/impact-lbl/IMPACT-T) (via lume-impact). Each stage reads the previous
+stage's openPMD beam, so the stages form one self-consistent accelerator chain. The **3→4 boundary**
+(the `linac3` exit) is a clean handoff and the future slot for an e⁺/e⁻ converter target.
+
+```
+cathode ─► gun ─► injector ─► linac1 ─► linac2 ─► linac3 ─►[3→4]─► linac4-8
+SCL       CESR    2 prebunchers  SLAC 3 m   CEA 2     CEA 3   converter  CU/CEA S-band
+diode     gun     + 6 solenoids  TW capture                   slot       (Impact-T)
+(2D)      (RZ)    (RZ)           (RZ)       (RZ)      (RZ)                (sections 4–8)
+```
+
+## Layout
+
+```
+config/    one YAML per stage — every tunable option is hardcoded here (edit to retune)
+sim/       main.py + one driver per stage (cathode, gun, injector, linac1-3, linac4-8)
+  helpers/ stage-agnostic plumbing: tools, buildfields, loadparticles, metrics, tqdmwrapper
+  plot/    one plotter per stage + common (shared figures) + chain (cross-stage)
+logs/      diags/<stage>/ (openPMD) · plots/<stage>/ (PNG) · pipeline/log_<date>.log
+docs/      per-stage physics notes
+fieldmaps/ gdf/ (GPT field-map inputs) · h5/ (built openPMD maps) · rfdata/ (Impact-T templates)
+```
+
+The three WarpX linac sections share **one** driver (`sim/linac1-3.py`, section chosen by a CLI
+argument); the five Impact-T sections share `sim/linac4-8.py`.
+
+## Setup
+
+All simulations run in the **CBB** conda environment:
+
+```bash
+conda activate CBB                 # Miniforge at ~/miniforge3
+pip install -r requirements.txt    # warpx / impact-t / openpmd-api are best from conda-forge
+```
+
+Field maps are read from `fieldmaps/gdf/` (committed). To *regenerate* a `.gdf` map with GPT (not
+needed to run the chain), use the `gpt_remote` wrapper, which runs GPT on a remote host.
+
+## Run
+
+```bash
+python sim/main.py                 # the whole chain, in order, with a final beam summary
+```
+
+Each stage is a self-contained script you can run alone (from the repo root):
+
+```bash
+python sim/cathode.py              # one stage's simulation
+python sim/plot/cathode.py         # its figures (from existing diagnostics)
+python sim/linac1-3.py 2           # linac section 2 (argument selects the section)
+python sim/plot/chain.py           # cross-stage figures from whatever stages have run
+```
+
+The WarpX stages each run in a fresh subprocess (pywarpx binds one geometry per interpreter);
+Impact-T runs the same way. Subprocess output is captured to `logs/pipeline/log_<date>.log` while
+progress bars stay on the terminal.
+
+## Stages
+
+| Stage | Driver / config | What it does |
+|-------|-----------------|--------------|
+| **Cathode** | `sim/cathode.py` · `config/cathode.yaml` | Finite, space-charge-limited (Child–Langmuir) thermionic diode in 2D x–z. The electron source. |
+| **Gun** | `sim/gun.py` · `config/gun.yaml` | CESR electrostatic gun in RZ from the `CESR_gun.gdf` field map, with the relativistic EMS self-field. Timed beam release; writes a field-free-pad exit handoff. |
+| **Injector** | `sim/injector.py` · `config/injector.yaml` | The LinacSim injector in one RZ space-charge run: two 214 MHz prebunchers (velocity bunching) + six solenoid lenses (focusing) + the 9.547 mm iris, handing off near z ≈ 2.03 m. |
+| **Linac 1–3** | `sim/linac1-3.py` · `config/linac{1,2,3}.yaml` | Three SLAC-design 3 m, 2π/3 traveling-wave sections (RZ, WarpX) reusing the SLAC field maps. Section 1 captures the injector beam through the iris; sections 2–3 accelerate the captured core. |
+| **Linac 4–8** | `sim/linac4-8.py` · `config/linac4-8.yaml` | Five S-band traveling-wave sections (CU 5 + CEA 4/5 + CU 3/4) in one Impact-T deck, using the generic `rfdata4–7` field shape. Space charge and quads off by default. |
+
+Each stage's physics, field model, configuration knobs, and figures are documented in
+[`docs/`](docs/).
+
+## Configuration & frozen RF setpoints
+
+Every option lives in `config/*.yaml` — edit a value there to retune a stage. The linac RF
+setpoints (each section's crest phase and field scale) were derived once and **hardcoded** into the
+linac YAMLs, so the drivers simply read and apply them (no runtime crest search or calibration). If
+you change an upstream knob that shifts the beam, re-derive the affected setpoint.
+
+## Outputs
+
+- `logs/diags/<stage>/` — openPMD particle/field diagnostics + `injection_summary.json` sidecars.
+- `logs/plots/<stage>/` — per-stage figures; `logs/plots/chain/` — the cross-stage figures
+  (`chain_evolution`, `emittance_budget`, `transmission_waterfall`, `chain_scorecard`).
+- `logs/pipeline/log_<date>.log` — the full run transcript.
+
+Diagnostics and figures are regenerated by re-running; commit any PNGs you want to keep with
+`git add -f`.
+
+## Reference materials
+
+`reference/` (in the original repo) holds documentation for the accelerator-physics tools
+considered — WarpX, IMPACT-T, GPT, BMAD, G4beamline, LinacSim, lume-impact, lume-gpt, distgen,
+openPMD-beamphysics / openPMD-viewer, easygdf — plus papers.
