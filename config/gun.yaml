@@ -21,8 +21,8 @@ grid:
 
 solver:
   solver_type: ES_MLMG_EMS             # electromagnetostatic: self-B pinch ⇒ net qE_r/γ²
-  required_precision: 1.0e-4           # Balanced; Conservative/benchmark value is 1e-5
-  warpx_magnetostatic_required_precision: 1.0e-4   # Balanced; Conservative 1e-5
+  required_precision: 1.0e-3           # Fast; Balanced 1e-4, Conservative/benchmark 1e-5
+  warpx_magnetostatic_required_precision: 1.0e-3   # Fast; Balanced 1e-4, Conservative 1e-5
   warpx_self_fields_verbosity: 0
   warpx_magnetostatic_verbosity: 0
 
@@ -74,10 +74,11 @@ params:
   GUN_VOLTAGE: 150.0e3                  # cathode high voltage [V]; sets the field-map scale + kinematics
   ZMAX_FIELD: 0.051765                 # field-map z-extent [m]; Ez→0 here (exit plane)
   ZPAD: 0.020                          # field-free drift pad past the map [m]
-  BUNCH_CHARGE: 1.0e-9                 # renormalized gun bunch charge [C]
+  BUNCH_CHARGE: 1.0e-9                 # fallback bunch charge [C] (used only if the cathode sim's
+                                       # measured injection_summary.json is absent)
   RNG_SEED: 0
   PULSE_WIDTH: 2.0e-9                  # grid-pulse emission window [s]
-  CFL: 0.4                             # dt = CFL · dz / v_exit
+  CFL: 0.7                             # dt = CFL · dz / v_exit (Fast; Balanced 0.4)
   TRANSIT_MARGIN: 1.15                 # run length = TRANSIT_MARGIN × gun-transit time
   AVG_SPEED_FRAC: 0.6                  # bunch average speed as a fraction of v_exit
   MAX_STEPS: 0                         # 0 → auto-derive from CFL/margins; >0 → fixed

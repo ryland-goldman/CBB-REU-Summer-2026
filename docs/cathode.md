@@ -1,11 +1,16 @@
 # Cathode — Space-Charge-Limited Thermionic Diode (WarpX 2D)
 
 A WarpX model of the **electron source** at the front of the Cornell linac — Adam Bartnik's
-"Region 1": a hot thermionic cathode a short distance from a positively biased grid/anode,
-operating in the **space-charge-limited (SCL)** regime. Built on `pywarpx`, driven through
-lume-warpx: every constant lives in `config/cathode.yaml`, and `sim/cathode.py` reads them
-back, overriding only the runtime-computed values (flux, thermal velocity, `dt`, diagnostic
-periods).
+"Region 1": a hot thermionic cathode a short distance from a **pulsed** grid/anode, operating in
+the **space-charge-limited (SCL)** regime. Built on `pywarpx`, driven through lume-warpx: every
+constant lives in `config/cathode.yaml`, and `sim/cathode.py` reads them back, overriding the
+runtime-computed values (flux, thermal velocity, `dt`, diagnostic periods, and the `V(t)` grid
+pulse).
+
+The grid voltage is **pulsed** to chop out the bunch (Region 1's real behaviour), so the
+**emitted charge is measured from the run** — `∫J_z` over the cathode disc through the pulse,
+times the grid transmission — rather than imposed. That measured charge is written to
+`injection_summary.json` and is the value the gun renormalizes its slab→RZ remap to.
 
 The cathode has a **finite transverse extent** and is simulated in 2D (x–z). The emitting
 strip is much wider than the gap, so on axis we recover the 1D Child–Langmuir physics cleanly,
@@ -43,8 +48,27 @@ the cathode** instead of uniform.
 
 This demo verifies WarpX reproduces this from first principles: we deliberately **over-inject
 at 2 × J_CL** and let the self-consistent fields do the limiting — we do not impose the answer.
-`sim/cathode.py` computes `J_CL = child_langmuir_current_density(V_anode, gap_d)` and injects a
-flux of `over_inject · J_CL / q_e`; the SCL mechanism is what limits the transmitted current.
+`sim/cathode.py` computes `J_CL = child_langmuir_current_density(V_peak, gap_d)` (at the **peak**
+grid bias) and injects a constant flux of `over_inject · J_CL / q_e`. Because `J_CL(V(t)) ≤
+J_CL(V_peak)` at every instant, that constant over-injection stays over the limit through the
+whole pulse, so the transmitted current self-limits to the **instantaneous** `J_CL(V(t))`.
+
+### The pulsed grid and the measured charge
+
+The grid bias rides `V(t) = V_OFF + V_PULSE · tent(t)` — a rounded triangle rising and falling at
+`V_SLOPE`, peaking at `V_OFF + V_PULSE`, with FWHM ≈ `PULSE_WIDTH` (the LinacSim CESR operating
+point). While `V(t) < 0` the grid retards and nothing transmits; the bunch is the slug emitted
+around the crest. The diode is **quasi-static** — the gap transit time (tens of ps) is far shorter
+than the ns-scale pulse — so the transmitted current tracks `J_CL(V(t))` instantaneously.
+
+The physical bunch charge is then **measured** from the field diagnostic:
+
+$$ Q = \pi R_{\text{cathode}}^2 \cdot \Big(\!\int J_z(t)\,dt\Big) \cdot \text{GRID\_TRANS} $$
+
+`J_z` (a real local current density even in 2D — the planar diode is locally 1D) is integrated at
+mid-gap over the pulse; the naive `Σ(weight)` is **not** usable for total charge (2D weights are
+per-unit-out-of-plane-length). The result lands in `injection_summary.json` (`q_emit_C`), and the
+gun reads it as its renormalization target — replacing the old hardcoded `BUNCH_CHARGE`.
 
 ---
 
@@ -79,24 +103,28 @@ machinery for this stage; **edit the YAML to retune**.
 
 | Knob | YAML location |
 |------|---------------|
-| Anode / grid bias `V` | `grid: warpx_potential_hi_z` (30 V) |
+| Off / retarding bias `V_OFF` | `params: V_OFF` (−30 V) |
+| Peak voltage swing `V_PULSE` | `params: V_PULSE` (60 V → peak grid bias +30 V) |
+| Pulse slope `V_SLOPE` | `params: V_SLOPE` (30 V/ns) |
+| Pulse FWHM | `params: PULSE_WIDTH` (2 ns) |
+| Grid transmission | `params: GRID_TRANS` (0.80) |
 | Cathode potential | `grid: warpx_potential_lo_z` (0 V) |
 | Gap `d` | `grid: upper_bound[1]` (200 µm) |
 | Domain half-width `W` | `grid: upper_bound[0]` (±16 mm) |
-| Cathode patch `±R_cathode` | species `lower_bound`/`upper_bound[0]` (±8 mm) |
+| Cathode patch / disc `R_cathode` | species `upper_bound[0]` / `params: R_CATHODE` (8 mm) |
 | Grid | `grid: number_of_cells` `[nx, nz]` = 128 × 64 |
 | Solver tolerance | `solver: required_precision` (3e-5) |
 | Macroparticles/cell | species `n_macroparticles_per_cell` (6) |
 | Cathode temperature | `params: T_cathode` (1425 K) |
-| Over-injection factor | `params: over_inject` (2×) |
+| Over-injection factor | `params: over_inject` (2× the peak J_CL) |
 | CFL number | `params: CFL` (0.4) |
-| Diagnostic period | `params: DIAG_PERIOD` (null → dense-early union slice) |
-| Max steps | `simulation: max_steps` (2000) |
+| Diagnostic period | `params: DIAG_PERIOD` (null → pulse-resolving field period) |
 
 The 16 mm / 0.2 mm geometry sits deep in the 1D limit (80× the gap), so the on-axis result
-recovers planar Child–Langmuir while the 2D run still resolves the finite-cathode edges. It is
-a **DC** demo: Region 1 actually pulses the grid voltage to chop out a bunch; this configured
-anode bias is the peak cathode→grid potential difference and the grid pulsing is not modelled.
+recovers planar Child–Langmuir while the 2D run still resolves the finite-cathode edges.
+`max_steps` and the diagnostic periods are **runtime-derived** from the pulse (the run spans the
+full pulse base plus drift, the particle diagnostic dumps the crest template), so they are not set
+in the YAML. The grid pulse `V(t)` is the LinacSim CESR operating point (`cathode_master.in`).
 
 There is also a `warpx_do_not_deposit` flag on the species (default `false` = space charge ON):
 **keep it `false`** — `true` disables the space-charge-limited (Child–Langmuir) mechanism this
@@ -117,10 +145,10 @@ Generated in three layers — lume-warpx's plotting helpers, the shared custom f
 - **`charge_density_xz.png`** — `plot_fields("rho","x","z")`: the space-charge / virtual-cathode layer.
 - **`centroid_vs_t.png`** — `plot1D("t","mean_z")`: the emitted cloud filling the gap.
 - **`charge_vs_t.png`** — `plot1D("t","charge")`: tracked charge as emission self-limits at J_CL.
-- **`energy_spectrum.png`** — `common.energy_spectrum`: charge-weighted KE histogram (⟨E⟩/σ_E) — the broad low-energy emitted spectrum.
-- **`current_profile.png`** — `common.current_profile`: longitudinal current I(z) = Σ(w·v_z)/dz — the flat continuous-DC emission stream (the SCL diode emits a steady current, not a bunch).
-- **`child_langmuir.png`** — on-axis φ(z) and E_z(z) vs the planar Child–Langmuir law and the vacuum reference: the space-charge depression below vacuum and the CL z^(4/3)/z^(1/3) shape (with the near-cathode field reversal).
-- **`current_saturation.png`** — transmitted current density at the anode vs time, held toward J_CL despite the over-injected flux.
+- **`energy_spectrum.png`** — `common.energy_spectrum`: charge-weighted KE histogram of the **whole-gap crest snapshot** — dominated by the dense slow near-cathode space-charge pileup, with a tail to the full-gap energy (peak grid bias). This is the instantaneous energy of all charge in the gap, **not** the delivered beam.
+- **`anode_spectrum.png`** — charge-weighted KE histogram of the **delivered beam**: the forward-moving electrons in the top `ANODE_FRAC` of the gap (crossing the anode), excluding the near-cathode pileup and the reflected over-injection. Peaks near the full-gap acceleration (≈ peak grid bias) — this is the flux that seeds the gun.
+- **`child_langmuir.png`** — on-axis φ(z) and E_z(z) **at the pulse crest** vs the planar Child–Langmuir law (evaluated at the peak grid bias) and the vacuum reference: the space-charge depression below vacuum and the CL z^(4/3)/z^(1/3) shape (with the near-cathode field reversal).
+- **`grid_pulse.png`** — the grid bias V(t) (top) and the WarpX mid-gap transmitted current tracking the instantaneous J_CL(V(t)) envelope (bottom), with the measured emitted charge (∫J_z·πR²·grid_trans) annotated — the bunch the diode actually chops out.
 - **`emission_phase_space.png`** — the intrinsic thermal transverse phase space (x, p_x) + p_x histogram with ε_n,x and the ±√(kT·mₑc²) thermal scale (the source quality the gun inherits; the gun's disc remap receives ×√(3/4)).
 
 ---
@@ -130,6 +158,17 @@ Generated in three layers — lume-warpx's plotting helpers, the shared custom f
 - The cathode is much wider than the gap (2R ≫ d), so on axis it sits in the ideal 1D planar
   limit and the J_CL agreement is tight. Shrink `R_cathode` toward `gap_d` to bring out the
   finite-cathode edge effects instead.
-- Region 1 actually *pulses* the grid voltage to chop out a bunch. That can be added with a
-  time-dependent potential / `AnalyticFluxDistribution`; this demo uses a DC bias to keep the
-  Child–Langmuir validation clean.
+- The gun seeds from the **anode-crossing flux**, not the whole-gap snapshot: `injection_summary.json`
+  carries `gap_d_m`/`anode_frac`, and the gun keeps only forward-moving electrons in the top
+  `ANODE_FRAC` of the gap (`loadparticles.anode_beam_mask`). This drops the dense slow near-cathode
+  space-charge pileup (~half the gap charge) and the reflected half of the 2× over-injection, which
+  never exit. The `energy_spectrum.png` (whole gap) and `anode_spectrum.png` (delivered) figures show
+  the difference. WarpX also force-writes a drained diagnostic at the final step, so the crest dump
+  is selected by `crest_time_s`, never `iterations[-1]`.
+- The emitted charge is **measured** (∫J_z over the pulse, not imposed), so changing any pulse
+  knob (`V_OFF`/`V_PULSE`/`V_SLOPE`/`PULSE_WIDTH`/`GRID_TRANS`) shifts the bunch charge the gun
+  inherits — and therefore the downstream beam. The frozen linac RF setpoints
+  (`CREST_PHASE_DEG`/`FIELD_SCALE`) must then be re-derived (see the repo CLAUDE.md).
+- The pulse `tent(t)` is a rounded triangle parameterized by `V_SLOPE` and `PULSE_WIDTH`; the
+  LinacSim source (`details.md`) describes a shape interpolating rounded-square↔rounded-triangle as
+  the slope varies. Swap `_pulse_string` in `sim/cathode.py` for a different envelope if needed.

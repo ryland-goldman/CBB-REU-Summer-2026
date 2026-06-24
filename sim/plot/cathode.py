@@ -2,12 +2,14 @@
 Figures for the finite-cathode space-charge-limited (Child–Langmuir) diode (sim/cathode.py)
 over logs/diags/cathode/. Writes PNGs to logs/plots/cathode/.
 
-Figures: phase_space_z_KE, energy_spectrum, evolution_vs_z (mean KE / eps_n,x / sigma_x across
-the gap), potential_xz, charge_density_xz, plus the stage-specific rich figures that validate the
-emission physics — the on-axis potential and field against the Child–Langmuir law (child_langmuir),
-the transmitted current saturating at J_CL despite 2× over-injection (current_saturation), and the
-source's intrinsic thermal transverse x–px phase space (emission_phase_space — this 2D slab has no
-r–pr). See docs/cathode.md for the physics each figure shows.
+Figures: phase_space_z_KE, energy_spectrum (whole-gap snapshot), evolution_vs_z (mean KE / eps_n,x /
+sigma_x across the gap), potential_xz, charge_density_xz, plus the stage-specific rich figures that
+validate the emission physics — the on-axis potential and field against the Child–Langmuir law at
+the pulse peak (child_langmuir), the grid pulse V(t) with the transmitted current tracking the
+instantaneous J_CL(V(t)) and the measured emitted charge (grid_pulse), the energy spectrum of the
+delivered beam crossing the anode that seeds the gun (anode_spectrum), and the source's intrinsic
+thermal transverse x–px phase space (emission_phase_space — this 2D slab has no r–pr). See
+docs/cathode.md for the physics each figure shows.
 
 main() runs ONLY plotting (the sim must have been run first).
 """
@@ -17,6 +19,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+import json
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -24,6 +28,7 @@ import matplotlib.pyplot as plt
 from openpmd_viewer import OpenPMDTimeSeries
 
 from sim.helpers.tools import C_LIGHT, MC2_KEV, child_langmuir_current_density, thermal_velocity_sigma
+from sim.helpers.loadparticles import anode_beam_mask
 from sim.plot import common
 
 CONFIG = "config/cathode.yaml"
@@ -72,10 +77,30 @@ def _save(fig, name):
     print(f"wrote {RESULTS}/{name}.png")
 
 
-def child_langmuir_figure(V_anode, gap_d):
-    """On-axis potential and field vs the planar Child–Langmuir and vacuum references."""
+def _pulse_voltage(t, p):
+    """Grid bias V(t) = V_OFF + V_PULSE·tent(t) evaluated at times t [s] (mirrors the parser tent)."""
+    t_rise = p["V_PULSE"] / p["V_SLOPE"]
+    tent = np.clip(np.minimum(t / t_rise, (2.0 * t_rise - t) / t_rise), 0.0, None)
+    return p["V_OFF"] + p["V_PULSE"] * np.clip(tent, None, 1.0)
+
+
+def _peak_field_iteration(ts, p):
+    """The field dump nearest the pulse crest (t = t_rise) — the SCL snapshot for the CL comparison."""
+    t_rise = p["V_PULSE"] / p["V_SLOPE"]
+    return ts.iterations[int(np.argmin(np.abs(np.asarray(ts.t) - t_rise)))]
+
+
+def _crest_iteration(ts, summary, fallback):
+    """The particle dump nearest the pulse crest — the gap-full beam. WarpX force-writes a drained
+    final-step dump, so iterations[-1] is the wrong template; select by crest_time_s if available."""
+    if summary and summary.get("crest_time_s") is not None:
+        return ts.iterations[int(np.argmin(np.abs(np.asarray(ts.t) - summary["crest_time_s"])))]
+    return fallback
+
+
+def child_langmuir_figure(V_anode, gap_d, it):
+    """On-axis potential and field vs the planar Child–Langmuir and vacuum references at the crest."""
     ts = OpenPMDTimeSeries(FIELDS)
-    it = ts.iterations[-1]                               # steady-state snapshot
     phi, meta = ts.get_field("phi", iteration=it)
     ez, _ = ts.get_field("E", "z", iteration=it)
     ix0 = np.argmin(np.abs(meta.x))                      # column nearest the axis
@@ -102,34 +127,79 @@ def child_langmuir_figure(V_anode, gap_d):
     _save(fig, "child_langmuir")
 
 
-def current_saturation_figure(V_anode, gap_d, R_cathode, J_CL, over_inject):
-    """Transmitted current density at the anode saturating at J_CL despite over-injection."""
+def grid_pulse_figure(gap_d, R_cathode, p, summary):
+    """The grid pulse V(t) and the transmitted current tracking the instantaneous J_CL(V(t)).
+
+    Top: the pulsed grid bias. Bottom: WarpX mid-gap |J_z|(t) overlaid on the quasi-static
+    J_CL(V(t)) envelope (the diode follows V(t) since transit ≪ pulse), with the emitted charge
+    measured by sim/cathode.py annotated."""
     ts = OpenPMDTimeSeries(FIELDS)
-    dx = None
-    times, j_trans = [], []
-    for i, it in enumerate(ts.iterations):
+    times = np.asarray(ts.t)
+    j_trans = []
+    for it in ts.iterations:
         jz, meta = ts.get_field("j", "z", iteration=it)
-        if dx is None:
-            dx = meta.x[1] - meta.x[0]
-        line_current = np.abs(jz[-2, :].sum() * dx)      # ∫|jz| dx just inside the anode [A/m depth]
-        j_trans.append(line_current / (2.0 * R_cathode)) # referenced to the cathode width
-        times.append(ts.t[i] * 1e9)                      # ns
+        nz = jz.shape[0]
+        xm = np.abs(meta.x) <= R_cathode
+        j_trans.append(np.abs(jz[nz // 2, xm]).mean())   # mid-gap transmitted |J_z| over the patch
+    j_trans = np.asarray(j_trans)
 
-    fig, ax = plt.subplots(figsize=(7, 4.8), constrained_layout=True)
-    ax.plot(times, j_trans, "o-", color="C2", label="WarpX transmitted current")
-    ax.axhline(J_CL, color="k", ls="--", label=r"Child–Langmuir limit $J_{CL}$")
-    ax.axhline(over_inject * J_CL, color="r", ls=":",
-               label=f"injected ({over_inject:.0f}× $J_{{CL}}$)")
-    ax.set_xlabel("time  [ns]"); ax.set_ylabel(r"current density at anode  $|J_z|$  [A/m²]")
-    ax.set_title("Space charge limits the transmitted current toward $J_{CL}$")
-    ax.set_xlim(0, 0.15); ax.set_ylim(0, over_inject * J_CL * 1.1); ax.legend()
-    _save(fig, "current_saturation")
+    v_t = _pulse_voltage(times, p)
+    j_cl = np.array([float(child_langmuir_current_density(max(v, 0.0), gap_d)) for v in v_t])
+    over = p["over_inject"] * float(child_langmuir_current_density(p["V_OFF"] + p["V_PULSE"], gap_d))
+
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(8, 6.5), sharex=True, constrained_layout=True)
+    a1.plot(times * 1e9, v_t, color="C0")
+    a1.axhline(0, color="gray", lw=0.8, ls=":")
+    a1.fill_between(times * 1e9, 0, v_t, where=v_t > 0, color="C0", alpha=0.15)
+    a1.set_ylabel("grid bias  V(t)  [V]")
+    a1.set_title(f"Pulsed grid: peak {p['V_OFF']+p['V_PULSE']:.0f} V, "
+                 f"slope {p['V_SLOPE']/1e9:.0f} V/ns, FWHM {p['PULSE_WIDTH']*1e9:.1f} ns")
+
+    a2.plot(times * 1e9, j_trans, "o-", color="C2", ms=3, label="WarpX transmitted (mid-gap)")
+    a2.plot(times * 1e9, j_cl, "k--", label=r"$J_{CL}(V(t))$ (quasi-static)")
+    a2.axhline(over, color="r", ls=":", label=f"injected ({p['over_inject']:.0f}× peak $J_{{CL}}$)")
+    a2.set_xlabel("time  [ns]"); a2.set_ylabel(r"current density  $|J_z|$  [A/m²]")
+    a2.set_ylim(0, over * 1.1); a2.legend(loc="upper right", fontsize=9)
+    if summary:
+        a2.text(0.03, 0.95,
+                rf"measured $Q = {summary['q_emit_C']*1e9:.3f}$ nC"
+                "\n" rf"(pre-grid {summary['q_pre_grid_C']*1e9:.3f} nC, "
+                rf"grid {summary['grid_trans']*100:.0f}%)",
+                transform=a2.transAxes, va="top", fontsize=9,
+                bbox=dict(boxstyle="round", fc="white", alpha=0.85))
+    fig.suptitle("Transmitted current tracks the pulsed Child–Langmuir limit", fontsize=12)
+    _save(fig, "grid_pulse")
 
 
-def emission_phase_space_figure(T_cathode):
-    """Intrinsic thermal transverse phase space and emittance of the source beam."""
+def anode_spectrum_figure(gap_d, anode_frac, it):
+    """Energy spectrum of the forward-moving beam crossing the anode plane — the delivered flux that
+    seeds the gun. Unlike energy_spectrum (a whole-gap snapshot dominated by the slow near-cathode
+    pileup), this is z-cut to the anode slab, so it shows the ~full-gap acceleration (≈ peak eV)."""
     ts = OpenPMDTimeSeries(PARTICLES)
-    x, ux, w = ts.get_particle(["x", "ux", "w"], iteration=ts.iterations[-1])
+    z, ux, uy, uz, w = ts.get_particle(["z", "ux", "uy", "uz", "w"], iteration=it)
+    m = anode_beam_mask(z, uz, gap_d, anode_frac)
+    ke = common.ke_kev_from_u(ux[m], uy[m], uz[m]) * 1e3     # keV → eV
+    wq = w[m]
+    frac = wq.sum() / w.sum()
+    mean = np.average(ke, weights=wq)
+    std = np.sqrt(np.average((ke - mean) ** 2, weights=wq))
+
+    # Normalize to a fraction: 2D-slab weights are per-unit-out-of-plane-length, not physical
+    # charge, so an absolute pC axis would be meaningless — only the spectral shape is.
+    fig, ax = plt.subplots(figsize=(7, 4.8), constrained_layout=True)
+    ax.hist(ke, bins=60, weights=wq / wq.sum(), color="C2", alpha=0.85)
+    ax.axvline(mean, color="k", ls="--", lw=1, label=f"<KE> = {mean:.1f} eV\nσ = {std:.1f} eV")
+    ax.set_xlabel("kinetic energy  [eV]"); ax.set_ylabel("fraction of delivered charge / bin")
+    ax.set_title(f"Delivered beam at the anode (top {anode_frac*100:.0f}% of gap, forward-moving)\n"
+                 f"the flux that seeds the gun — {frac*100:.1f}% of the gap charge")
+    ax.legend(loc="upper right", fontsize=9)
+    _save(fig, "anode_spectrum")
+
+
+def emission_phase_space_figure(T_cathode, it):
+    """Intrinsic thermal transverse phase space and emittance of the source beam (crest dump)."""
+    ts = OpenPMDTimeSeries(PARTICLES)
+    x, ux, w = ts.get_particle(["x", "ux", "w"], iteration=it)
     xbar, uxbar = np.average(x, weights=w), np.average(ux, weights=w)
     x2 = np.average((x - xbar) ** 2, weights=w)
     ux2 = np.average((ux - uxbar) ** 2, weights=w)
@@ -169,7 +239,17 @@ def main():
 
     w = WarpX(input_file=CONFIG)
     _load_series(w)                                      # logs/diags/cathode/{fields, particles}
-    it = _last_populated(PARTICLES)
+
+    summary = None
+    summary_path = os.path.join(DIAG_DIR, "injection_summary.json")
+    if os.path.isfile(summary_path):
+        with open(summary_path) as f:
+            summary = json.load(f)
+
+    # Snapshot figures use the CREST dump (gap full of transiting electrons), not iterations[-1]
+    # (the drained final-step dump WarpX force-writes after the grid pulses off).
+    ts = OpenPMDTimeSeries(PARTICLES)
+    it = _crest_iteration(ts, summary, _last_populated(PARTICLES))
     pg = w._particle_group(iteration=it)
 
     # Generic phase-space / field figures (lume-warpx helpers + shared sim.plot.common).
@@ -181,24 +261,28 @@ def main():
     ]:
         _save(fig, name)
 
-    # Beam evolution across the gap (fixed-z virtual screens over the pooled dumps).
-    ts = OpenPMDTimeSeries(PARTICLES)
-    pool = common.pool_trajectories(ts, ts.iterations, with_y=False)   # 2D slab: no y
+    # Beam evolution across the gap (fixed-z virtual screens over the rising-edge dumps up to the
+    # crest; the drained post-crest dumps would skew the near-cathode screens with a cold layer).
+    crest_t = summary["crest_time_s"] if summary and summary.get("crest_time_s") else ts.t[-1]
+    rising = [i for i, t in zip(ts.iterations, ts.t) if t <= crest_t * 1.001]
+    pool = common.pool_trajectories(ts, rising, with_y=False)          # 2D slab: no y
     z_m, ke, emit, sigma = common.evolution_screens(pool)
     _save(common.evolution_vs_z(z_m, ke, emit, sigma,
                                 title="Cathode beam evolution across the gap"),
           "evolution_vs_z")
 
-    # Stage-specific rich figures (raw openPMD; emission-physics validation).
-    V_anode = w.get("grid/warpx_potential_hi_z")
+    # Stage-specific rich figures (raw openPMD; emission-physics validation). The grid bias is now
+    # a V(t) parser string, so the SCL reference voltage is the pulse PEAK from params, not w.get().
     gap_d = w.get("grid/upper_bound")[1]
     R_cathode = w.get("species")[0]["upper_bound"][0]
     p = w.get("params")
-    J_CL = float(child_langmuir_current_density(V_anode, gap_d))
+    v_peak = p["V_OFF"] + p["V_PULSE"]
 
-    child_langmuir_figure(V_anode, gap_d)
-    current_saturation_figure(V_anode, gap_d, R_cathode, J_CL, p["over_inject"])
-    emission_phase_space_figure(p["T_cathode"])
+    fts = OpenPMDTimeSeries(FIELDS)
+    child_langmuir_figure(v_peak, gap_d, _peak_field_iteration(fts, p))
+    grid_pulse_figure(gap_d, R_cathode, p, summary)
+    anode_spectrum_figure(gap_d, p["ANODE_FRAC"], it)
+    emission_phase_space_figure(p["T_cathode"], it)
 
 
 if __name__ == "__main__":

@@ -19,37 +19,48 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import json
 import shutil
 
 import numpy as np
 
 from sim.helpers.tools import C_LIGHT as c, M_E as m_e, E_CHARGE as q_e, prepare_env
 from sim.helpers.loadparticles import (
-    make_particle_group, downsample, open_particle_series, write_openpmd_particles)
+    anode_beam_mask, make_particle_group, downsample, open_particle_series, write_openpmd_particles)
 from sim.helpers.buildfields import build_gun_field
 
 CONFIG = "config/gun.yaml"
 CATHODE_DIAG = "logs/diags/cathode/particles"
+CATHODE_SUMMARY = "logs/diags/cathode/injection_summary.json"
 DIAG_DIR = "logs/diags/gun"
 HANDOFF_DIR = "logs/diags/gun/handoff"   # reconstruct the exit beam here for the injector
 
 
-def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, pulse_width):
-    """Import the last cathode snapshot and remap the (x, z) slab into RZ.
+def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, pulse_width, crest_time=None,
+                       gap_d=None, anode_frac=None):
+    """Import the cathode crest snapshot and remap the (x, z) slab into RZ.
 
     Returns dict of x, y, z, ux, uy, uz, w, t arrays for the seed + time-release callback
     (ux/uy/uz are proper velocity u = γβc [m/s]); t is the per-macroparticle emission time,
     released over pulse_width and t-sorted so the per-step injection callback walks them in
-    one pass.
+    one pass. `crest_time` selects the gap-full beam dump (WarpX force-writes a drained final-step
+    dump, so iterations[-1] is the wrong template); falls back to the last dump if unset.
+    `gap_d`/`anode_frac` restrict the seed to the forward-moving beam crossing the anode plane —
+    the delivered flux — dropping the near-cathode pileup and the reflected over-injection.
     """
     ts = open_particle_series(CATHODE_DIAG, "cathode")
-    it = ts.iterations[-1]
+    it = (ts.iterations[int(np.argmin(np.abs(np.asarray(ts.t) - crest_time)))]
+          if crest_time is not None else ts.iterations[-1])
     x, z, ux, uy, uz, w = ts.get_particle(
         ["x", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
 
     rng = np.random.default_rng(rng_seed)
     r = np.abs(x)
     keep = r < rmax
+    if gap_d is not None:                                # seed from the anode-crossing flux only
+        keep &= anode_beam_mask(z, uz, gap_d, anode_frac)
+        if not keep.any():
+            raise RuntimeError("no cathode particles in the anode handoff slab")
     if not keep.any():
         raise RuntimeError(f"no cathode particles with r < rmax={rmax} m")
     # Keep the masked signed x (`xk`) so the radial-momentum sign survives the downsample.
@@ -59,10 +70,13 @@ def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, pulse_width
     (xk, r, z, ux, uy, uz), w = downsample((xk, r, z, ux, uy, uz), w, max_part, rng)
 
     # slab(x) → RZ disc: importance-resample (with replacement) by r·w to supply the 2πr
-    # revolution Jacobian the naive r=|x| map omits (else n(r) ∝ 1/r on-axis cusp).
+    # revolution Jacobian the naive r=|x| map omits (else n(r) ∝ 1/r on-axis cusp). Resample UP to
+    # the full macroparticle budget so the thin anode-flux seed isn't starved (each gets its own
+    # random θ below, so bootstrapped copies spread azimuthally rather than overlapping).
     if r.max() > 0.0:
         rw = r * w
-        sel = rng.choice(r.size, r.size, replace=True, p=rw / rw.sum())
+        n_resample = max_part or r.size
+        sel = rng.choice(r.size, n_resample, replace=True, p=rw / rw.sum())
         xk, r, z, ux, uy, uz, w = (a[sel] for a in (xk, r, z, ux, uy, uz, w))
 
     theta = rng.uniform(0.0, 2.0 * np.pi, size=r.size)
@@ -170,8 +184,19 @@ def main():
     # below agree on GUN_VOLTAGE). Idempotent — a fresh checkout rebuilds fieldmaps/h5/gun_E.h5.
     build_gun_field(gun_voltage)
 
-    bunch = load_cathode_bunch(rmax, zmax, p["BUNCH_CHARGE"], p["RNG_SEED"], p["MAX_PART"],
-                               p["PULSE_WIDTH"])
+    # Renormalize the slab→RZ remap to the charge the cathode actually emitted (∫J_z over the pulse
+    # × grid transmission); fall back to BUNCH_CHARGE only if the cathode summary is absent.
+    bunch_charge, crest_time, gap_d, anode_frac = p["BUNCH_CHARGE"], None, None, None
+    if os.path.isfile(CATHODE_SUMMARY):
+        with open(CATHODE_SUMMARY) as f:
+            summary = json.load(f)
+        bunch_charge = summary["q_emit_C"]
+        crest_time = summary.get("crest_time_s")
+        gap_d, anode_frac = summary.get("gap_d_m"), summary.get("anode_frac")
+        print(f"Bunch charge from cathode sim: {bunch_charge*1e9:.3f} nC "
+              f"(seeding from the anode flux, top {anode_frac*100:.0f}% of the gap)", flush=True)
+    bunch = load_cathode_bunch(rmax, zmax, bunch_charge, p["RNG_SEED"], p["MAX_PART"],
+                               p["PULSE_WIDTH"], crest_time, gap_d, anode_frac)
 
     # ── Time step / duration ──────────────────────────────────────────────────
     gamma = 1.0 + q_e * gun_voltage / (m_e * c**2)

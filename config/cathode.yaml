@@ -13,7 +13,7 @@ grid:
   lower_boundary_conditions_particles: [absorbing, absorbing]
   upper_boundary_conditions_particles: [absorbing, absorbing]
   warpx_potential_lo_z: 0.0            # cathode
-  warpx_potential_hi_z: 30.0           # anode / grid bias [V]
+  warpx_potential_hi_z: 30.0           # overridden → V(t) grid pulse (peak = V_OFF+V_PULSE)
   warpx_blocking_factor: 8
 
 solver:
@@ -59,6 +59,16 @@ diagnostics:
 # Stage knobs with no WarpX-native home (read by sim/cathode.py).
 params:
   T_cathode: 1425.0                    # cathode temperature [K]
-  over_inject: 2.0                     # inject this multiple of the Child–Langmuir current
+  over_inject: 2.0                     # inject this multiple of the peak-voltage Child–Langmuir current
   CFL: 0.4                             # dt = CFL · dz / v_final
-  DIAG_PERIOD: null                    # null → dense-early union slice; an int → uniform period
+  DIAG_PERIOD: null                    # null → uniform pulse-resolving field period; an int → that period
+  # Grid voltage pulse V(t) = V_OFF + V_PULSE·tent(t) (LinacSim CESR cathode operating point):
+  # a rounded triangle rising/falling at V_SLOPE, peak swing V_PULSE, FWHM ≈ PULSE_WIDTH.
+  V_OFF: -30.0                         # off/retarding bias before & after the pulse [V]
+  V_PULSE: 60.0                        # peak voltage swing [V] (peak grid bias = V_OFF + V_PULSE)
+  V_SLOPE: 30.0e9                      # max pulse slope [V/s] (= 30 V/ns)
+  PULSE_WIDTH: 2.0e-9                  # pulse FWHM [s]
+  GRID_TRANS: 0.80                     # grid optical transmission (fraction passing the grid mesh)
+  R_CATHODE: 0.008                     # emitting disc radius [m] (= half the 16 mm cathode); 2D→disc charge area
+  ANODE_FRAC: 0.1                      # handoff slab = top fraction of the gap (z ≥ (1−frac)·gap_d);
+                                       # the forward-moving beam crossing the anode that seeds the gun

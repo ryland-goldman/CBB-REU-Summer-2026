@@ -28,6 +28,15 @@ def open_particle_series(diag, stage_hint=None):
     return ts
 
 
+def anode_beam_mask(z, uz, gap_d, frac):
+    """Forward-moving electrons in the top `frac` of the cathode gap -- the beam crossing the anode
+    plane (the delivered flux). Excludes the dense near-cathode space-charge pileup and the reflected
+    half of the over-injection that never exits. The cathode particle dumps are far sparser in time
+    than a gap transit (~62 ps), so transits cannot be tracked as id-trajectory z-screens; the anode
+    flux is taken as this crest-snapshot slab instead."""
+    return (np.asarray(z) >= gap_d * (1.0 - frac)) & (np.asarray(uz) > 0.0)
+
+
 def make_particle_group(x, y, z, ux, uy, uz, w):
     """ParticleGroup from RZ phase space: ux/uy/uz = gamma*beta, w = macroparticle count.
 
