@@ -1,9 +1,10 @@
 """
 Figures for the Cornell Linac sections 4-8 stage (Impact-T, sim/linac4-8.py).
 
-Reads logs/diags/linac4-8/main/{particles, injection_summary.json} and writes five PNGs to
-logs/plots/linac4-8/: energy_gain, energy_spread, emittance, section_gains (per-section achieved
-vs frozen-target ΔE bars), fodo_optics (quads-OFF sigma_x/y vs z). The vs-z curves come from the
+Reads logs/diags/linac4-8/main/{particles, injection_summary.json} and writes PNGs to
+logs/plots/linac4-8/: evolution_vs_z (mean KE / eps_n,x / sigma_x, 3 panels), energy_spread,
+section_gains (per-section achieved vs frozen-target ΔE bars), and from the exit particle slice
+energy_spectrum, phase_space_z_KE (longitudinal) and transverse_r_pr. The vs-z curves come from the
 summary's stat_vs_z table (Impact-T I.stat); a sparse particle-slice fallback covers legacy dumps.
 
 main() runs ONLY plotting (sim/linac4-8.py must have been run first). Run as
@@ -23,6 +24,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sim.helpers.tools import MC2_EV
+from sim.helpers.loadparticles import make_particle_group
+from sim.plot import common as px
 
 MC2 = MC2_EV / 1e6                  # electron rest energy [MeV]
 DIAG_DIR = "logs/diags/linac4-8/main"
@@ -114,6 +117,48 @@ def _achieved_de(calib, z, ke):
     return [ke_at(edges[i + 1]) - ke_at(edges[i]) for i in range(n)]
 
 
+def _exit_slice(diag):
+    """Particle arrays (x, y, z, ux, uy, uz, w) of the exit dump (largest <z>), or None."""
+    from openpmd_viewer import OpenPMDTimeSeries
+    parts = os.path.join(diag, "particles")
+    if not os.path.isdir(parts):
+        return None
+    ts = OpenPMDTimeSeries(parts)
+    best = None
+    for it in ts.iterations:
+        x, y, z, ux, uy, uz, w = ts.get_particle(
+            ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
+        if len(z) < 50:
+            continue
+        zc = float(np.average(z, weights=w))
+        if best is None or zc > best[0]:
+            best = (zc, (x, y, z, ux, uy, uz, w))
+    return best[1] if best else None
+
+
+def _save_exit_figures(x, y, z, ux, uy, uz, w):
+    """Energy spectrum, longitudinal (z, KE) and transverse (r, p_r) phase space at the exit."""
+    pg = make_particle_group(x, y, z, ux, uy, uz, w)
+    fig = px.energy_spectrum(pg, use_ke=True)
+    fig.savefig(os.path.join(RESULTS, "energy_spectrum.png"), dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+    ke = px.ke_kev_from_u(ux, uy, uz) / 1e3                  # keV -> MeV
+    zc_mm = (z - np.average(z, weights=w)) * 1e3
+    fig, ax = plt.subplots(figsize=(7.0, 4.8), constrained_layout=True)
+    hb = ax.hexbin(zc_mm, ke, gridsize=70, cmap="viridis", mincnt=1)
+    fig.colorbar(hb, ax=ax, label="macroparticles / bin")
+    ax.set_xlabel("z - <z>  [mm]"); ax.set_ylabel("kinetic energy  [MeV]")
+    ax.set_title("linac4-8 exit longitudinal phase space  (z, KE)")
+    fig.savefig(os.path.join(RESULTS, "phase_space_z_KE.png"), dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+    fig = px.transverse_rpr(x, y, ux, uy, w,
+                            title="linac4-8 exit transverse phase space  (r, p_r)")
+    fig.savefig(os.path.join(RESULTS, "transverse_r_pr.png"), dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     diag = DIAG_DIR
     os.makedirs(RESULTS, exist_ok=True)
@@ -128,19 +173,13 @@ def main():
     z, ke, dke, enx, eny, sx, sy = vs
     power_mw = summ.get("power_mw", 11.0)
 
-    # 1) energy gain vs z
-    fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
-    ax.plot(z, ke, "-o", ms=3, color="C5", label="<KE>")
-    ax.fill_between(z, ke - dke, ke + dke, color="C5", alpha=0.18, label="+/- sigma_KE")
-    ax.set_xlabel("<z> (local Impact-T frame) [m]")
-    ax.set_ylabel("kinetic energy [MeV]")
-    exp = summ.get("ke_out_mev")
-    if exp:
-        ax.axhline(exp, color="0.5", ls=":", lw=1, label=f"exit {exp:.0f} MeV")
-    ax.set_title(f"linac4-8: cumulative energy gain (sections 4-8, on-crest, {power_mw:g} MW)")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
-    fig.savefig(os.path.join(RESULTS, "energy_gain.png"), dpi=130)
+    # 1) beam evolution vs z: mean KE / eps_n,x / sigma_x (3-panel, from stat_vs_z)
+    fig = px.evolution_vs_z(
+        z, ke, enx * 1e6, sx * 1e3, ke_unit="MeV",
+        title=f"linac4-8 beam evolution (sections 4-8, on-crest, {power_mw:g} MW)",
+        notes={"emit": "quads OFF: eps_n rises ~2.4x -- a fort.10N diagnostic artifact, not physical",
+               "sigma": "quads OFF: no focusing, placeholder optics, NOT predictive"})
+    fig.savefig(os.path.join(RESULTS, "evolution_vs_z.png"), dpi=130)
     plt.close(fig)
 
     # 2) energy spread vs z (absolute grows on the cosine crest curvature; relative shrinks)
@@ -157,21 +196,7 @@ def main():
     fig.savefig(os.path.join(RESULTS, "energy_spread.png"), dpi=130)
     plt.close(fig)
 
-    # 3) normalized emittance vs z (quads OFF: the ~2.4x rise is a fort.10N diagnostic artifact)
-    fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
-    ax.plot(z, enx * 1e6, "-", color="C5", label="eps_n,x")
-    ax.plot(z, eny * 1e6, "-", color="C6", label="eps_n,y")
-    ax.set_xlabel("<z> [m]")
-    ax.set_ylabel("normalized emittance [mm.mrad]")
-    ax.set_title("linac4-8: normalized emittance\n"
-                 "quads OFF -- eps_n rises ~2.4x: a fort.10N diagnostic artifact, not physical",
-                 fontsize=9)
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
-    fig.savefig(os.path.join(RESULTS, "emittance.png"), dpi=130)
-    plt.close(fig)
-
-    # 4) per-section achieved vs frozen-target ΔE
+    # 3) per-section achieved vs frozen-target ΔE
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
     if calib:
         names = [c.get("name", f"sec{c['index'] + 4}") for c in calib]
@@ -193,20 +218,12 @@ def main():
     fig.savefig(os.path.join(RESULTS, "section_gains.png"), dpi=130)
     plt.close(fig)
 
-    # 5) FODO optics (quads OFF): sigma_x / sigma_y vs z -- placeholder optics, NOT predictive
-    fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
-    ax.plot(z, sx * 1e3, "-", color="C7", label="sigma_x")
-    ax.plot(z, sy * 1e3, "-", color="C8", label="sigma_y")
-    ax.set_xlabel("<z> [m]")
-    ax.set_ylabel("transverse RMS size [mm]")
-    ax.set_title("linac4-8: transverse envelope sigma_x / sigma_y\n"
-                 "quads OFF -- no focusing, placeholder optics, NOT predictive", fontsize=9)
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
-    fig.savefig(os.path.join(RESULTS, "fodo_optics.png"), dpi=130)
-    plt.close(fig)
+    # 4-6) exit-slice figures: energy spectrum, longitudinal (z, KE) and transverse (r, p_r)
+    n_slice = _exit_slice(diag)
+    if n_slice is not None:
+        _save_exit_figures(*n_slice)
 
-    print(f"plot linac4-8: wrote 5 figures to {RESULTS}/ "
+    print(f"plot linac4-8: wrote figures to {RESULTS}/ "
           f"({len(z)} vs-z points, exit <KE> {ke[-1]:.1f} MeV).", flush=True)
 
 

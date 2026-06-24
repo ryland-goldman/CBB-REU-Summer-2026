@@ -1,10 +1,10 @@
 """Figures for the WarpX RZ CESR injector (sim/injector.py) over logs/diags/injector/main/.
 Writes PNGs to logs/plots/injector/.
 
-Two layers: generic phase-space / trend figures via lume-warpx's helpers and the shared
-sim.plot.common beam figures, plus the stage-specific rich figures (the prebuncher RF field
-lobes, the longitudinal line metrics sigma_z / peak-current / energy vs <z>, the bunch
-line-charge profile lambda(z), and the longitudinal phase space at four stations along the line).
+Figures: phase_space_z_KE, energy_spectrum, transverse_r_pr, evolution_vs_z (mean KE / eps_n,x /
+sigma_x via fixed-z virtual screens), plus the stage-specific rich figures (the prebuncher RF field
+lobes cavity, the longitudinal line metrics sigma_z / peak-current line, the bunch line-charge
+profile lambda(z) bunch_profile, and the longitudinal phase space at four stations phasespace).
 See docs/injector.md for the physics each figure shows.
 """
 
@@ -222,20 +222,24 @@ def main():
     it = _last_populated(DIAG)
     pg = w._particle_group(iteration=it)
 
-    # Generic phase-space / trend figures (lume-warpx helpers + shared sim.plot.common).
+    # Generic phase-space / spectrum figures (lume-warpx helpers + shared sim.plot.common).
     for name, fig in [
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
-        ("transverse_x_px",  w.plot2D("x", "px", iteration=it)),
-        ("centroid_vs_t",    w.plot1D("t", "mean_z")),
-        ("bunch_length_vs_t", w.plot1D("t", "sigma_z")),
-        ("emittance_vs_t",   w.plot1D("t", "norm_emit_x")),
-        ("beamsize_vs_t",    w.plot1D("t", "sigma_x")),
         ("energy_spectrum",  px.energy_spectrum(pg)),
-        ("current_profile",  px.current_profile(pg)),
-        ("energy_chirp",     px.energy_chirp(pg)),
-        ("beam_spot_xy",     px.beam_spot(pg)),
     ]:
         _save(fig, name)
+
+    ts = OpenPMDTimeSeries(DIAG)
+    x, y, ux, uy, wgt = ts.get_particle(["x", "y", "ux", "uy", "w"],
+                                        species="electrons", iteration=it)
+    _save(px.transverse_rpr(x, y, ux, uy, wgt,
+                            title="Injector handoff transverse phase space  (r, p_r)"),
+          "transverse_r_pr")
+
+    z_m, ke, emit, sigma = px.evolution_screens(px.pool_trajectories(ts, ts.iterations))
+    _save(px.evolution_vs_z(z_m, ke, emit, sigma,
+                            title="Beam evolution along the injector  (fixed-z virtual screens)"),
+          "evolution_vs_z")
 
     # Stage-specific rich figures (raw openPMD over the whole run).
     cavity_figure(w)

@@ -2,11 +2,12 @@
 Figures for the finite-cathode space-charge-limited (Child–Langmuir) diode (sim/cathode.py)
 over logs/diags/cathode/. Writes PNGs to logs/plots/cathode/.
 
-Two layers: generic phase-space / field figures via lume-warpx's helpers and the shared
-sim.plot.common beam figures, plus the stage-specific rich figures that validate the emission
-physics — the on-axis potential and field against the Child–Langmuir law, the transmitted
-current saturating at J_CL despite 2× over-injection, and the source's intrinsic thermal
-transverse phase space. See docs/cathode.md for the physics each figure shows.
+Figures: phase_space_z_KE, energy_spectrum, evolution_vs_z (mean KE / eps_n,x / sigma_x across
+the gap), potential_xz, charge_density_xz, plus the stage-specific rich figures that validate the
+emission physics — the on-axis potential and field against the Child–Langmuir law (child_langmuir),
+the transmitted current saturating at J_CL despite 2× over-injection (current_saturation), and the
+source's intrinsic thermal transverse x–px phase space (emission_phase_space — this 2D slab has no
+r–pr). See docs/cathode.md for the physics each figure shows.
 
 main() runs ONLY plotting (the sim must have been run first).
 """
@@ -174,15 +175,19 @@ def main():
     # Generic phase-space / field figures (lume-warpx helpers + shared sim.plot.common).
     for name, fig in [
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
-        ("transverse_x_px",  w.plot2D("x", "px", iteration=it)),
         ("potential_xz",     w.plot_fields("phi", "x", "z")),
         ("charge_density_xz", w.plot_fields("rho", "x", "z")),
-        ("centroid_vs_t",    w.plot1D("t", "mean_z")),
-        ("charge_vs_t",      w.plot1D("t", "charge")),
         ("energy_spectrum",  common.energy_spectrum(pg)),
-        ("current_profile",  common.current_profile(pg)),
     ]:
         _save(fig, name)
+
+    # Beam evolution across the gap (fixed-z virtual screens over the pooled dumps).
+    ts = OpenPMDTimeSeries(PARTICLES)
+    pool = common.pool_trajectories(ts, ts.iterations, with_y=False)   # 2D slab: no y
+    z_m, ke, emit, sigma = common.evolution_screens(pool)
+    _save(common.evolution_vs_z(z_m, ke, emit, sigma,
+                                title="Cathode beam evolution across the gap"),
+          "evolution_vs_z")
 
     # Stage-specific rich figures (raw openPMD; emission-physics validation).
     V_anode = w.get("grid/warpx_potential_hi_z")

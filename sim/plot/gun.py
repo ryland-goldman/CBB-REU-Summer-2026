@@ -2,10 +2,10 @@
 Figures for the WarpX RZ CESR-gun simulation over logs/diags/gun/. Writes PNGs to
 logs/plots/gun/.
 
-Two layers: generic phase-space / trend figures via lume-warpx's helpers and the shared
-sim.plot.common beam figures, plus the stage-specific rich figures (on-axis applied field,
-r–z transport, local-in-z energy gain and envelope via fixed-z virtual screens, and the beam
-self-field). See docs/gun.md for the physics each figure shows.
+Figures: phase_space_z_KE, energy_spectrum, transverse_r_pr, evolution_vs_z (mean KE / eps_n,x /
+sigma_x along the gun via fixed-z virtual screens), plus the stage-specific rich figures (on-axis
+applied field gun_field, r–z transport beam_rz, and the beam self-field space_charge). See
+docs/gun.md for the physics each figure shows.
 
 main() runs ONLY the plotting; sim/gun.py runs the simulation.
 """
@@ -24,7 +24,6 @@ import openpmd_api as io
 from openpmd_viewer import OpenPMDTimeSeries
 
 from sim.helpers.tools import prepare_env
-from sim.helpers.metrics import screen_profile
 from sim.plot import common as px
 
 CONFIG = "config/gun.yaml"
@@ -92,56 +91,6 @@ def transport_figure(ts, populated_iters):
     _save(fig, "beam_rz")
 
 
-def _pool_trajectories(ts, live_iters):
-    """Concatenate (id, z, x, ux, ke, w) over every populated dump for virtual screens."""
-    cols = {k: [] for k in ("id", "z", "x", "ux", "ke", "w")}
-    for it in live_iters:
-        idp, z, x, ux, uy, uz, w = ts.get_particle(
-            ["id", "z", "x", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
-        cols["id"].append(idp); cols["z"].append(z); cols["x"].append(x)
-        cols["ux"].append(ux); cols["w"].append(w)
-        cols["ke"].append(px.ke_kev_from_u(ux, uy, uz))
-    return {k: np.concatenate(v) for k, v in cols.items()}
-
-
-def screen_figures(pool, gun_voltage):
-    """Local-in-z energy gain and transverse envelope on fixed-z virtual screens."""
-    screens, prof = screen_profile(
-        pool["id"], pool["z"], pool["w"],
-        {"x": pool["x"], "ux": pool["ux"], "ke": pool["ke"]},
-        emit_pairs=[("x", "ux")])
-    z_mm = screens * 1e3
-    ke_mean, ke_max = prof["mean"]["ke"], prof["max"]["ke"]
-    sigma_x_mm = prof["rms"]["x"] * 1e3
-    emit_mm_mrad = prof["emit"][("x", "ux")] * 1e6      # m·(γβ) → mm·mrad
-
-    ok = np.isfinite(ke_mean)
-    fig, ax = plt.subplots(figsize=(7.2, 4.6), constrained_layout=True)
-    ax.plot(z_mm[ok], ke_mean[ok], "o-", color="C2", ms=3, label="mean KE")
-    ax.plot(z_mm[ok], ke_max[ok], "^--", color="C1", ms=3, label="max KE")
-    ax.axhline(gun_voltage / 1e3, color="k", ls=":", label=f"{gun_voltage/1e3:.0f} keV (gun voltage)")
-    ax.set_xlabel("beam position  z  [mm]"); ax.set_ylabel("kinetic energy  [keV]")
-    ax.set_title("Beam energy gain along the gun  (fixed-z virtual screens)")
-    ax.legend()
-    _save(fig, "energy_gain")
-
-    ok = np.isfinite(sigma_x_mm) & np.isfinite(emit_mm_mrad)
-    fig, ax = plt.subplots(figsize=(7.6, 4.6), constrained_layout=True)
-    l1, = ax.plot(z_mm[ok], sigma_x_mm[ok], "o-", color="C0", ms=3,
-                  label=r"RMS size  $\sigma_x=\sqrt{\langle x^2\rangle}$")
-    ax.set_xlabel("beam position  z  [mm]")
-    ax.set_ylabel(r"RMS size  $\sigma_x$  [mm]", color="C0")
-    ax.tick_params(axis="y", labelcolor="C0")
-    ax.set_title("Transverse envelope and emittance along the gun  (fixed-z virtual screens)")
-    ax2 = ax.twinx()
-    l2, = ax2.plot(z_mm[ok], emit_mm_mrad[ok], "s--", color="C3", ms=3,
-                   label=r"norm. emittance  $\varepsilon_{n,x}$")
-    ax2.set_ylabel(r"$\varepsilon_{n,x}$  [mm·mrad]", color="C3")
-    ax2.tick_params(axis="y", labelcolor="C3")
-    ax.legend(handles=[l1, l2], loc="best")
-    _save(fig, "beam_envelope")
-
-
 def self_field_figure(ts, zmean_by_it):
     """Beam self-field ρ and φ (the dumped self-consistent fields) near launch."""
     fs = io.Series(f"{FIELDS}/openpmd_%06T.h5", io.Access.read_only)
@@ -187,31 +136,18 @@ def main():
     os.makedirs(RESULTS, exist_ok=True)
 
     w = WarpX(input_file=CONFIG, path="logs/diags/gun")
-    gun_voltage = w.get("params")["GUN_VOLTAGE"]
     it = _last_populated(PARTICLES)
 
-    # Generic phase-space / trend figures (lume-warpx helpers + shared plot common).
+    # Generic phase-space / spectrum figures (lume-warpx helpers + shared plot common).
     w.load_output(diag_dir=PARTICLES)
     pg = w._particle_group(iteration=it)
-    figs = [
+    for name, fig in [
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
-        ("transverse_x_px",  w.plot2D("x", "px", iteration=it)),
-        ("centroid_vs_t",    w.plot1D("t", "mean_z")),
-        ("emittance_vs_t",   w.plot1D("t", "norm_emit_x")),
-        ("beamsize_vs_t",    w.plot1D("t", "sigma_x")),
         ("energy_spectrum",  px.energy_spectrum(pg)),
-        ("current_profile",  px.current_profile(pg)),
-        ("beam_spot_xy",     px.beam_spot(pg)),
-    ]
-    w.load_output(diag_dir=FIELDS)
-    figs += [
-        ("Ez_rz",          w.plot_fields("E", "z", "r")),
-        ("self_charge_rz", w.plot_fields("rho", "z", "r")),
-    ]
-    for name, fig in figs:
+    ]:
         _save(fig, name)
 
-    # Stage-specific rich figures (raw openPMD: applied field, transport, screens, self-field).
+    # Stage-specific rich figures (raw openPMD: applied field, transport, evolution, self-field).
     ts = OpenPMDTimeSeries(PARTICLES)
     live_iters, populated_iters, zmean_by_it = [], [], {}
     for itr in ts.iterations:
@@ -222,10 +158,19 @@ def main():
         if len(z) > 50:                                  # past the one-particle release seed
             populated_iters.append(itr)
 
+    x, y, ux, uy, wgt = ts.get_particle(["x", "y", "ux", "uy", "w"],
+                                        species="electrons", iteration=it)
+    _save(px.transverse_rpr(x, y, ux, uy, wgt,
+                            title="Gun exit transverse phase space  (r, p_r)"),
+          "transverse_r_pr")
+
     applied_field_figure()
     if live_iters:
         transport_figure(ts, populated_iters or live_iters)
-        screen_figures(_pool_trajectories(ts, live_iters), gun_voltage)
+        z_m, ke, emit, sigma = px.evolution_screens(px.pool_trajectories(ts, live_iters))
+        _save(px.evolution_vs_z(z_m, ke, emit, sigma,
+                                title="Beam evolution along the gun  (fixed-z virtual screens)"),
+              "evolution_vs_z")
         self_field_figure(ts, zmean_by_it)
 
 
