@@ -6,14 +6,16 @@ A standalone tool — NOT wired into the chain. It re-derives the frozen RF cres
 writes it back into config/linacN.yaml (comments preserved). Run it whenever an upstream change
 shifts the beam and the hardcoded setpoints go stale.
 
-Method: read the section's upstream exit beam exactly as sim/linac1-3.py does (same centroid
-kinematics, same iris scrape for section 1), reproduce the driver's arrival-referenced phase
-convention phi = -omega*(Z_STRUCT - z_center)/v_beam + base_deg, and integrate the centroid
-reference particle longitudinally through the real on-axis SLAC quadrature field over a phase
-scan. The crest is the base phase maximising the energy gain (parabolic-refined). This is a 1D
-longitudinal model (no transverse / space-charge back-reaction): exact for the relativistic
-sections 2/3; for the 150 keV capture section 1 it is the max-energy phase, which a deliberately
-off-crest bunching setpoint would differ from.
+Method: read the section's upstream exit beam exactly as sim/linac1-3.py does (same kinematics,
+same iris scrape for section 1), reproduce the driver's arrival-referenced phase convention
+phi = -omega*(Z_STRUCT - z_center)/v_beam + base_deg, and RK4-integrate the WHOLE bunch
+longitudinally through the real on-axis SLAC quadrature field over a phase scan. The crest is the
+base phase maximising the bunch-averaged exit energy (parabolic-refined). Integrating the whole
+bunch — not a centroid proxy — is essential: the captured core spans ~140 deg of RF, so its
+phase-averaged crest sits ~70 deg from the single-particle crest (validated against a WarpX phase
+scan). This is a 1D longitudinal model (no transverse / space-charge back-reaction): exact for the
+relativistic sections 2/3; for the 150 keV capture section 1 it is the max-energy phase, which a
+deliberately off-crest bunching setpoint would differ from.
 
   python sim/autophase.py            # phase sections 1 2 3, rewrite the YAMLs
   python sim/autophase.py 2 3        # only the relativistic sections
@@ -67,10 +69,14 @@ def _load_driver():
     return mod
 
 
-def _centroid(drv, N, p):
-    """(z_center [m], v_beam [m/s], ke_mean [keV], scale) for section N's injected beam, matching
-    sim/linac1-3.py: section 1 reads the iris-scraped injector handoff; 2/3 read the previous
-    section's captured-core exit. `scale` is the field-map amplitude the driver would apply."""
+SUBSAMPLE = 2048            # macroparticles integrated per phase (bunch-averaged crest converges)
+
+
+def _load_bunch(drv, N, p):
+    """Section N's injected beam (matching sim/linac1-3.py: section 1 reads the iris-scraped
+    injector handoff; 2/3 read the previous section's captured-core exit), subsampled for the
+    scan. Returns (z [m], u = |gamma*beta| per particle, w, z_center [m], v_beam [m/s],
+    ke_mean [keV], scale). `scale` is the field-map amplitude the driver would apply."""
     if N == 1:
         bunch, v_beam, ke_mean, _ = drv.load_injector_bunch(
             p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"])
@@ -79,30 +85,35 @@ def _centroid(drv, N, p):
         bunch, v_beam, ke_mean, _ = drv.load_warpx_exit_bunch(
             drv.PREV_PARTICLES[N], drv.PREV_LABEL[N], p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
         scale = float(p["FIELD_SCALE"])
-    z_center = float(np.average(bunch["z"], weights=bunch["w"]))
-    return z_center, v_beam, ke_mean, scale
+    z, w = np.asarray(bunch["z"], float), np.asarray(bunch["w"], float)
+    u = np.sqrt(bunch["ux"] ** 2 + bunch["uy"] ** 2 + bunch["uz"] ** 2)   # |gamma*beta|
+    if z.size > SUBSAMPLE:                                   # weighted resample → equal weight
+        rng = np.random.default_rng(p["RNG_SEED"])
+        sel = rng.choice(z.size, SUBSAMPLE, replace=False, p=w / w.sum())
+        z, u, w = z[sel], u[sel], np.ones(SUBSAMPLE)
+    z_center = float(np.average(z, weights=w))
+    return z, u, w, z_center, v_beam, ke_mean, scale
 
 
-def _final_gain(base_deg, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2):
-    """Energy gain [keV] of the centroid reference particle for each base phase in `base_deg`.
+PROBE_LEN = 1.0            # integrate this far into the structure to fix the crest (TW gradient is
+                          # phase-uniform; a WarpX scan confirmed the crest at a 0.6 m probe)
 
-    Reproduces the driver phase reference phi = -omega*t_in + base, the 90 deg quadrature sum
-    (Ez = scale*[Ez1 cos(wt+phi) + Ez2 cos(wt+phi+pi/2)]), and RK4-integrates dz/dt = c*u/gamma,
-    du/dt = -(e/m_e c) Ez (u = gamma*beta) until the bunch clears the field-free pad past the map.
-    Vectorised over the phase array; field is exactly zero outside the map (np.interp left/right=0).
+
+def _mean_exit_ke(base_deg, z0, u0, w, z_center, v_beam, scale, omega, zmap, ez1, ez2, z_probe):
+    """Bunch-averaged KE [keV] at the `z_probe` plane for a single base phase.
+
+    Integrates the WHOLE bunch (not a centroid proxy — the captured core spans ~140 deg of RF, so
+    its phase-averaged crest is far from the single-particle crest). Reproduces the driver phase
+    reference phi = -omega*t_in + base (t_in from the centroid, as the driver sets it) and the
+    90 deg quadrature sum Ez = scale*[Ez1 cos(wt+phi) + Ez2 cos(wt+phi+pi/2)]; RK4-integrates
+    dz/dt = c*u/gamma, du/dt = -(e/m_e c) Ez until the centroid passes z_probe. Field is exactly
+    zero outside the map (np.interp left/right=0), so exited particles coast.
     """
-    base = np.deg2rad(np.atleast_1d(np.asarray(base_deg, dtype=float)))
-    t_in = (Z_STRUCT - z_center) / v_beam
-    phi = -omega * t_in + base
+    phi = -omega * (Z_STRUCT - z_center) / v_beam + np.deg2rad(base_deg)
     k = q_e / (m_e * c)
-    gamma0 = 1.0 + ke_mean / MC2_KEV
-    u = np.full_like(phi, np.sqrt(max(gamma0 ** 2 - 1.0, 0.0)))
-    z = np.full_like(phi, z_center)
-
-    z_end = Z_STRUCT + float(zmap[-1] - Z_STRUCT) + 0.10        # map end + drift pad
-    period = 2.0 * np.pi / omega
-    dt = period / 100.0                                        # resolve the RF cycle
-    n_steps = int(1.3 * (z_end - z_center) / v_beam / dt) + 1
+    z, u = z0.copy(), u0.copy()
+    dt = (2.0 * np.pi / omega) / 100.0                        # resolve the RF cycle
+    n_max = int(1.5 * (z_probe - z_center) / v_beam / dt) + 1
 
     def dstate(zz, uu, t):
         e1 = np.interp(zz, zmap, ez1, left=0.0, right=0.0)
@@ -112,7 +123,7 @@ def _final_gain(base_deg, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez
         return c * uu / g, -k * ez
 
     t = 0.0
-    for _ in range(n_steps):
+    for _ in range(n_max):
         dz1, du1 = dstate(z, u, t)
         dz2, du2 = dstate(z + 0.5 * dt * dz1, u + 0.5 * dt * du1, t + 0.5 * dt)
         dz3, du3 = dstate(z + 0.5 * dt * dz2, u + 0.5 * dt * du2, t + 0.5 * dt)
@@ -120,32 +131,40 @@ def _final_gain(base_deg, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez
         z = z + (dt / 6.0) * (dz1 + 2 * dz2 + 2 * dz3 + dz4)
         u = u + (dt / 6.0) * (du1 + 2 * du2 + 2 * du3 + du4)
         t += dt
+        if z.mean() >= z_probe:
+            break
 
     ke = (np.sqrt(1.0 + u * u) - 1.0) * MC2_KEV
-    return ke - ke_mean
+    return float(np.average(ke, weights=w))
 
 
-def find_crest(z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2):
-    """Crest base phase [deg, in [0,360)] and its on-crest gain [keV]: a 1 deg coarse scan, a
-    0.02 deg fine scan about the peak, then a 3-point parabolic refine."""
-    def gains(phases):
-        return _final_gain(phases, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2)
+def find_crest(z0, u0, w, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2):
+    """Crest base phase [deg, in [0,360)] and its bunch-averaged gain [keV] at the probe plane: a
+    2 deg coarse scan (light subsample), a 0.1 deg fine scan about the peak, then a parabolic
+    refine. The probe plane caps the integration short of the full structure for speed."""
+    z_probe = min(zmap[-1], Z_STRUCT + PROBE_LEN)
+    coarse_sub = slice(0, min(512, z0.size))                  # lighter bunch for the wide scan
 
-    coarse = np.arange(0.0, 360.0, 1.0)
-    c0 = coarse[int(np.argmax(gains(coarse)))]
-    fine = c0 + np.arange(-2.0, 2.0 + 1e-9, 0.02)
-    g = gains(fine)
+    def ke_at(phases, zz, uu, ww):
+        return np.array([_mean_exit_ke(b, zz, uu, ww, z_center, v_beam, scale, omega,
+                                       zmap, ez1, ez2, z_probe) for b in np.atleast_1d(phases)])
+
+    coarse = np.arange(0.0, 360.0, 2.0)
+    c0 = coarse[int(np.argmax(ke_at(coarse, z0[coarse_sub], u0[coarse_sub], w[coarse_sub])))]
+    fine = c0 + np.arange(-3.0, 3.0 + 1e-9, 0.1)
+    g = ke_at(fine, z0, u0, w)
     i = int(np.argmax(g))
     if 0 < i < len(fine) - 1:                                 # parabolic vertex of the top 3
         y0, y1, y2 = g[i - 1], g[i], g[i + 1]
         denom = y0 - 2 * y1 + y2
         d = 0.5 * (y0 - y2) / denom if denom != 0 else 0.0
-        step = fine[1] - fine[0]
-        crest = fine[i] + d * step
-        peak = gains(np.array([crest]))[0]
+        crest = fine[i] + d * (fine[1] - fine[0])
     else:
-        crest, peak = fine[i], g[i]
-    return float(crest % 360.0), float(peak)
+        crest = fine[i]
+    # Full-structure ΔE at the crest (one integration to the map exit) for an accurate report.
+    full = _mean_exit_ke(crest, z0, u0, w, z_center, v_beam, scale, omega, zmap, ez1, ez2,
+                         zmap[-1] + 0.05)
+    return float(crest % 360.0), float(full - ke_mean)
 
 
 def set_yaml_param(path, key, value_str):
@@ -186,12 +205,12 @@ def main():
         omega = 2.0 * np.pi * p["F_RF"]
         print(f"── Section {N} ─────────────────────────────────────────────")
         try:
-            z_center, v_beam, ke_mean, scale = _centroid(drv, N, p)
+            z0, u0, w, z_center, v_beam, ke_mean, scale = _load_bunch(drv, N, p)
         except Exception as e:
             print(f"  SKIP: cannot read section {N}'s upstream beam — {e}\n", flush=True)
             continue
 
-        crest, gain = find_crest(z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2)
+        crest, gain = find_crest(z0, u0, w, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2)
         key = PHASE_KEY[N]
         old = float(p.get(key, 0.0))
         print(f"  scale={scale:.4g}, ⟨KE⟩_in={ke_mean/1e3:.3f} MeV, β_in={v_beam/c:.4f}")

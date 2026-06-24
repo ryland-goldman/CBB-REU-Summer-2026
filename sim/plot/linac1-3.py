@@ -66,14 +66,15 @@ def main():
 
     x, y, ux, uy, wgt = ts.get_particle(["x", "y", "ux", "uy", "w"],
                                         species="electrons", iteration=it)
-    z_m, ke, emit, sigma = px.evolution_screens(px.pool_trajectories(ts, ts.iterations))
+    z_m, ke, emit, sigma, q_pc = px.evolution_screens(px.pool_trajectories(ts, ts.iterations))
 
     figs = [
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
-        ("transverse_r_pr",  px.transverse_rpr(x, y, ux, uy, wgt,
+        ("transverse_r_pr",  px.transverse_rpr(x, y, ux, uy, wgt, p_unit="MeV",
                              title=f"Section {N} exit transverse phase space  (r, p_r)")),
-        ("energy_spectrum",  px.energy_spectrum(pg)),
-        ("evolution_vs_z",   px.evolution_vs_z(z_m, ke, emit, sigma, ke_unit="keV",
+        ("energy_spectrum",  px.energy_spectrum(pg, e_unit="MeV")),
+        ("evolution_vs_z",   px.evolution_vs_z(z_m, ke / 1e3, emit, sigma, charge_pc=q_pc,
+                             ke_unit="MeV",
                              title=f"Section {N} beam evolution  (fixed-z virtual screens)")),
     ]
     for name, fig in figs:

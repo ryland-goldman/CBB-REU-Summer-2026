@@ -236,8 +236,8 @@ def main():
                             title="Injector handoff transverse phase space  (r, p_r)"),
           "transverse_r_pr")
 
-    z_m, ke, emit, sigma = px.evolution_screens(px.pool_trajectories(ts, ts.iterations))
-    _save(px.evolution_vs_z(z_m, ke, emit, sigma,
+    z_m, ke, emit, sigma, q_pc = px.evolution_screens(px.pool_trajectories(ts, ts.iterations))
+    _save(px.evolution_vs_z(z_m, ke, emit, sigma, charge_pc=q_pc,
                             title="Beam evolution along the injector  (fixed-z virtual screens)"),
           "evolution_vs_z")
 

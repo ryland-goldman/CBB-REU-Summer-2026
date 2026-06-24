@@ -52,6 +52,7 @@ def screen_profile(ids, z, weight, quantities, emit_pairs=(),
     nan = np.full(n_screen, np.nan)
     if z.size == 0:
         empty = dict(count=np.zeros(n_screen),
+                     charge=nan.copy(),
                      mean={n: nan.copy() for n in names},
                      rms={n: nan.copy() for n in names},
                      max={n: nan.copy() for n in names},
@@ -93,7 +94,8 @@ def screen_profile(ids, z, weight, quantities, emit_pairs=(),
 
     ok = count >= min_cross
     norm = np.where(ok, sum_w, np.nan)                       # NaN-out sparse screens
-    out = dict(count=count, mean={}, rms={}, max={}, emit={})
+    out = dict(count=count, charge=np.where(ok, sum_w, np.nan),
+               mean={}, rms={}, max={}, emit={})
     for n in names:
         mean = sum_wv[n] / norm
         out["mean"][n] = mean

@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sim.helpers.tools import C_LIGHT, MC2_KEV
+from sim.helpers.tools import C_LIGHT, E_CHARGE, MC2_KEV
 from sim.helpers.metrics import screen_profile
 
 
@@ -29,18 +29,26 @@ def _wstd(x, w):
     return float(np.sqrt(np.average((x - mean) ** 2, weights=w)))
 
 
-def energy_spectrum(pg, n_bins=80, use_ke=True):
-    """Charge-weighted histogram of (kinetic) energy -- the beam's energy spread."""
+_E_UNIT_PER_EV = {"eV": 1.0, "keV": 1e3, "MeV": 1e6}   # divide eV by this to get e_unit
+
+
+def energy_spectrum(pg, n_bins=80, use_ke=True, e_unit="keV"):
+    """Charge-weighted histogram of (kinetic) energy -- the beam's energy spread.
+
+    `e_unit` ("eV"/"keV"/"MeV") scales the energy axis: keV suits the source/injector chain,
+    MeV the relativistic linac exit (~300 MeV).
+    """
     key = "kinetic_energy" if use_ke else "energy"
-    e = pg[key] / 1e3                                   # eV -> keV
+    div = _E_UNIT_PER_EV[e_unit]
+    e = pg[key] / div                                   # eV -> e_unit
     w = pg["weight"] * 1e12                             # C -> pC
     mean, std = np.average(e, weights=pg["weight"]), _wstd(e, pg["weight"])
 
     fig, ax = plt.subplots()
     ax.hist(e, bins=n_bins, weights=w, color="C0", alpha=0.85)
     ax.axvline(mean, color="k", ls="--", lw=1,
-               label=f"<E> = {mean:.1f} keV\nsigma_E = {std*1e3:.0f} eV  ({100*std/mean:.2f}%)")
-    ax.set_xlabel(("kinetic energy" if use_ke else "energy") + " [keV]")
+               label=f"<E> = {mean:.3g} {e_unit}\nsigma_E = {std:.3g} {e_unit}  ({100*std/mean:.2f}%)")
+    ax.set_xlabel(("kinetic energy" if use_ke else "energy") + f" [{e_unit}]")
     ax.set_ylabel("charge / bin [pC]")
     ax.set_title("Energy spectrum")
     ax.legend(loc="upper left", fontsize=9)
@@ -105,31 +113,43 @@ def pool_trajectories(ts, iters, species="electrons", with_y=True):
 
 
 def evolution_screens(pool, n_screen=80):
-    """(z [m], <KE> [keV], eps_n,x [mm.mrad], sigma_x [mm]) on fixed-z virtual screens."""
+    """(z [m], <KE> [keV], eps_n,x [mm.mrad], sigma_x [mm], charge [pC]) on fixed-z screens.
+
+    The charge crossing each screen is the summed real-particle weight (-> pC); it falls where
+    particles are lost (scraped / leave the domain). Only physical for the RZ stages -- the 2D
+    cathode slab weight is per-unit-out-of-plane-length, not Coulombs, so skip its charge panel.
+    """
     screens, prof = screen_profile(
         pool["id"], pool["z"], pool["w"],
         {"x": pool["x"], "ux": pool["ux"], "ke": pool["ke"]},
         emit_pairs=[("x", "ux")], n_screen=n_screen)
     return (screens, prof["mean"]["ke"],
             prof["emit"][("x", "ux")] * 1e6,            # m*(gamma*beta) -> mm.mrad
-            prof["rms"]["x"] * 1e3)                      # m -> mm
+            prof["rms"]["x"] * 1e3,                      # m -> mm
+            prof["charge"] * E_CHARGE * 1e12)            # real-particle weight -> pC
 
 
-def evolution_vs_z(z_m, ke, emit, sigma, ke_unit="keV", title="", notes=None):
-    """3-panel beam evolution along z: mean KE, normalized emittance eps_n,x, RMS spot size.
+def evolution_vs_z(z_m, ke, emit, sigma, charge_pc=None, ke_unit="keV", title="", notes=None):
+    """Beam evolution along z: mean KE, normalized emittance eps_n,x, RMS spot size, and -- when
+    `charge_pc` is given -- the charge [pC] crossing each screen (a 4th panel showing loss vs z).
 
     Arrays are aligned on z_m [m]; the WarpX stages feed `evolution_screens` output and linac4-8
     feeds the summary's stat_vs_z table. `notes` is an optional {panel: str} (panel in
-    {"ke","emit","sigma"}) for per-panel caveats.
+    {"ke","emit","sigma","charge"}) for per-panel caveats.
     """
     notes = notes or {}
     z_mm = np.asarray(z_m) * 1e3
-    fig, (a1, a2, a3) = plt.subplots(3, 1, figsize=(7.4, 8.4), constrained_layout=True,
-                                     sharex=True)
-    for ax, y, color, ylab, key in (
-            (a1, ke, "C2", f"mean KE  [{ke_unit}]", "ke"),
-            (a2, emit, "C3", r"$\varepsilon_{n,x}$  [mm$\cdot$mrad]", "emit"),
-            (a3, sigma, "C0", r"RMS size  $\sigma_x$  [mm]", "sigma")):
+    panels = [
+        (ke, "C2", f"mean KE  [{ke_unit}]", "ke"),
+        (emit, "C3", r"$\varepsilon_{n,x}$  [mm$\cdot$mrad]", "emit"),
+        (sigma, "C0", r"RMS size  $\sigma_x$  [mm]", "sigma"),
+    ]
+    if charge_pc is not None:
+        panels.append((charge_pc, "C4", "charge  [pC]", "charge"))
+    n = len(panels)
+    fig, axs = plt.subplots(n, 1, figsize=(7.4, 2.8 * n), constrained_layout=True, sharex=True)
+    axs = np.atleast_1d(axs)
+    for ax, (y, color, ylab, key) in zip(axs, panels):
         y = np.asarray(y, float)
         ok = np.isfinite(y)
         ax.plot(z_mm[ok], y[ok], "o-", color=color, ms=3)
@@ -137,25 +157,30 @@ def evolution_vs_z(z_m, ke, emit, sigma, ke_unit="keV", title="", notes=None):
         ax.grid(alpha=0.3)
         if key in notes:
             ax.set_title(notes[key], fontsize=8)
-    a3.set_xlabel("beam position  z  [mm]")
+    axs[-1].set_xlabel("beam position  z  [mm]")
     if title:
         fig.suptitle(title, fontsize=12)
     return fig
 
 
-def transverse_rpr(x, y, ux, uy, w=None, title="Transverse phase space  (r, p_r)"):
-    """Transverse r-p_r phase space: r = hypot(x, y) [mm], p_r = (x.ux + y.uy)/r . MC2_KEV [keV/c]."""
+def transverse_rpr(x, y, ux, uy, w=None, title="Transverse phase space  (r, p_r)",
+                   p_unit="keV"):
+    """Transverse r-p_r phase space: r = hypot(x, y) [mm], p_r = (x.ux + y.uy)/r . MC2 [p_unit/c].
+
+    `p_unit` ("keV"/"MeV") scales the momentum axis: keV/c suits the source/injector chain,
+    MeV/c the relativistic linac exit.
+    """
     x, y, ux, uy = (np.asarray(a, float) for a in (x, y, ux, uy))
     r = np.hypot(x, y)
     safe = r > 0
     pr_u = np.zeros_like(r)
     pr_u[safe] = (x[safe] * ux[safe] + y[safe] * uy[safe]) / r[safe]
     r_mm = r * 1e3
-    pr_kev = pr_u * MC2_KEV
+    pr_p = pr_u * MC2_KEV * 1e3 / _E_UNIT_PER_EV[p_unit]   # u*MC2[eV/c] -> p_unit/c
 
     fig, ax = plt.subplots(figsize=(7.0, 4.8), constrained_layout=True)
-    hb = ax.hexbin(r_mm, pr_kev, gridsize=70, cmap="viridis", mincnt=1)
+    hb = ax.hexbin(r_mm, pr_p, gridsize=70, cmap="viridis", mincnt=1)
     fig.colorbar(hb, ax=ax, label="macroparticles / bin")
-    ax.set_xlabel("r  [mm]"); ax.set_ylabel(r"$p_r$  [keV/$c$]")
+    ax.set_xlabel("r  [mm]"); ax.set_ylabel(rf"$p_r$  [{p_unit}/$c$]")
     ax.set_title(title)
     return fig

@@ -129,11 +129,9 @@ def main():
             continue                       # source/low-energy: capture % not meaningful
         beam_summary(diag, f"{label} exit", unit)
 
-    run_subprocess(["sim/plot/chain.py"], "cross-stage figures", fatal=False)
-
     say("\n" + "=" * 72)
     say(f" Pipeline complete in {(time.time()-t0)/60:.1f} min.")
-    say(" Figures: logs/plots/<stage>/ and logs/plots/chain/")
+    say(" Figures: logs/plots/<stage>/")
     say(f" log: {log_path}")
     say("=" * 72)
     _lf.close()

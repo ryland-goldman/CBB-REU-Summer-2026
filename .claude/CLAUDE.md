@@ -63,7 +63,7 @@ python sim/main.py                              # full chain, per-stage subproce
 python sim/cathode.py                           # one stage's simulation
 python sim/plot/cathode.py                      # its figures (from existing diagnostics)
 python sim/linac1-3.py 2                        # a linac section (argument selects 1/2/3)
-python sim/plot/chain.py                        # cross-stage figures from whatever stages have run
+python sim/plot/linac1-3.py 2                   # a linac section's figures (from existing diagnostics)
 ```
 
 - **No `config()`/profile API.** Each WarpX stage reads `config/<stage>.yaml`; the Impact-T stage
@@ -100,7 +100,7 @@ current, bunching, the ~296 MeV exit) printed by each run and inspected in `logs
 config/   one YAML per stage — all tuning hardcoded (operating point + Balanced profile)
 sim/      main.py + one driver per stage (cathode, gun, injector, linac1-3, linac4-8)
   helpers/ stage-agnostic plumbing (see below)
-  plot/    one plotter per stage + common.py (shared figures) + chain.py (cross-stage)
+  plot/    one plotter per stage + common.py (shared figures)
 logs/     diags/<stage>/ (openPMD + injection_summary.json) · plots/<stage>/ · pipeline/log_<date>.log
 docs/     per-stage physics notes
 fieldmaps/ gdf/ (GPT inputs, committed) · h5/ (built, git-ignored) · rfdata/ (Impact-T TW template)

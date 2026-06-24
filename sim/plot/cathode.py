@@ -257,7 +257,7 @@ def main():
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
         ("potential_xz",     w.plot_fields("phi", "x", "z")),
         ("charge_density_xz", w.plot_fields("rho", "x", "z")),
-        ("energy_spectrum",  common.energy_spectrum(pg)),
+        ("energy_spectrum",  common.energy_spectrum(pg, e_unit="eV")),
     ]:
         _save(fig, name)
 
@@ -266,7 +266,7 @@ def main():
     crest_t = summary["crest_time_s"] if summary and summary.get("crest_time_s") else ts.t[-1]
     rising = [i for i, t in zip(ts.iterations, ts.t) if t <= crest_t * 1.001]
     pool = common.pool_trajectories(ts, rising, with_y=False)          # 2D slab: no y
-    z_m, ke, emit, sigma = common.evolution_screens(pool)
+    z_m, ke, emit, sigma, _q_pc = common.evolution_screens(pool)   # 2D slab: charge non-physical
     _save(common.evolution_vs_z(z_m, ke, emit, sigma,
                                 title="Cathode beam evolution across the gap"),
           "evolution_vs_z")

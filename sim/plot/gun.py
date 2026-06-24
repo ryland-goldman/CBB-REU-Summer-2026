@@ -167,8 +167,8 @@ def main():
     applied_field_figure()
     if live_iters:
         transport_figure(ts, populated_iters or live_iters)
-        z_m, ke, emit, sigma = px.evolution_screens(px.pool_trajectories(ts, live_iters))
-        _save(px.evolution_vs_z(z_m, ke, emit, sigma,
+        z_m, ke, emit, sigma, q_pc = px.evolution_screens(px.pool_trajectories(ts, live_iters))
+        _save(px.evolution_vs_z(z_m, ke, emit, sigma, charge_pc=q_pc,
                                 title="Beam evolution along the gun  (fixed-z virtual screens)"),
               "evolution_vs_z")
         self_field_figure(ts, zmean_by_it)

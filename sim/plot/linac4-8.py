@@ -139,7 +139,7 @@ def _exit_slice(diag):
 def _save_exit_figures(x, y, z, ux, uy, uz, w):
     """Energy spectrum, longitudinal (z, KE) and transverse (r, p_r) phase space at the exit."""
     pg = make_particle_group(x, y, z, ux, uy, uz, w)
-    fig = px.energy_spectrum(pg, use_ke=True)
+    fig = px.energy_spectrum(pg, use_ke=True, e_unit="MeV")
     fig.savefig(os.path.join(RESULTS, "energy_spectrum.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
@@ -154,7 +154,8 @@ def _save_exit_figures(x, y, z, ux, uy, uz, w):
     plt.close(fig)
 
     fig = px.transverse_rpr(x, y, ux, uy, w,
-                            title="linac4-8 exit transverse phase space  (r, p_r)")
+                            title="linac4-8 exit transverse phase space  (r, p_r)",
+                            p_unit="MeV")
     fig.savefig(os.path.join(RESULTS, "transverse_r_pr.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
