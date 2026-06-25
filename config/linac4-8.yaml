@@ -23,7 +23,8 @@ lattice:
 
 # Beam / capture.
 beam:
-  min_ke_mev: 12.0               # captured-core energy cut [MeV] (beta>0.99917; model-validity guard)
+  species: positrons             # upstream is the converter positron beam (q=+e); sign flips Bcharge
+  min_ke_mev: 2.0                # positron captured-core energy cut [MeV] (soft converter spectrum)
   np: 4000                       # macroparticles tracked in the final run (downsample core to this)
   rng_seed: 0
 
@@ -42,6 +43,9 @@ deck:
 # on (theta0 is referenced to t=0; a shorter deck would shift sections 5-8 off-crest). The Q8 entry
 # (after the last section) is never placed. field_scale [V/m] and crest_phase_deg are the FROZEN
 # per-section setpoints (see header).
+# WARNING: the crest_phase_deg values below are still the ELECTRON-derived ones; they MUST be
+# re-derived for positrons (q=+e flips the crest ~180 deg and the lower injection energy shifts it)
+# via sim/autophase_impact.py before a positron run is physical. Do not trust positron output until.
 sections:
   - {name: "CU 5",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 25.0, field_scale: 2.019127e7, crest_phase_deg: 68.7787}    # sec 4
   - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 353.6304}   # sec 5
@@ -59,10 +63,10 @@ rfdata:
   l_entrance: 0.052464
   l_exit: 0.05246
 
-# Upstream input: the linac1-3 sec3 exit beam (the 3->4 boundary, captured ~71 MeV core) and its
+# Upstream input: the converter positron beam (the 3->4 boundary slot, q=+e core) and its
 # local->lab z-chain summary. Output: the per-section / final beams + injection_summary.json.
 io:
-  sec3_particles: logs/diags/linac1-3/sec3/main/particles
-  sec3_summary: logs/diags/linac1-3/sec3/main/injection_summary.json
+  sec3_particles: logs/diags/converter/main/particles
+  sec3_summary: logs/diags/converter/main/injection_summary.json
   outdir: logs/diags/linac4-8/main
   workdir: logs/diags/linac4-8

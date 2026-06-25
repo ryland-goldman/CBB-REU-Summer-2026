@@ -1,0 +1,47 @@
+# Cornell Linac e+/e- converter target (G4beamline / Geant4). Reads the linac3 exit electron beam
+# (the 3->4 boundary), drives it into a tungsten target, and writes the converted POSITRON beam as
+# the standard openPMD handoff + injection_summary.json. sim/converter.py reads this back, resamples
+# the incident e- core, writes a BLTrackFile, generates the .g4bl deck programmatically, runs the
+# g4bl binary as a subprocess, and converts the BLTrackFile output via sim/helpers/g4bl.py.
+# See docs/converter.md. (g4bl is an EXTERNAL binary -- G4beamline 3.08 -- not a pip/conda dep.)
+
+# Target geometry (the physics: 7 mm tungsten, 10 mm radius solid cylinder, ~2 X0 of W).
+geometry:
+  target_material: W            # Geant4 NIST tungsten (G4_W)
+  target_length_mm: 7.0         # 7 mm thickness along the beam axis
+  target_radius_mm: 10.0        # 10 mm radius (20 mm diameter)
+  target_front_z_mm: 0.0        # z of the target FRONT face [mm] in the g4bl frame
+  front_clearance_mm: 2.0       # vacuum gap: incident-bunch head sits this far upstream of the face
+
+# Precision / physics settings (the "precision settings" block).
+physics:
+  list: QGSP_BERT_EMZ           # Geant4 reference list; EMZ = EM Opt4 (best e+/e-/gamma models)
+  min_range_cut_mm: 0.05        # production/range cut: secondaries below this range aren't created
+  max_step_mm: 0.1              # max step INSIDE the target [mm] (resolves the brems/pair shower depth)
+  n_events: 50000               # incident-electron events (the e- core is resampled up to this);
+                                # `python sim/converter.py N` overrides this for a quick test
+  rng_seed: 0                   # deterministic (g4bl also seeds its RNG per EventID)
+
+# Output sampling plane (a thin virtualdetector just past the target back face) + selection.
+detector:
+  back_clearance_mm: 3.0        # gap between the target back face and the sampling plane [mm]
+  radius_mm: 1000.0             # accept the full forward shower
+  min_ke_mev: 1.0               # output KE threshold [MeV] (drop the soft shower debris)
+  forward_only: true            # keep Pz > 0 tracks (drop backscatter toward the gun)
+  keep_pdgid: -11               # species written to the handoff (positrons); e-/gamma are diagnostics
+
+# g4bl executable (external binary; on PATH after the app-bundle MacOS dir was added to ~/.zshrc).
+# If not found on PATH, sim/converter.py falls back to the standard macOS app-bundle location.
+g4bl:
+  exe: g4bl
+
+# IO: read the linac1-3 sec3 exit (the 3->4 boundary); write the converter handoff. g4bl runs IN
+# PLACE under workdir (deck + beam_in + sample land there); particles/ + summary go under outdir.
+io:
+  sec3_particles: logs/diags/linac1-3/sec3/main/particles
+  sec3_summary:   logs/diags/linac1-3/sec3/main/injection_summary.json
+  outdir:  logs/diags/converter/main
+  workdir: logs/diags/converter
+  deck_name:    converter.g4bl
+  beam_in_file: beam_in.txt
+  out_file:     sample.txt

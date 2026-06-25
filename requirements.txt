@@ -6,7 +6,10 @@
 #   ImpactTexe     -> conda `impact-t` (the serial Impact-T binary linac4-8 runs via lume-impact)
 # One-shot env creation:
 #   conda create -n CBB -c conda-forge warpx impact-t openpmd-api openpmd-viewer \
-#       lume-impact openpmd-beamphysics easygdf numpy scipy matplotlib tqdm
+#       lume-impact openpmd-beamphysics easygdf numpy scipy matplotlib tqdm pandas
+#
+# EXTERNAL (not a pip/conda dep): the converter stage shells out to the `g4bl` binary from
+# G4beamline 3.08 (https://g4beamline.muonsinc.com), which must be installed and on PATH.
 #
 # FALLBACK: `pip install -r requirements.txt` into an env that already has
 # warpx / impact-t / openpmd-api from conda (those need C++/Fortran cores).
@@ -31,3 +34,4 @@ numpy==2.4.6
 scipy==1.17.1
 matplotlib==3.10.9
 tqdm==4.67.3
+pandas==3.0.3                  # G4beamline BLTrackFile ASCII IO (sim/helpers/g4bl.py)

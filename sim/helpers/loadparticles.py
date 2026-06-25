@@ -189,15 +189,18 @@ def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
         x=x, y=y, z=z,
         px=ux * MC2_EV, py=uy * MC2_EV, pz=uz * MC2_EV,
         t=np.zeros_like(x), weight=w * Q_E,
-        status=np.ones_like(x, dtype=int), species="electron"))
+        status=np.ones_like(x, dtype=int),
+        species=species[:-1] if species.endswith("s") else species))
 
 
-def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0):
+def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0,
+                            species="electrons", charge=-Q_E, mass=M_E):
     """Write a `ParticleGroup` to `out_dir` as a WarpX-style openPMD dump (handoff-OUT for
     linac4-8). Hand-rolled (not ParticleGroup.write, which emits openPMD 2.0 with a STRING
     extension openpmd-viewer rejects): replicate WarpX's byte-layout (openPMD 1.1.0, integer
-    ED-PIC ext), species "electrons" (PLURAL). Records position [m], momentum [kg*m/s],
-    weighting [count], charge, mass, id. Returns the written file path.
+    ED-PIC ext). `species` is the openPMD group key (PLURAL); `species`/`charge`/`mass` default to
+    electrons, the converter passes positrons (`charge=+Q_E`). Records position [m], momentum
+    [kg*m/s], weighting [count], charge, mass, id. Returns the written file path.
     """
     import openpmd_api as io
     os.makedirs(out_dir, exist_ok=True)
@@ -223,7 +226,7 @@ def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0):
 
     it = series.iterations[int(iteration)]
     it.set_time(float(time)).set_dt(1.0).set_time_unit_SI(1.0)
-    sp = it.particles["electrons"]                       # PLURAL -- cross-stage contract
+    sp = it.particles[species]                           # PLURAL group key -- cross-stage contract
 
     dset_f = io.Dataset(np.dtype("float64"), [n])
     dset_i = io.Dataset(np.dtype("int64"), [n])
@@ -270,14 +273,14 @@ def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0):
     sp["charge"].set_unit_dimension({io.Unit_Dimension.T: 1, io.Unit_Dimension.I: 1})
     _tag(sp["charge"], weighting_power=1)
     ch.reset_dataset(dset_f)
-    ch.store_chunk(np.ascontiguousarray(np.full(n, -Q_E, dtype=np.float64)))
+    ch.store_chunk(np.ascontiguousarray(np.full(n, charge, dtype=np.float64)))
     ch.unit_SI = 1.0
 
     ms = sp["mass"][io.Mesh_Record_Component.SCALAR]
     sp["mass"].set_unit_dimension({io.Unit_Dimension.M: 1})
     _tag(sp["mass"], weighting_power=1)
     ms.reset_dataset(dset_f)
-    ms.store_chunk(np.ascontiguousarray(np.full(n, M_E, dtype=np.float64)))
+    ms.store_chunk(np.ascontiguousarray(np.full(n, mass, dtype=np.float64)))
     ms.unit_SI = 1.0
 
     ids = np.asarray(pg["id"], dtype=np.int64) if "id" in pg else np.arange(1, n + 1, dtype=np.int64)

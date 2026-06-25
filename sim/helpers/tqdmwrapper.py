@@ -4,7 +4,8 @@ Each stage runs in its own subprocess whose stdout is captured to the pipeline l
 main.py while stderr stays on the terminal -- so a tqdm bar written to stderr shows live
 while the engine's verbose stdout lands in the log. WarpX stages get their bar from
 lume-warpx's `w.run(progress=...)`; Impact-T (linac4-8) drives the bar below from a
-background poll of its `fort.18` longitudinal-position output.
+background poll of its `fort.18` longitudinal-position output; the converter (G4beamline)
+drives `g4bl_progress` below from g4bl's `Event N Completed` stdout stream.
 """
 
 import contextlib
@@ -68,3 +69,24 @@ def impact_progress(fort18_path, total_length_m, desc="linac4-8"):
         finally:
             stop.set()
             t.join(timeout=1.0)
+
+
+def g4bl_progress(line_iter, total, desc="converter"):
+    """Drive a tqdm bar from g4bl's `Event N Completed` stdout lines, re-yielding each line.
+
+    g4bl streams `Event <n> Completed ...` as it tracks; parse the running count and advance the
+    bar toward `total` (= nEvents). Use as `for line in g4bl_progress(proc.stdout, N): ...` so the
+    caller can still tee the lines (e.g. keep a tail for error reporting).
+    """
+    import re
+    pat = re.compile(r"Event\s+(\d+)\s+Completed")
+    with progress_bar(total=total, desc=desc, unit="ev") as bar:
+        last = 0
+        for line in line_iter:
+            m = pat.search(line)
+            if m:
+                n = int(m.group(1))
+                if n > last:
+                    bar.update(n - last)
+                    last = n
+            yield line

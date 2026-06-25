@@ -28,6 +28,7 @@ STAGES = [
     ("linac1",   "sim/linac1-3.py", "sim/plot/linac1-3.py", ["1"], "logs/diags/linac1-3/sec1/main", "MeV"),
     ("linac2",   "sim/linac1-3.py", "sim/plot/linac1-3.py", ["2"], "logs/diags/linac1-3/sec2/main", "MeV"),
     ("linac3",   "sim/linac1-3.py", "sim/plot/linac1-3.py", ["3"], "logs/diags/linac1-3/sec3/main", "MeV"),
+    ("converter","sim/converter.py","sim/plot/converter.py", [],    "logs/diags/converter/main",     "MeV"),
     ("linac4-8", "sim/linac4-8.py", "sim/plot/linac4-8.py", [],    "logs/diags/linac4-8/main",      "MeV"),
 ]
 
@@ -81,6 +82,7 @@ def beam_summary(diag, label, unit="keV"):
         import numpy as np
         from openpmd_viewer import OpenPMDTimeSeries
         ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
+        sp = ts.avail_species[0] if ts.avail_species else "electrons"   # converter/linac4-8 write "positrons"
         its = list(ts.iterations)
         # "end-to-end" denominator = full upstream injected charge, so the % folds BOTH the
         # captured-core cut and in-transit loss (the per-stage sidecars split them via core_frac).
@@ -92,12 +94,12 @@ def beam_summary(diag, label, unit="keV"):
         elif its:
             q0_label = "transmitted"
             _, _, _, _, w0 = ts.get_particle(["z", "ux", "uy", "uz", "w"],
-                                             species="electrons", iteration=its[0])
+                                             species=sp, iteration=its[0])
             q0 = w0.sum()
         z = None
         for it in reversed(its):
             z, ux, uy, uz, w = ts.get_particle(["z", "ux", "uy", "uz", "w"],
-                                               species="electrons", iteration=it)
+                                               species=sp, iteration=it)
             if len(z) > 50:
                 break
         if z is None or len(z) <= 50:
@@ -126,12 +128,12 @@ def main():
 
     t0 = time.time()
     say("=" * 72)
-    say(" Cornell Linac pipeline:  cathode -> gun -> injector -> linac1/2/3 -> linac4-8")
+    say(" Cornell Linac pipeline:  cathode -> gun -> injector -> linac1/2/3 -> converter -> linac4-8")
     say(f" log: {log_path}")
     say("=" * 72)
 
     for label, sim, plot, args, _diag, _unit in STAGES:
-        run_subprocess([sim, *args], f"{label}: simulation", warpx=(label != "linac4-8"))
+        run_subprocess([sim, *args], f"{label}: simulation", warpx=(label not in ("linac4-8", "converter")))
         run_subprocess([plot, *args], f"{label}: plots", fatal=False)
 
     say("\n" + "-" * 72)

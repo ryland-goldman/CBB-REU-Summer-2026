@@ -32,6 +32,11 @@ DIAG_DIR = "logs/diags/linac4-8/main"
 RESULTS = "logs/plots/linac4-8"
 
 
+def _species(ts):
+    """The openPMD particle-group key to read (positron handoff => "positrons")."""
+    return ts.avail_species[0] if getattr(ts, "avail_species", None) else "electrons"
+
+
 def _wstat(a, w):
     """Weighted mean and standard deviation."""
     m = np.average(a, weights=w)
@@ -54,11 +59,15 @@ def _read_slices(diag):
     Fallback for summaries without a stat_vs_z table (reads the openPMD particle slices).
     """
     from openpmd_viewer import OpenPMDTimeSeries
-    ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
+    try:
+        ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
+    except Exception:
+        return []
+    sp = _species(ts)
     rows = []
     for it in ts.iterations:
         x, y, z, ux, uy, uz, w = ts.get_particle(
-            ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
+            ["x", "y", "z", "ux", "uy", "uz", "w"], species=sp, iteration=it)
         if len(z) < 50:
             continue
         g = np.sqrt(1.0 + ux ** 2 + uy ** 2 + uz ** 2)
@@ -124,11 +133,17 @@ def _exit_slice(diag):
     parts = os.path.join(diag, "particles")
     if not os.path.isdir(parts):
         return None
-    ts = OpenPMDTimeSeries(parts)
+    try:
+        ts = OpenPMDTimeSeries(parts)
+    except Exception:
+        return None
+    if not list(ts.iterations):
+        return None
+    sp = _species(ts)
     best = None
     for it in ts.iterations:
         x, y, z, ux, uy, uz, w = ts.get_particle(
-            ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
+            ["x", "y", "z", "ux", "uy", "uz", "w"], species=sp, iteration=it)
         if len(z) < 50:
             continue
         zc = float(np.average(z, weights=w))
@@ -225,8 +240,9 @@ def main():
     if n_slice is not None:
         _save_exit_figures(*n_slice)
 
+    last_ke = f"{ke[-1]:.1f} MeV" if len(ke) else "n/a"
     print(f"plot linac4-8: wrote figures to {RESULTS}/ "
-          f"({len(z)} vs-z points, exit <KE> {ke[-1]:.1f} MeV).", flush=True)
+          f"({len(z)} vs-z points, exit <KE> {last_ke}).", flush=True)
 
 
 if __name__ == "__main__":

@@ -159,3 +159,44 @@ frozen calibration table, and `stat_vs_z` (`z_m`, `ke_mev`, `sigma_ke_mev`, `sig
   the summary's `stat_vs_z`), not particle slices.
 - **The frozen scale group is `absolute=True` defaulting 0** -- it MUST be set (via
   `_set_group_scale`) after `add_group`, or the deck silently runs zero-field.
+
+---
+
+## Positron mode -- accelerating the converter output
+
+Sections 4-8 can be rewired to accelerate **positrons** from the converter that fills the 3->4
+boundary (`docs/converter.md`) instead of the linac3 exit electrons. The same five-section deck and
+the same frozen-calibration machinery are reused; only the input, the charge sign, and the phasing
+change. This is an **additive** mode -- the default electron-mode content above is unchanged.
+
+- **Input rewire (`config/linac4-8.yaml`).** The `io.sec3_particles` / `io.sec3_summary` paths are
+  pointed at the converter output (`logs/diags/converter/main/particles` and its
+  `injection_summary.json`) instead of the linac3 sec3 dump, so `upstream_exit_lab_z` continues the
+  lab-z chain across the converter. `beam.species` is set to `positrons`. `beam.min_ke_mev` is
+  **lowered** -- the converter's positron spectrum is soft (far below the relativistic electron core),
+  so the electron-mode 12 MeV captured-core guard would discard most of the beam; the positron cut is
+  set low enough to keep the physical spectrum.
+
+- **Charge sign (`sim/linac4-8.py`).** The Impact-T deck header `Bcharge` is set to **`+1.0`** for
+  positrons (it is `-1.0` for electrons). **`Bmass` is unchanged** -- the positron has the same rest
+  mass as the electron, so only the charge sign flips. The openPMD handoff OUT is written as a
+  **`positrons`** group with charge **+e** (via `loadparticles.write_openpmd_particles`, same as the
+  electron path but with the positron species spelling).
+
+- **The frozen crest phases DO NOT carry over.** The per-section `crest_phase_deg` are **absolute**
+  Impact-T `theta0` values (referenced to the deck's t = 0), and they were derived for the **electron**
+  beam. For positrons they are wrong on two counts: (1) flipping the charge sign flips which RF phase
+  is **accelerating**, so the on-crest base phase moves by ~180 degrees; and (2) the positron
+  **injection energy and velocity are much lower** than the electron core, so the bunch arrives at
+  each section at a different phase and the chained-deck phase walk (drifts + finite beta) shifts the
+  absolute `theta0` by additional large amounts per section. The two effects do not simply add to a
+  clean 180 degrees -- **every section's crest must be re-derived**.
+
+- **Re-derive before running.** Run **`sim/autophase_impact.py`** *after* the converter and *before*
+  `sim/linac4-8.py` to re-derive the per-section absolute crests for the positron beam and rewrite
+  them into `config/linac4-8.yaml`. Until that is done, a positron run with the electron-mode crest
+  phases is meaningless (the beam is off-crest, decelerating in places). Even with the re-derived
+  crests, the absolute transmission is a lower bound: the converter's high-divergence positrons need
+  a capture optic at the target that is not modelled (see `docs/converter.md`). The robust positron
+  deliverable, as in electron mode, is the **longitudinal** physics (per-section delta-E, exit
+  `<KE>`), not the unfocused transmission.

@@ -32,7 +32,7 @@ import shutil
 import numpy as np
 import yaml
 
-from sim.helpers.tools import MC2_EV, C_LIGHT, prepare_env
+from sim.helpers.tools import MC2_EV, C_LIGHT, M_E, E_CHARGE as Q_E, prepare_env
 from sim.helpers.loadparticles import read_warpx_dump, write_openpmd_particles, upstream_exit_lab_z
 from sim.helpers.tqdmwrapper import impact_progress
 
@@ -273,8 +273,9 @@ def build_impact(cfg, workdir=None):
     h["Bkenergy"] = 78.0e6                               # placeholder [eV]; lume-impact resets it from
                                                          # initial_particles -- NOT the theta0 phase ref
     h["Bfreq"] = cfg["rf"]["rf_freq_hz"]
-    h["Bmass"] = MC2_EV
-    h["Bcharge"] = -1.0
+    h["Bmass"] = MC2_EV                                  # same mass for e- and e+
+    # Bcharge sign follows the beam species: +1 positrons, -1 electrons.
+    h["Bcharge"] = 1.0 if str(cfg["beam"].get("species", "electrons")).startswith("positron") else -1.0
 
     I.configure()
     return I, total_len, section_bounds
@@ -293,7 +294,8 @@ def load_sec3_core(cfg):
     np_keep = cfg["beam"]["np"]
     rng_seed = cfg["beam"]["rng_seed"]
 
-    P = read_warpx_dump(diag)                            # species "electron", t-coords, last dump
+    species = cfg["beam"].get("species", "electrons")
+    P = read_warpx_dump(diag, species=species)           # configurable species, t-coords, last dump
     n_all = P.n_particle
     z_local = float(P["mean_z"])                         # sec3 LOCAL frame
     z_inject_lab = upstream_exit_lab_z(summary, z_local)  # chain local->lab so the segment places right
@@ -330,7 +332,7 @@ def load_sec3_core(cfg):
         ke_min_core_mev=ke_min, beta_min_core=beta_min,
         z_inject_lab_m=z_inject_lab,
     )
-    print(f"sec3 exit (3->4 boundary): {n_all} parts, {q_exit*1e12:.1f} pC; captured core "
+    print(f"upstream exit (3->4 boundary): {n_all} parts, {q_exit*1e12:.1f} pC; captured core "
           f"(KE>={min_ke_mev} MeV): {Pc.n_particle} parts, {q_core*1e12:.1f} pC "
           f"({info['core_charge_frac']*100:.1f}% of exit charge). <KE>_in {ke_in:.2f} MeV, "
           f"min-core KE {ke_min:.2f} MeV (beta_min={beta_min:.5f}), inject lab-z "
@@ -356,9 +358,10 @@ def _stat_vs_z(I, n=200):
     }
 
 
-def _write_outputs(I, outdir, inj):
+def _write_outputs(I, outdir, inj, species="electrons", charge=-Q_E):
     """Write the surviving ParticleGroups as WarpX-layout openPMD slices (sorted by <z>) plus
-    injection_summary.json. Group charges were already re-imposed in main()."""
+    injection_summary.json. Group charges were already re-imposed in main(). `species`/`charge`
+    must match the beam (positron handoff => species="positrons", charge=+Q_E)."""
     part_dir = os.path.join(outdir, "particles")
     os.makedirs(part_dir, exist_ok=True)
 
@@ -368,11 +371,12 @@ def _write_outputs(I, outdir, inj):
             continue
         slices.append((float(pg["mean_z"]), pg))
     slices.sort(key=lambda t: t[0])
-    if not slices:
-        raise RuntimeError("Impact-T produced no usable particle groups")
+    if not slices:                                       # e.g. uncaptured positrons fully scraped
+        print("  no surviving particle group >=50 macroparticles -- writing summary only", flush=True)
 
     for it, (_zc, pg) in enumerate(slices):
-        write_openpmd_particles(pg, part_dir, iteration=it, time=float(pg["mean_t"]))
+        write_openpmd_particles(pg, part_dir, iteration=it, time=float(pg["mean_t"]),
+                                species=species, charge=charge)
 
     with open(os.path.join(outdir, "injection_summary.json"), "w") as fh:
         json.dump(inj, fh, indent=2)
@@ -437,22 +441,25 @@ def main():
     # ── Transmission from MACRO COUNT, measured BEFORE re-imposing charge ──────────────────
     # n_out/n_in on the macro count (uniform per-macro weight) is the only honest transmission;
     # from charge AFTER the re-impose below it would force 1.0 and mask aperture loss.
-    P_out = I.particles["final_particles"]
     n_in = int(P_in.n_particle)
-    n_out = int(P_out.n_particle)
-    transmission = (n_out / n_in) if n_in else 0.0
     q_core = float(P_in["charge"])
-    q_out = q_core * transmission                       # physically transmitted core charge
-
-    # ── Re-impose physical charge for the openPMD `weighting` (SC-OFF loses it) ────────────
-    # Impact-T returns a default 1 C normalisation; rescale each group to q_core * (group n / n_in).
-    # Output-only -- transmission was already measured from counts above.
-    for _name, _pg in I.particles.items():
-        if _pg is not None and _pg.n_particle > 0:
-            _pg.charge = q_core * (_pg.n_particle / n_in)
-
-    ke_out = float(P_out["mean_energy"] / 1e6 - MC2_MEV)
-    mean_z_reached = float(I.stat("mean_z")[-1])
+    P_out = I.particles["final_particles"] if "final_particles" in I.particles else None
+    if P_out is None or P_out.n_particle == 0:
+        # Whole bunch lost: the uncaptured positron beam (~600 mrad divergence) scrapes on the bore
+        # long before the deck end -- no capture optic is modelled here. Report 0% transmission.
+        n_out, transmission, q_out, ke_out = 0, 0.0, 0.0, None
+    else:
+        n_out = int(P_out.n_particle)
+        transmission = (n_out / n_in) if n_in else 0.0
+        q_out = q_core * transmission                   # physically transmitted core charge
+        # ── Re-impose physical charge for the openPMD `weighting` (SC-OFF loses it) ────────
+        # Impact-T returns a default 1 C normalisation; rescale each group to q_core*(group n/n_in).
+        for _name, _pg in I.particles.items():
+            if _pg is not None and _pg.n_particle > 0:
+                _pg.charge = q_core * (_pg.n_particle / n_in)
+        ke_out = float(P_out["mean_energy"] / 1e6 - MC2_MEV)
+    _mz = I.stat("mean_z")
+    mean_z_reached = float(_mz[-1]) if len(_mz) else 0.0
 
     # ── Handoff OUT: openPMD + summary ────────────────────────────────────────────────────
     inj = dict(
@@ -482,8 +489,11 @@ def main():
         calibration=calib,
         stat_vs_z=_stat_vs_z(I),
     )
-    _write_outputs(I, outdir, inj)
-    print(f"\nDone. Exit <KE> {ke_out:.1f} MeV (in {core_info['ke_in_mev']:.1f} MeV); beam reached "
+    sp = str(cfg["beam"].get("species", "electrons"))
+    _write_outputs(I, outdir, inj, species=sp,
+                   charge=(Q_E if sp.startswith("positron") else -Q_E))
+    ke_str = f"{ke_out:.1f} MeV" if ke_out is not None else "n/a (no survivors)"
+    print(f"\nDone. Exit <KE> {ke_str} (in {core_info['ke_in_mev']:.1f} MeV); beam reached "
           f"{mean_z_reached:.2f}/{total_len:.2f} m; transmission {transmission*100:.1f}% "
           f"(quads-OFF lower bound). -> {outdir}/", flush=True)
 
