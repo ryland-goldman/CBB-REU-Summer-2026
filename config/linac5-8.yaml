@@ -1,14 +1,14 @@
-# Cornell Linac sections 4-8 (Impact-T) -- lume-impact deck config. All constants live here;
-# sim/linac4-8.py reads them back, builds the chained 5-section traveling-wave deck from the
+# Cornell Linac sections 5-8 (Impact-T) -- lume-impact deck config. All constants live here;
+# sim/linac5-8.py reads them back, builds the chained 4-section traveling-wave deck from the
 # vendored rfdata4-7 field shapes, and runs ImpactTexe in-process via lume-impact. The shipped
-# values ARE the single Balanced operating point. See docs/linac4-8.md for the physics.
+# values ARE the single Balanced operating point. See docs/linac5-8.md for the physics.
 #
 # CALIBRATION IS FROZEN. The old stage ran an expensive per-section brentq field-scale fit + a
 # crest-phase scan + §5 validation gates each run; that is dropped. The per-section field_scale
 # and crest_phase_deg below were derived once (on-crest, scale-to-ΔE_target) and are hardcoded,
-# applied directly to the deck (no search, no gates). See docs/linac4-8.md "Frozen calibration".
+# applied directly to the deck (no search, no gates). See docs/linac5-8.md "Frozen calibration".
 
-# RF / operating point (shared across all 5 sections).
+# RF / operating point (shared across all 4 sections).
 rf:
   power_mw: 11.0                 # RF input power [MW] per section -- the Balanced klystron point
   phase_deg: 0.0                 # nominal on-crest base phase (per-section crest is frozen below)
@@ -17,7 +17,7 @@ rf:
 
 # Lattice geometry.
 lattice:
-  first_section: 4               # machine section number of sections[0]; deck names derive from it
+  first_section: 5               # machine section number of sections[0]; deck names derive from it
   drift_m: 0.4                   # placeholder inter-section field-free margin [m] (girder gaps)
   bore_aperture_on: true         # solrf `radius` = real tapered bore (the binding aperture)
 
@@ -30,26 +30,27 @@ beam:
 
 # Impact-T deck knobs.
 deck:
-  ntstep: 200000                 # step cap (sized for ~29 m at dt=2e-12; mean_z is asserted reached)
+  ntstep: 200000                 # step cap (sized for the deck length at dt=2e-12; mean_z is asserted reached)
   dt: 2.0e-12                    # time step [s]
   nxyz: 16                       # Impact-T SC mesh per axis (power of 2; inert while SC is off)
   xyrad_m: 0.02                  # transverse computational-domain half-width [m] (box wall, not pipe)
 
-# Per-section physics table (details.md), lab order sections 4..8. de15_mev is ΔE @ 15 MW (the
+# Per-section physics table (details.md), lab order sections 5..8. de15_mev is ΔE @ 15 MW (the
 # √P reference); bore_in is the (entrance, exit) bore DIAMETER taper [inches] -> radii in code.
-# quad_in is the real tabulated drift-quad length [inches] AFTER the section (Q4..Q8); the quad is
+# quad_in is the real tabulated drift-quad length [inches] AFTER the section (Q5..Q8); the quad is
 # placed at K1=0 (optically a drift) but at its REAL length so the cumulative path length -- and
 # thus the bunch arrival time -- matches the deck the frozen ABSOLUTE crest phases were calibrated
-# on (theta0 is referenced to t=0; a shorter deck would shift sections 5-8 off-crest). The Q8 entry
+# on (theta0 is referenced to t=0; a shorter deck would shift sections 6-8 off-crest). The Q8 entry
 # (after the last section) is never placed. field_scale [V/m] and crest_phase_deg are the FROZEN
 # per-section setpoints (see header).
-# WARNING: the crest_phase_deg values below are still the ELECTRON-derived ones; they MUST be
-# re-derived for positrons (q=+e flips the crest ~180 deg and the lower injection energy shifts it)
-# via sim/autophase_impact.py before a positron run is physical. Do not trust positron output until.
+# ⚠ WARNING: the crest_phase_deg values below are STALE placeholders -- they are the old
+# electron-derived sections-4-8 values, and BOTH the species (positrons: q=+e flips the crest
+# ~180 deg, lower injection energy shifts it) AND the deck geometry changed (section 4 is now a
+# WarpX stage upstream of the converter, so this deck starts at section 5 -- a different absolute
+# t=0 arrival phase). Re-derive via `sim/autophase_impact.py` before a run is physical.
 sections:
-  - {name: "CU 5",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 25.0, field_scale: 2.019127e7, crest_phase_deg: 179.2507}    # sec 4
   - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 105.0000}   # sec 5
-  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 177.6300}    # sec 6
+  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 177.6300}   # sec 6
   - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 1.998574e7, crest_phase_deg: 105.0000}   # sec 7
   - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, field_scale: 1.997594e7, crest_phase_deg: 293.8463}   # sec 8
 
@@ -63,10 +64,10 @@ rfdata:
   l_entrance: 0.052464
   l_exit: 0.05246
 
-# Upstream input: the converter positron beam (the 3->4 boundary slot, q=+e core) and its
-# local->lab z-chain summary. Output: the per-section / final beams + injection_summary.json.
+# Upstream input: the converter positron beam (produced after the WarpX section 4, q=+e core) and
+# its local->lab z-chain summary. Output: the per-section / final beams + injection_summary.json.
 io:
-  sec3_particles: logs/diags/converter/main/particles
-  sec3_summary: logs/diags/converter/main/injection_summary.json
-  outdir: logs/diags/linac4-8/main
-  workdir: logs/diags/linac4-8
+  conv_particles: logs/diags/converter/main/particles
+  conv_summary: logs/diags/converter/main/injection_summary.json
+  outdir: logs/diags/linac5-8/main
+  workdir: logs/diags/linac5-8

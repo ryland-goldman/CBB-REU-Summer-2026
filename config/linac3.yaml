@@ -1,10 +1,10 @@
 # Cornell Linac Section 3 (CEA 3) — lume-warpx config (WarpX RZ, single azimuthal mode). All
-# constants live here; sim/linac1-3.py (run as `python sim/linac1-3.py 3`) reads them back,
+# constants live here; sim/linac1-4.py (run as `python sim/linac1-4.py 3`) reads them back,
 # imports linac section 2's exit beam via WarpX(initial_particles=...), and overrides only
 # runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
 # period). Geometry/grid are IDENTICAL to sections 1/2 (the SAME shared SLAC 3 m maps are
-# reused); only the beam energy and the FROZEN RF setpoints differ. Section 3's exit is the
-# 3→4 boundary handoff to linac sections 4-8. See docs/linac1-3.md.
+# reused); only the beam energy and the FROZEN RF setpoints differ. Section 3's exit feeds the
+# WarpX section 4 (the last accelerating section before the converter). See docs/linac1-4.md.
 
 grid:
   grid_type: CylindricalGrid
@@ -50,9 +50,9 @@ diagnostics:
     period: 100                                # overridden (max_steps // N_DIAGS)
     species: [electrons]
     data_list: [position, momentum, weighting]
-    write_dir: logs/diags/linac1-3/sec3/main   # → logs/diags/linac1-3/sec3/main/particles
+    write_dir: logs/diags/linac1-4/sec3/main   # → logs/diags/linac1-4/sec3/main/particles
 
-# Stage knobs with no WarpX-native home (read by sim/linac1-3.py).
+# Stage knobs with no WarpX-native home (read by sim/linac1-4.py).
 params:
   # FROZEN RF setpoints — derived ONCE from the old linac_sec1→sec2 chain (the runtime
   # crest-finding / ΔE-target field-scale loop is dropped). CREST_PHASE_DEG is the bunch-averaged

@@ -82,7 +82,7 @@ def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=N
     (KE >= `core_ke_frac` * median KE), downsamples it (reweighted), and shifts its tail to
     `z_inject`. The cut is essential: the section-exit dump trails a sparse slipping low-energy
     tail that lags the relativistic core by ~metres, not in the RF bucket -- genuinely lost
-    between sections (same physics as the linac4-8 MIN_KE_MEV cut).
+    between sections (same physics as the linac5-8 MIN_KE_MEV cut).
 
     Returns (bunch dict [gamma*beta momenta], v_beam [m/s], core <KE> [keV], info dict).
     info["exit_zmean_local_m"] is the read dump's <z> in the UPSTREAM local frame (for lab-z
@@ -175,10 +175,10 @@ def survivor_mask(ids, violator_ids):
     return ~np.isin(ids, np.fromiter(violator_ids, dtype=ids.dtype))
 
 
-# ── Impact-T <-> WarpX-openPMD adapters (linac4-8) ───────────────────────────────
+# ── Impact-T <-> WarpX-openPMD adapters (linac5-8) ───────────────────────────────
 def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
     """Read a WarpX-style openPMD particle dump into a `ParticleGroup` (handoff-IN reader
-    for linac4-8; default last iteration = the upstream section's exit dump).
+    for linac5-8; default last iteration = the upstream section's exit dump).
     """
     from pmd_beamphysics import ParticleGroup
     ts = open_particle_series(particles_dir)
@@ -196,7 +196,7 @@ def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
 def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0,
                             species="electrons", charge=-Q_E, mass=M_E):
     """Write a `ParticleGroup` to `out_dir` as a WarpX-style openPMD dump (handoff-OUT for
-    linac4-8). Hand-rolled (not ParticleGroup.write, which emits openPMD 2.0 with a STRING
+    linac5-8). Hand-rolled (not ParticleGroup.write, which emits openPMD 2.0 with a STRING
     extension openpmd-viewer rejects): replicate WarpX's byte-layout (openPMD 1.1.0, integer
     ED-PIC ext). `species` is the openPMD group key (PLURAL); `species`/`charge`/`mass` default to
     electrons, the converter passes positrons (`charge=+Q_E`). Records position [m], momentum
@@ -221,7 +221,7 @@ def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0,
     series = io.Series(os.path.join(out_dir, "openpmd_%06T.h5"), io.Access.create)
     series.set_openPMD("1.1.0")                           # viewer rejects 2.0 / STRING-ext
     series.set_openPMD_extension(1)                       # ED-PIC (integer)
-    series.set_software("sim.linac4-8")
+    series.set_software("sim.linac5-8")
     series.set_particles_path("particles")
 
     it = series.iterations[int(iteration)]

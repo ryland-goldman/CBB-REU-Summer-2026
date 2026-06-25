@@ -1,26 +1,27 @@
 """
-SLAC / Cornell Linac sections 1-3 in WarpX (RZ), merged into ONE parametrized driver.
+SLAC / Cornell Linac sections 1-4 in WarpX (RZ), merged into ONE parametrized driver.
 
   Section 1 (capture): import the injector handoff beam at the z ≈ Z_HANDOFF plane, apply the
     multi-plane 9.547 mm iris scrape, and capture it in the 3 m 2π/3 traveling-wave SLAC
     structure with self-consistent space charge. RF amplitude = sqrt(POWER_MW/RF_NORM_MW),
     phase referenced to bunch arrival (PHASE_DEG is the ABSOLUTE arrival-referenced base phase —
     the autophase capture crest — applied directly, NOT a detune; 0 is not on-crest).
-  Sections 2, 3 (accelerate): import the previous section's captured-core exit beam and accelerate
-    the relativistic core through the SAME reused SLAC quadrature maps, scaled by a FROZEN
-    FIELD_SCALE and phased to a FROZEN CREST_PHASE_DEG (the old runtime crest-finding +
+  Sections 2, 3, 4 (accelerate): import the previous section's captured-core exit beam and
+    accelerate the relativistic core through the SAME reused SLAC quadrature maps, scaled by a
+    FROZEN FIELD_SCALE and phased to a FROZEN CREST_PHASE_DEG (the old runtime crest-finding +
     ΔE-target field-scale loop is dropped — the setpoints were derived once and hardcoded in
-    the section yaml).
+    the section yaml). Section 4's exit is the 4→5 boundary: the input to the e+/e- converter
+    target (sim/converter.py), whose positron output then feeds Impact-T sections 5-8.
 
-Run as:  python sim/linac1-3.py <N>   with N in {1, 2, 3}.
+Run as:  python sim/linac1-4.py <N>   with N in {1, 2, 3, 4}.
 
 Drives lume-warpx from config/linacN.yaml (which holds every constant); this module reads those
 back, imports the upstream beam via WarpX(initial_particles=...), and overrides only the
 runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
-period). The two SLAC quadrature maps are shared across all three sections. See docs/linac1-3.md
+period). The two SLAC quadrature maps are shared across all four sections. See docs/linac1-4.md
 for physics, the captured-core cut, the frozen setpoints, lab-z chaining, and gotchas.
 
-main() runs ONLY the simulation; sim/plot/linac1-3.py produces the figures.
+main() runs ONLY the simulation; sim/plot/linac1-4.py produces the figures.
 """
 
 import os
@@ -44,14 +45,16 @@ from sim.helpers.loadparticles import (
     load_warpx_exit_bunch, upstream_exit_lab_z, pipe_violator_ids, survivor_mask)
 from sim.helpers.buildfields import build_linac_slac_fields, Z_STRUCT, RMAX, BORE_R, V1KW_KEV
 
-# Section 1 reads the injector handoff; sections 2/3 read the previous section's exit. All
+# Section 1 reads the injector handoff; sections 2/3/4 read the previous section's exit. All
 # paths are repo-root-relative (prepare_env() chdir's to the repo root).
 INJECTOR_DIAG = "logs/diags/injector/main/particles"
-PREV_PARTICLES = {2: "logs/diags/linac1-3/sec1/main/particles",
-                  3: "logs/diags/linac1-3/sec2/main/particles"}
-PREV_SUMMARY = {2: "logs/diags/linac1-3/sec1/main/injection_summary.json",
-                3: "logs/diags/linac1-3/sec2/main/injection_summary.json"}
-PREV_LABEL = {2: "linac1-3/sec1", 3: "linac1-3/sec2"}
+PREV_PARTICLES = {2: "logs/diags/linac1-4/sec1/main/particles",
+                  3: "logs/diags/linac1-4/sec2/main/particles",
+                  4: "logs/diags/linac1-4/sec3/main/particles"}
+PREV_SUMMARY = {2: "logs/diags/linac1-4/sec1/main/injection_summary.json",
+                3: "logs/diags/linac1-4/sec2/main/injection_summary.json",
+                4: "logs/diags/linac1-4/sec3/main/injection_summary.json"}
+PREV_LABEL = {2: "linac1-4/sec1", 3: "linac1-4/sec2", 4: "linac1-4/sec3"}
 
 
 def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
@@ -119,16 +122,16 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("1", "2", "3"):
-        sys.exit("usage: python sim/linac1-3.py <N>   with N in {1, 2, 3}")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("1", "2", "3", "4"):
+        sys.exit("usage: python sim/linac1-4.py <N>   with N in {1, 2, 3, 4}")
     N = int(sys.argv[1])
 
     prepare_env()
-    build_linac_slac_fields()                            # idempotent; shared RF maps for all 3 sections
+    build_linac_slac_fields()                            # idempotent; shared RF maps for all 4 sections
     from warpx import WarpX
 
     config = f"config/linac{N}.yaml"
-    w = WarpX(input_file=config, path=f"logs/diags/linac1-3/sec{N}")
+    w = WarpX(input_file=config, path=f"logs/diags/linac1-4/sec{N}")
     NR, NZ = w.get("grid/number_of_cells")
     _, ZMAX = w.get("grid/upper_bound")
     outdir = w.get("diagnostics/0/write_dir")

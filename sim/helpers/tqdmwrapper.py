@@ -3,7 +3,7 @@
 Each stage runs in its own subprocess whose stdout is captured to the pipeline log by
 main.py while stderr stays on the terminal -- so a tqdm bar written to stderr shows live
 while the engine's verbose stdout lands in the log. WarpX stages get their bar from
-lume-warpx's `w.run(progress=...)`; Impact-T (linac4-8) drives the bar below from a
+lume-warpx's `w.run(progress=...)`; Impact-T (linac5-8) drives the bar below from a
 background poll of its `fort.18` longitudinal-position output; the converter (G4beamline)
 drives `g4bl_progress` below from g4bl's `Event N Completed` stdout stream.
 """
@@ -30,7 +30,7 @@ def progress_bar(total=None, desc="", unit="it"):
 
 
 @contextlib.contextmanager
-def impact_progress(fort18_path, total_length_m, desc="linac4-8"):
+def impact_progress(fort18_path, total_length_m, desc="linac5-8"):
     """Drive a tqdm bar (in metres of beam travel) from Impact-T's fort.18 while it runs.
 
     Impact-T appends the bunch centroid z to fort.18 each step; a daemon thread polls the

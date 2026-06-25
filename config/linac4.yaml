@@ -1,9 +1,10 @@
-# Cornell Linac Section 2 (CEA 2) — lume-warpx config (WarpX RZ, single azimuthal mode). All
-# constants live here; sim/linac1-4.py (run as `python sim/linac1-4.py 2`) reads them back,
-# imports linac section 1's captured exit beam via WarpX(initial_particles=...), and overrides
-# only runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
-# period). The geometry/grid are IDENTICAL to section 1 (the SAME shared SLAC 3 m maps are
-# reused); only the beam energy and the FROZEN RF setpoints differ. See docs/linac1-4.md.
+# Cornell Linac Section 4 (CU 5) — lume-warpx config (WarpX RZ, single azimuthal mode). All
+# constants live here; sim/linac1-4.py (run as `python sim/linac1-4.py 4`) reads them back,
+# imports linac section 3's exit beam via WarpX(initial_particles=...), and overrides only
+# runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
+# period). Geometry/grid are IDENTICAL to sections 1/2/3 (the SAME shared SLAC 3 m maps are
+# reused); only the beam energy and the FROZEN RF setpoints differ. Section 4's exit is the
+# 4→5 boundary: the input to the e+/e- converter target (sim/converter.py). See docs/linac1-4.md.
 
 grid:
   grid_type: CylindricalGrid
@@ -18,7 +19,7 @@ grid:
   warpx_blocking_factor: 8
 
 solver:
-  solver_type: ES_MLMG_LF              # space charge is a small perturbation at ~21–49 MeV
+  solver_type: ES_MLMG_LF              # space charge is a small perturbation at ~78–122 MeV
   required_precision: 1.0e-4
   maximum_iterations: 200
   warpx_self_fields_verbosity: 0
@@ -30,7 +31,7 @@ simulation:
 
 # The two SLAC quadrature RF maps, summed by WarpX (field2 is the 90° quadrature half). Both
 # load E+B; the cos/sin drive strings (amplitude scale + phase) are overridden at runtime. These
-# are the SAME shared maps as sections 1 and 3.
+# are the SAME shared maps as sections 1, 2 and 3.
 fields:
   - {field_type: AppliedFromFile, path: fieldmaps/h5/linac_rf1.h5, load_E: true, load_B: true, warpx_E_time_function: "0.0", warpx_B_time_function: "0.0"}
   - {field_type: AppliedFromFile, path: fieldmaps/h5/linac_rf2.h5, load_E: true, load_B: true, warpx_E_time_function: "0.0", warpx_B_time_function: "0.0"}
@@ -38,8 +39,8 @@ fields:
 species:
   - particle_type: electron
     name: electrons
-    distribution-type: FromInitialParticles   # linac section 1 exit beam via initial_particles
-    warpx_do_not_deposit: true                # SC off: 1/gamma^2-negligible at >20 MeV (identical beam, ~50x faster); set false for a self-consistent run
+    distribution-type: FromInitialParticles   # linac section 3 exit beam via initial_particles
+    warpx_do_not_deposit: true                # SC off: 1/gamma^2-negligible at >70 MeV (identical beam, ~50x faster); set false for a self-consistent run
     layout: PseudoRandom
     n_macroparticles_per_cell: 1
 
@@ -49,16 +50,17 @@ diagnostics:
     period: 100                                # overridden (max_steps // N_DIAGS)
     species: [electrons]
     data_list: [position, momentum, weighting]
-    write_dir: logs/diags/linac1-4/sec2/main   # → logs/diags/linac1-4/sec2/main/particles
+    write_dir: logs/diags/linac1-4/sec4/main   # → logs/diags/linac1-4/sec4/main/particles
 
 # Stage knobs with no WarpX-native home (read by sim/linac1-4.py).
 params:
-  # FROZEN RF setpoints — derived ONCE from the old linac_sec1 exit (the runtime crest-finding /
-  # ΔE-target field-scale loop is dropped). CREST_PHASE_DEG is the bunch-averaged relativistic
-  # crest base phase; FIELD_SCALE is the field-map amplitude scale that hit the DE_TARGET_MEV.
-  CREST_PHASE_DEG: 156.5857            # frozen on-crest base phase [deg]
-  FIELD_SCALE: 9.307480e+01            # frozen field-map amplitude scale
-  DE_TARGET_MEV: 28.3                  # reference only — per-section ΔE target [MeV] the scale was derived to hit
+  # ⚠ TODO — DERIVE. CREST_PHASE_DEG / FIELD_SCALE below are PLACEHOLDERS copied from section 3.
+  # Section 4 (CU 5) is a new WarpX section: its setpoints MUST be re-derived once the upstream
+  # chain through section 3 is run. Crest: `python sim/autophase.py 4`. Field scale: re-fit to
+  # DE_TARGET_MEV (the old per-section ΔE-target loop). Until then section-4 output is NOT physical.
+  CREST_PHASE_DEG: 177.0000            # PLACEHOLDER (section 3 value) — re-derive for section 4
+  FIELD_SCALE: 9.179702e+01            # PLACEHOLDER (section 3 value) — re-derive for section 4
+  DE_TARGET_MEV: 43.7                  # reference — CU 5 ΔE target [MeV] (51 MeV @15 MW · √(11/15))
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
   F_RF: 2856.0e6                       # SLAC S-band [Hz]
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW); report-only here

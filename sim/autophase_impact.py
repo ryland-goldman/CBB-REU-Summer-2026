@@ -1,18 +1,19 @@
 """
-Auto-phase the linac 4-8 (Impact-T) RF sections for the POSITRON beam and rewrite the YAML.
+Auto-phase the linac 5-8 (Impact-T) RF sections for the POSITRON beam and rewrite the YAML.
 
-A standalone tool — NOT wired into the chain. The frozen per-section crest_phase_deg in
-config/linac4-8.yaml were derived for ELECTRONS; positrons (q=+e) crest ~180 deg away and their
-lower injection energy/velocity shifts the ABSOLUTE Impact-T theta0 (referenced to t=0), so the
-crest must be re-found on the real deck with the positron core injected. For each section it builds
-the deck TRUNCATED to that section (earlier sections pinned to their already-found crest), scans the
-section base phase, and takes the bunch-averaged exit-energy maximum (coarse -> fine -> parabolic).
+A standalone tool — NOT wired into the chain. The per-section crest_phase_deg in
+config/linac5-8.yaml are STALE placeholders (old electron-derived sections-4-8 values, on a
+different deck); positrons (q=+e) crest ~180 deg away and their lower injection energy/velocity
+shifts the ABSOLUTE Impact-T theta0 (referenced to t=0), so the crest must be re-found on the real
+deck with the positron core injected. For each section it builds the deck TRUNCATED to that section
+(earlier sections pinned to their already-found crest), scans the section base phase, and takes the
+bunch-averaged exit-energy maximum (coarse -> fine -> parabolic).
 
 Runtime caveat: this drives Impact-T O(sections x scan-points) times — minutes to tens of minutes.
-DO NOT wire it into main(). See docs/linac4-8.md (Positron mode).
+DO NOT wire it into main(). See docs/linac5-8.md (Positron mode).
 
-  python sim/autophase_impact.py            # phase sections 4 5 6 7 8, rewrite the YAML
-  python sim/autophase_impact.py 4 5        # only sections 4-5
+  python sim/autophase_impact.py            # phase sections 5 6 7 8, rewrite the YAML
+  python sim/autophase_impact.py 5 6        # only sections 5-6
   python sim/autophase_impact.py --dry-run  # scan + report, write nothing
 """
 
@@ -29,7 +30,7 @@ import numpy as np
 
 from sim.helpers.tools import C_LIGHT, prepare_env
 
-CONFIG = "config/linac4-8.yaml"
+CONFIG = "config/linac5-8.yaml"
 WORKDIR = "logs/diags/autophase_impact"
 
 # Scan speed knobs. Impact-T (SC off) cost ~ Np x Ntstep per run, x (scan points) per section, x
@@ -46,9 +47,9 @@ FEW_SURVIVORS_FRAC = 0.10    # WARN below this surviving fraction (crest maximis
 
 
 def _load_driver():
-    """Import sim/linac4-8.py (hyphenated, not a normal module name) for its deck builders so the
+    """Import sim/linac5-8.py (hyphenated, not a normal module name) for its deck builders so the
     deck, header, and positron-core handoff are byte-identical to what the driver runs."""
-    path = os.path.join(os.path.dirname(__file__), "linac4-8.py")
+    path = os.path.join(os.path.dirname(__file__), "linac5-8.py")
     spec = importlib.util.spec_from_file_location("linac48_driver", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -154,7 +155,7 @@ def main():
         shutil.rmtree(WORKDIR)
     os.makedirs(WORKDIR, exist_ok=True)
 
-    P_in, info = drv.load_sec3_core(cfg)
+    P_in, info = drv.load_converter_core(cfg)
     ke_in = info["ke_in_mev"]
     if P_in.n_particle > N_SCAN:                              # the mean exit-KE crest converges fast;
         sel = np.random.default_rng(0).choice(P_in.n_particle, N_SCAN, replace=False)
@@ -165,7 +166,7 @@ def main():
     # bore before any section ends (no capture optic modelled here), so a divergent bunch yields zero
     # survivors at every phase. Pencil-ise it -- redirect each particle's momentum onto +z (preserving
     # its energy) and centre it on-axis -- so the scan measures pure energy gain, exactly as the WarpX
-    # autophase.py 1D longitudinal model does. The full divergent beam is what sim/linac4-8.py runs.
+    # autophase.py 1D longitudinal model does. The full divergent beam is what sim/linac5-8.py runs.
     pmag = np.sqrt(np.asarray(P_in.px) ** 2 + np.asarray(P_in.py) ** 2 + np.asarray(P_in.pz) ** 2)
     P_in.x = np.zeros(n_in)
     P_in.y = np.zeros(n_in)
@@ -233,7 +234,7 @@ def main():
     for idx, old, new in changes:
         print(f"Wrote {CONFIG}: sec {idx + first} crest_phase_deg {old} -> {new}")
     if changes:
-        print("\nSetpoints updated. Re-run sim/linac4-8.py to propagate the new crests.")
+        print("\nSetpoints updated. Re-run sim/linac5-8.py to propagate the new crests.")
 
 
 if __name__ == "__main__":

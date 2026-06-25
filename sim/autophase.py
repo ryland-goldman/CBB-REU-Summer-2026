@@ -1,12 +1,12 @@
 """
-Auto-phase the linac 1-3 RF cavities and rewrite the section YAMLs.
+Auto-phase the linac 1-4 RF cavities and rewrite the section YAMLs.
 
 A standalone tool — NOT wired into the chain. It re-derives the frozen RF crest phase
-(CREST_PHASE_DEG for sections 2/3, PHASE_DEG for section 1) the linac driver consumes, then
+(CREST_PHASE_DEG for sections 2/3/4, PHASE_DEG for section 1) the linac driver consumes, then
 writes it back into config/linacN.yaml (comments preserved). Run it whenever an upstream change
 shifts the beam and the hardcoded setpoints go stale.
 
-Method: read the section's upstream exit beam exactly as sim/linac1-3.py does (same kinematics,
+Method: read the section's upstream exit beam exactly as sim/linac1-4.py does (same kinematics,
 same iris scrape for section 1), reproduce the driver's arrival-referenced phase convention
 phi = -omega*(Z_STRUCT - z_center)/v_beam + base_deg, and RK4-integrate the WHOLE bunch
 longitudinally through the real on-axis SLAC quadrature field over a phase scan. The crest is the
@@ -14,11 +14,11 @@ base phase maximising the bunch-averaged exit energy (parabolic-refined). Integr
 bunch — not a centroid proxy — is essential: the captured core spans ~140 deg of RF, so its
 phase-averaged crest sits ~70 deg from the single-particle crest (validated against a WarpX phase
 scan). This is a 1D longitudinal model (no transverse / space-charge back-reaction): exact for the
-relativistic sections 2/3; for the 150 keV capture section 1 it is the max-energy phase, which a
+relativistic sections 2/3/4; for the 150 keV capture section 1 it is the max-energy phase, which a
 deliberately off-crest bunching setpoint would differ from.
 
-  python sim/autophase.py            # phase sections 1 2 3, rewrite the YAMLs
-  python sim/autophase.py 2 3        # only the relativistic sections
+  python sim/autophase.py            # phase sections 1 2 3 4, rewrite the YAMLs
+  python sim/autophase.py 2 3 4      # only the relativistic sections
   python sim/autophase.py --dry-run  # scan + report, write nothing
 
 No WarpX is launched; only the existing logs/diags/ dumps + the GDF field maps are read.
@@ -39,10 +39,10 @@ from sim.helpers.tools import (
     C_LIGHT as c, E_CHARGE as q_e, M_E as m_e, MC2_KEV, prepare_env)
 from sim.helpers.buildfields import onaxis_quadrature_ez, Z_STRUCT, V1KW_KEV
 
-CONFIG = {N: f"config/linac{N}.yaml" for N in (1, 2, 3)}
-# The crest the driver applies is base_deg; for section 1 that knob is PHASE_DEG, for 2/3 it is
+CONFIG = {N: f"config/linac{N}.yaml" for N in (1, 2, 3, 4)}
+# The crest the driver applies is base_deg; for section 1 that knob is PHASE_DEG, for 2/3/4 it is
 # CREST_PHASE_DEG (with PHASE_DEG kept as the detune-from-crest = 0).
-PHASE_KEY = {1: "PHASE_DEG", 2: "CREST_PHASE_DEG", 3: "CREST_PHASE_DEG"}
+PHASE_KEY = {1: "PHASE_DEG", 2: "CREST_PHASE_DEG", 3: "CREST_PHASE_DEG", 4: "CREST_PHASE_DEG"}
 
 
 def _num(v):
@@ -60,9 +60,9 @@ def _num(v):
 
 
 def _load_driver():
-    """Import sim/linac1-3.py (hyphenated, not a normal module name) for its beam loaders so the
+    """Import sim/linac1-4.py (hyphenated, not a normal module name) for its beam loaders so the
     centroid kinematics are byte-identical to what the driver injects."""
-    path = os.path.join(os.path.dirname(__file__), "linac1-3.py")
+    path = os.path.join(os.path.dirname(__file__), "linac1-4.py")
     spec = importlib.util.spec_from_file_location("linac13_driver", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -73,8 +73,8 @@ SUBSAMPLE = 2048            # macroparticles integrated per phase (bunch-average
 
 
 def _load_bunch(drv, N, p):
-    """Section N's injected beam (matching sim/linac1-3.py: section 1 reads the iris-scraped
-    injector handoff; 2/3 read the previous section's captured-core exit), subsampled for the
+    """Section N's injected beam (matching sim/linac1-4.py: section 1 reads the iris-scraped
+    injector handoff; 2/3/4 read the previous section's captured-core exit), subsampled for the
     scan. Returns (z [m], u = |gamma*beta| per particle, w, z_center [m], v_beam [m/s],
     ke_mean [keV], scale). `scale` is the field-map amplitude the driver would apply."""
     if N == 1:
@@ -185,9 +185,9 @@ def set_yaml_param(path, key, value_str):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     dry = "--dry-run" in sys.argv or "-n" in sys.argv
-    sections = [int(a) for a in args] if args else [1, 2, 3]
-    if any(N not in (1, 2, 3) for N in sections):
-        sys.exit("usage: python sim/autophase.py [1] [2] [3] [--dry-run]")
+    sections = [int(a) for a in args] if args else [1, 2, 3, 4]
+    if any(N not in (1, 2, 3, 4) for N in sections):
+        sys.exit("usage: python sim/autophase.py [1] [2] [3] [4] [--dry-run]")
 
     prepare_env()                                             # chdir repo root; no WarpX import
     drv = _load_driver()

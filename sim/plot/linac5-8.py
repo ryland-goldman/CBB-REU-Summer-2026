@@ -1,14 +1,14 @@
 """
-Figures for the Cornell Linac sections 4-8 stage (Impact-T, sim/linac4-8.py).
+Figures for the Cornell Linac sections 5-8 stage (Impact-T, sim/linac5-8.py).
 
-Reads logs/diags/linac4-8/main/{particles, injection_summary.json} and writes PNGs to
-logs/plots/linac4-8/: evolution_vs_z (mean KE / eps_n,x / sigma_x / surviving charge), energy_spread,
+Reads logs/diags/linac5-8/main/{particles, injection_summary.json} and writes PNGs to
+logs/plots/linac5-8/: evolution_vs_z (mean KE / eps_n,x / sigma_x / surviving charge), energy_spread,
 section_gains (per-section achieved vs frozen-target ΔE bars), and from the exit particle slice
 energy_spectrum, phase_space_z_KE (longitudinal) and transverse_r_pr. The vs-z curves come from the
 summary's stat_vs_z table (Impact-T I.stat); a sparse particle-slice fallback covers legacy dumps.
 
-main() runs ONLY plotting (sim/linac4-8.py must have been run first). Run as
-`python sim/plot/linac4-8.py` (hyphenated name is not importable).
+main() runs ONLY plotting (sim/linac5-8.py must have been run first). Run as
+`python sim/plot/linac5-8.py` (hyphenated name is not importable).
 """
 
 import os
@@ -28,8 +28,8 @@ from sim.helpers.loadparticles import make_particle_group
 from sim.plot import common as px
 
 MC2 = MC2_EV / 1e6                  # electron rest energy [MeV]
-DIAG_DIR = "logs/diags/linac4-8/main"
-RESULTS = "logs/plots/linac4-8"
+DIAG_DIR = "logs/diags/linac5-8/main"
+RESULTS = "logs/plots/linac5-8"
 
 
 def _species(ts):
@@ -117,7 +117,7 @@ def _vs_z(diag, summ):
 def _achieved_de(calib, z, ke):
     """Per-section achieved ΔE [MeV] from the vs-z KE curve: KE at each section's exit z minus KE
     at its entry z. The section z-edges come from the calibration table (`z_entry_m`/`z_exit_m`,
-    the real deck geometry written by sim/linac4-8.py); a legacy summary without them falls back to
+    the real deck geometry written by sim/linac5-8.py); a legacy summary without them falls back to
     an even split of the z-grid (coarse -- it mis-attributes gain across the inter-section drifts).
     """
     n = len(calib)
@@ -168,12 +168,12 @@ def _save_exit_figures(x, y, z, ux, uy, uz, w):
     hb = ax.hexbin(zc_mm, ke, gridsize=70, cmap="viridis", mincnt=1)
     fig.colorbar(hb, ax=ax, label="macroparticles / bin")
     ax.set_xlabel("z - <z>  [mm]"); ax.set_ylabel("kinetic energy  [MeV]")
-    ax.set_title("linac4-8 exit longitudinal phase space  (z, KE)")
+    ax.set_title("linac5-8 exit longitudinal phase space  (z, KE)")
     fig.savefig(os.path.join(RESULTS, "phase_space_z_KE.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
     fig = px.transverse_rpr(x, y, ux, uy, w,
-                            title="linac4-8 exit transverse phase space  (r, p_r)",
+                            title="linac5-8 exit transverse phase space  (r, p_r)",
                             p_unit="MeV")
     fig.savefig(os.path.join(RESULTS, "transverse_r_pr.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -187,7 +187,7 @@ def main():
 
     vs = _vs_z(diag, summ)
     if vs is None:
-        print(f"plot linac4-8: no stat_vs_z and no usable dumps in {diag} -- skipping.",
+        print(f"plot linac5-8: no stat_vs_z and no usable dumps in {diag} -- skipping.",
               flush=True)
         return
     z, ke, dke, enx, eny, sx, sy, charge = vs
@@ -196,7 +196,7 @@ def main():
     # 1) beam evolution vs z: mean KE / eps_n,x / sigma_x (+ surviving charge when available)
     fig = px.evolution_vs_z(
         z, ke, enx * 1e6, sx * 1e3, charge_pc=charge, ke_unit="MeV",
-        title=f"linac4-8 beam evolution (sections 4-8, on-crest, {power_mw:g} MW)",
+        title=f"linac5-8 beam evolution (sections 5-8, on-crest, {power_mw:g} MW)",
         notes={"emit": "quads OFF: eps_n rises ~2.4x -- a fort.10N diagnostic artifact, not physical",
                "sigma": "quads OFF: no focusing, placeholder optics, NOT predictive",
                "charge": "surviving core charge (macro count x q/macro); quads OFF -> aperture loss"})
@@ -207,7 +207,7 @@ def main():
     fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.6, 6.2), constrained_layout=True, sharex=True)
     a1.plot(z, dke, "-o", ms=3, color="C5")
     a1.set_ylabel("sigma_KE [MeV]")
-    a1.set_title("linac4-8: energy spread (absolute grows, relative shrinks)")
+    a1.set_title("linac5-8: energy spread (absolute grows, relative shrinks)")
     a1.grid(alpha=0.3)
     rel = np.where(ke > 0, dke / ke * 100.0, np.nan)
     a2.plot(z, rel, "-o", ms=3, color="C6")
@@ -220,7 +220,7 @@ def main():
     # 3) per-section achieved vs frozen-target ΔE
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
     if calib:
-        names = [c.get("name", f"sec{c['index'] + 4}") for c in calib]
+        names = [c.get("name", f"sec{c['index'] + 5}") for c in calib]
         tgt = [c.get("target_de_mev", np.nan) for c in calib]
         ach = _achieved_de(calib, z, ke)
         xi = np.arange(len(calib))
@@ -230,7 +230,7 @@ def main():
         ax.set_xticks(xi)
         ax.set_xticklabels(names, rotation=30, ha="right", fontsize=8)
         ax.set_ylabel("dE per section [MeV]")
-        ax.set_title("linac4-8: per-section gain -- frozen target vs achieved")
+        ax.set_title("linac5-8: per-section gain -- frozen target vs achieved")
         ax.legend(fontsize=8)
     else:
         ax.text(0.5, 0.5, "no calibration table in injection_summary.json",
@@ -250,7 +250,7 @@ def main():
                 os.remove(p)
 
     last_ke = f"{ke[-1]:.1f} MeV" if len(ke) else "n/a"
-    print(f"plot linac4-8: wrote figures to {RESULTS}/ "
+    print(f"plot linac5-8: wrote figures to {RESULTS}/ "
           f"({len(z)} vs-z points, exit <KE> {last_ke}).", flush=True)
 
 
