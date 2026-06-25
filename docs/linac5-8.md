@@ -76,8 +76,10 @@ These setpoints were calibrated on-crest at the Balanced operating point (11 MW)
 operating-point artifact, not first-principles values. There are **no per-run validation gates**.
 
 > **The crests are autophased in the chain.** `sim/main.py` runs `sim/autophase_impact.py` before
-> this stage (the chain's slow step), re-deriving every section's `crest_phase_deg` for the positron
-> beam on the section-5-start deck and rewriting the YAML. The shipped values are only the seed for a
+> this stage, re-deriving every section's `crest_phase_deg` for the positron beam on the
+> section-5-start deck and rewriting the YAML. It is a **numerical** model (~30 s of pure numpy, no
+> Impact-T launched): it RK4-integrates the pencil-ised positron core through the exact on-axis Ez it
+> reconstructs from the rfdata4-7 Fourier shapes. The shipped values are only the seed for a
 > standalone run; if you run `sim/linac5-8.py` alone on a changed upstream beam, run
 > `sim/autophase_impact.py` first (see *Positron mode*).
 
@@ -196,6 +198,26 @@ follow from the positron species.
   section 5** (section 4 is a WarpX stage upstream of the converter). `sim/main.py` therefore runs
   **`sim/autophase_impact.py`** *after* the converter and *before* `sim/linac5-8.py` to re-derive
   every section's crest for the positron beam and rewrite `config/linac5-8.yaml`.
+
+- **How the autophase works (numerical, no Impact-T).** `sim/autophase_impact.py` is a 1D
+  longitudinal model — the analog of the WarpX `sim/autophase.py`. It reconstructs each TW section's
+  on-axis Ez from the rfdata4-7 Fourier shapes (matching `impact.fieldmaps.ele_field` to float noise:
+  the 4-line +0/+30/+90/+0 superposition, the 1/sin(β₀d) body scale, the absolute `cos(2πft + θ0)`
+  phase), places the sections at the real deck z (sections + real-length zero-K1 quad + drift, so the
+  cumulative arrival time the absolute θ0 depends on is correct), pencil-ises the positron core
+  (momentum onto +z, on-axis — the bare ~600 mrad divergence would otherwise scrape before any
+  section ends), and RK4-integrates the whole bunch through a phase scan (coarse → fine → parabolic),
+  pinning earlier sections to their found crest. ~30 s of numpy versus the old minutes-to-tens-of-
+  minutes Impact-T scan, with no physics lost (the Impact-T scan was already pencil/SC-off/quads-off).
+
+- **Crest vs reported energy.** The numeric crests match Impact-T's (re-derived values agree with the
+  previously Impact-T-derived YAML crests to ~1°). The per-section `⟨KE⟩` the tool prints is a **model
+  energy used only to locate the crest** — its magnitude is ~1.7× Impact-T's actual gain, a *constant*
+  offset between `ele_field` and the Fortran Impact-T field. A constant field-scale offset does not
+  move the argmax over phase, so the crest is unaffected; the stage energy is what `sim/linac5-8.py`
+  reports, not this model number. `sim/autophase_impact.py --verify` confirms the crest directly with
+  a tight Impact-T phase scan (crest ± δ on the last phased section), which is immune to the amplitude
+  offset.
 
 - **Standalone runs.** If you invoke `sim/linac5-8.py` alone on a changed upstream beam, run
   `sim/autophase_impact.py` first — otherwise the shipped crest seeds may be off-crest (decelerating

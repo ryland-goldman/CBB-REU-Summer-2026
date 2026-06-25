@@ -75,8 +75,9 @@ python sim/plot/linac1-4.py 2                   # a linac section's figures (fro
   per-section `crest_phase_deg` table). The stage **drivers apply them directly** — no driver-internal
   crest-finding. But `sim/main.py` runs an **autophase step before each linac stage** that re-derives
   that stage's crest from the just-produced upstream dump and rewrites the YAML in place
-  (`sim/autophase.py <N>` for WarpX 1–4, cheap; `sim/autophase_impact.py` for Impact-T 5–8, the slow
-  step). So a full-chain run self-calibrates the crests; a **standalone** stage run (`python
+  (`sim/autophase.py <N>` for WarpX 1–4; `sim/autophase_impact.py` for Impact-T 5–8). Both are
+  numerical 1D-longitudinal models (RK4 through the exact on-axis Ez, no WarpX/Impact-T launched, a
+  few-to-~30 s each). So a full-chain run self-calibrates the crests; a **standalone** stage run (`python
   sim/linac1-4.py 2`) uses the YAML value as-is, so re-run the matching autophase first if the
   upstream beam changed. **`FIELD_SCALE` is NOT autophased** — re-fit it to `DE_TARGET_MEV` by hand
   when retuning. The Impact-T per-section crest is *absolute* (`theta0_deg`), valid only for the deck
@@ -182,7 +183,9 @@ log `logs/pipeline/log_<date>.log`; the progress bar (stderr) stays on the termi
   in the frozen per-section `field_scale`; it accelerates the **converter positron beam** (`q=+e`,
   `Bcharge=+1`); `theta0_deg` is **absolute** so each section's crest is a distinct frozen number
   (and depends on deck geometry — keep the real-length quads); `sim/main.py` autophases the
-  per-section crests for the positron beam each run (`sim/autophase_impact.py`, the chain's slow step);
+  per-section crests for the positron beam each run (`sim/autophase_impact.py`, a numerical 1D model —
+  finds the crest correctly; its reported `⟨KE⟩` is ~1.7× Impact-T's gain, an `ele_field`-vs-Fortran
+  amplitude offset that does not move the crest);
   SC off, quads off (K1=0); transmission measured from the **macro count before** re-imposing charge;
   `ParticleGroup.species` is `"electron"` (singular) but openPMD readers key `"electrons"` (plural);
   `ParticleGroup.write()` emits a viewer-incompatible openPMD — the handoff uses
