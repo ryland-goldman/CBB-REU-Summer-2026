@@ -22,9 +22,28 @@ physics:
                                 # `python sim/converter.py N` overrides this for a quick test
   rng_seed: 0                   # deterministic (g4bl also seeds its RNG per EventID)
 
+# Capture solenoid: a real current coil around/after the target that focuses the diverging positrons
+# before the sampling plane (the high-field-solenoid "capture optic" of a real e+ source). Modeled as
+# a g4bl `coil` + `solenoid`, so g4bl computes the full Maxwellian field -- including the END FRINGE
+# (the radial B_r at the coil ends that gives the solenoid its lens action). The conductor current
+# density is auto-solved (sim/converter.py) so the CENTRAL (peak) field equals `b_tesla`; the field
+# sags toward the ends and fringes out past them. `enabled: false` reverts to the field-free run.
+solenoid:
+  enabled: true
+  b_tesla: 5.0                  # target PEAK (central) axial field [T]; current density auto-solved
+  length_mm: 1000.0            # coil length along z [mm] (1 m)
+  inner_radius_mm: 50.0        # coil bore inner radius [mm] (clears the target+beam; field fills it)
+  outer_radius_mm: 100.0       # coil winding outer radius [mm] (sets current density for b_tesla)
+  start_z_mm: 0.0              # coil upstream end rel. to the target front face [mm]
+  exit_drift_mm: 300.0         # field-free drift past the coil exit to the sampling plane [mm]
+                               # (clears the exit fringe -- ~2% of peak by here -- so the handoff is
+                               # field-free with the fringe focusing fully applied; longer = bigger
+                               # beam, since the now-parallel beam expands over the drift)
+
 # Output sampling plane (a thin virtualdetector just past the target back face) + selection.
 detector:
-  back_clearance_mm: 3.0        # gap between the target back face and the sampling plane [mm]
+  back_clearance_mm: 3.0        # gap from the downstream-most element to the sampling plane [mm]
+                                # (the capture-solenoid exit when on, else the target back face)
   radius_mm: 1000.0             # accept the full forward shower
   min_ke_mev: 1.0               # output KE threshold [MeV] (drop the soft shower debris)
   forward_only: true            # keep Pz > 0 tracks (drop backscatter toward the gun)

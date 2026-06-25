@@ -47,11 +47,11 @@ deck:
 # re-derived for positrons (q=+e flips the crest ~180 deg and the lower injection energy shifts it)
 # via sim/autophase_impact.py before a positron run is physical. Do not trust positron output until.
 sections:
-  - {name: "CU 5",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 25.0, field_scale: 2.019127e7, crest_phase_deg: 68.7787}    # sec 4
-  - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 353.6304}   # sec 5
-  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 68.1809}    # sec 6
-  - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 1.998574e7, crest_phase_deg: 357.6685}   # sec 7
-  - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, field_scale: 1.997594e7, crest_phase_deg: 184.3342}   # sec 8
+  - {name: "CU 5",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 25.0, field_scale: 2.019127e7, crest_phase_deg: 179.2507}    # sec 4
+  - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 105.0000}   # sec 5
+  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 177.6300}    # sec 6
+  - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 1.998574e7, crest_phase_deg: 105.0000}   # sec 7
+  - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, field_scale: 1.997594e7, crest_phase_deg: 293.8463}   # sec 8
 
 # Vendored S-band TW template field shapes (committed at fieldmaps/rfdata/). The 4-line solrf
 # superposition reuses these verbatim: entrance rfdata4 (+0°), body_1 rfdata5 (+30°, /sin(beta0 d)),

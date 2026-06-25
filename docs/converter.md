@@ -70,6 +70,36 @@ the geometry and reports the yield it gives rather than optimising it — see th
 
 ---
 
+## Capture solenoid (the `solenoid:` block)
+
+The positrons leaving the back face are **high-divergence** — a converter sprays them over a large
+solid angle — so a real e+ source immerses the target exit in a strong axial magnetic field to
+re-collect them into the downstream acceptance (the **capture optic**: a high-field solenoid, or an
+adiabatic matching device). This stage models it as a **real current coil** of default **5 T peak
+over 1 m**, starting at the target front face so the field surrounds the radiator and the drift to
+the sampling plane.
+
+It is realised in the g4bl deck as a `coil` + `solenoid`, so g4bl computes the **full Maxwellian
+field**, including the **end fringe** — the radial `B_r = -(r/2)·∂B_z/∂z` where the field ramps down
+at each coil end. That fringe is what gives a solenoid its lens action: `B_r` crossed with the
+azimuthal velocity is the inward focusing kick. (A hard-edge uniform-`B_z` element would have *no*
+`B_r` and so no fringe focusing at all — it would bound the beam *radius* but leave the divergence
+untouched.) The conductor **current density is auto-solved** (`coil_current_density`, the exact
+thick-solenoid centre formula, matched to g4bl's coil to < 1e-5) so the **central (peak)** field
+equals `b_tesla`; the field sags to ~half at each coil end and fringes out beyond. The peak field,
+length, coil bore/winding radii, upstream start, and the post-coil drift are all set in
+`config/converter.yaml`; `enabled: false` reverts to the field-free run.
+
+The sampling plane sits `exit_drift_mm` **past the coil exit**, in field-free space, so the exit
+fringe has fully acted before the handoff. There is an inherent **divergence-vs-size trade**: the
+fringe converts the positrons' large divergence into a more parallel beam (emittance is conserved,
+not reduced), so as the now-parallel beam drifts past the coil it grows in radius. A longer
+`exit_drift_mm` gives a more field-free handoff but a larger beam. The coil bounds the captured
+phase space and supplies the fringe focusing; it does **not** reduce the emittance, so it makes no
+claim to an absolute capture efficiency.
+
+---
+
 ## Precision settings (the `physics:` block)
 
 Three knobs in `config/converter.yaml`'s `physics:` block set the Geant4 simulation accuracy. Each
@@ -205,11 +235,13 @@ documented here; the *values* are run output and are not quoted.)
     sign flips the accelerating phase, and the much lower injection energy/velocity shifts the
     arrival phase further). Run **`sim/autophase_impact.py`** *after* the converter and *before*
     `sim/linac4-8.py` to re-derive them. (See the "Positron mode" section of `docs/linac4-8.md`.)
-  - **Even re-phased, the absolute transmission/yield are not representative.** A real positron
-    source places a **capture optic** (an adiabatic matching device / high-field solenoid) right at
-    the target exit to collect the divergent positrons into the linac acceptance. That optic is **not
-    modelled here**, so the transmission and net yield through linac4-8 are lower bounds / qualitative
-    only — the deliverable is the converter physics (spectrum, yield, divergence), not an absolute
-    accepted-positron number.
+  - **Capture optic.** A real positron source places a **capture optic** (an adiabatic matching
+    device / high-field solenoid) right at the target exit to collect the divergent positrons into
+    the linac acceptance. This stage models it as a **uniform axial capture solenoid** (the
+    `solenoid:` block — default 5 T over 1 m, starting at the target front face) that focuses the
+    positrons before the sampling plane; set `enabled: false` to recover the bare field-free run. It
+    is a uniform-field idealisation, not a tapered AMD, so the accepted transmission/yield through
+    linac4-8 are still qualitative — the deliverable is the converter physics (spectrum, yield,
+    divergence), not an absolute accepted-positron number.
 - **g4bl is an external binary.** G4beamline 3.08 is invoked as a separate process (`g4bl`), not a
   pip/conda dependency — it must be installed and on `PATH` independently of the `CBB` environment.
