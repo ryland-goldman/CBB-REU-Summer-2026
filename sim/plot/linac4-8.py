@@ -2,7 +2,7 @@
 Figures for the Cornell Linac sections 4-8 stage (Impact-T, sim/linac4-8.py).
 
 Reads logs/diags/linac4-8/main/{particles, injection_summary.json} and writes PNGs to
-logs/plots/linac4-8/: evolution_vs_z (mean KE / eps_n,x / sigma_x, 3 panels), energy_spread,
+logs/plots/linac4-8/: evolution_vs_z (mean KE / eps_n,x / sigma_x / surviving charge), energy_spread,
 section_gains (per-section achieved vs frozen-target ΔE bars), and from the exit particle slice
 energy_spectrum, phase_space_z_KE (longitudinal) and transverse_r_pr. The vs-z curves come from the
 summary's stat_vs_z table (Impact-T I.stat); a sparse particle-slice fallback covers legacy dumps.
@@ -94,21 +94,24 @@ def _arr(rows, key):
 
 
 def _vs_z(diag, summ):
-    """(z, ke, dke, enx, eny, sx, sy) [m / MeV / mm-as-m units kept SI] from the summary's
-    stat_vs_z (preferred) or the particle slices. Returns None if neither is usable.
+    """(z, ke, dke, enx, eny, sx, sy, charge_pc) [m / MeV / mm-as-m units kept SI; charge pC] from
+    the summary's stat_vs_z (preferred) or the particle slices. `charge_pc` is None when the summary
+    predates the surviving-charge column. Returns None if neither source is usable.
     """
     svz = summ.get("stat_vs_z", {})
     if svz.get("z_m"):
         z = np.array(svz["z_m"])
+        charge = np.array(svz["charge_pc"]) if svz.get("charge_pc") else None
         return (z, np.array(svz["ke_mev"]), np.array(svz["sigma_ke_mev"]),
                 np.array(svz["norm_emit_x"]), np.array(svz["norm_emit_y"]),
                 np.array(svz["sigma_x_m"]),
-                np.array(svz.get("sigma_y_m", svz["sigma_x_m"])))
+                np.array(svz.get("sigma_y_m", svz["sigma_x_m"])), charge)
     rows = _read_slices(diag)
     if not rows:
         return None
     return (_arr(rows, "z"), _arr(rows, "ke"), _arr(rows, "dke"),
-            _arr(rows, "enx"), _arr(rows, "eny"), _arr(rows, "sx"), _arr(rows, "sy"))
+            _arr(rows, "enx"), _arr(rows, "eny"), _arr(rows, "sx"), _arr(rows, "sy"),
+            _arr(rows, "q") * 1e12)
 
 
 def _achieved_de(calib, z, ke):
@@ -187,15 +190,16 @@ def main():
         print(f"plot linac4-8: no stat_vs_z and no usable dumps in {diag} -- skipping.",
               flush=True)
         return
-    z, ke, dke, enx, eny, sx, sy = vs
+    z, ke, dke, enx, eny, sx, sy, charge = vs
     power_mw = summ.get("power_mw", 11.0)
 
-    # 1) beam evolution vs z: mean KE / eps_n,x / sigma_x (3-panel, from stat_vs_z)
+    # 1) beam evolution vs z: mean KE / eps_n,x / sigma_x (+ surviving charge when available)
     fig = px.evolution_vs_z(
-        z, ke, enx * 1e6, sx * 1e3, ke_unit="MeV",
+        z, ke, enx * 1e6, sx * 1e3, charge_pc=charge, ke_unit="MeV",
         title=f"linac4-8 beam evolution (sections 4-8, on-crest, {power_mw:g} MW)",
         notes={"emit": "quads OFF: eps_n rises ~2.4x -- a fort.10N diagnostic artifact, not physical",
-               "sigma": "quads OFF: no focusing, placeholder optics, NOT predictive"})
+               "sigma": "quads OFF: no focusing, placeholder optics, NOT predictive",
+               "charge": "surviving core charge (macro count x q/macro); quads OFF -> aperture loss"})
     fig.savefig(os.path.join(RESULTS, "evolution_vs_z.png"), dpi=130)
     plt.close(fig)
 
@@ -239,6 +243,11 @@ def main():
     n_slice = _exit_slice(diag)
     if n_slice is not None:
         _save_exit_figures(*n_slice)
+    else:                                          # no exit beam (e.g. near-total loss): drop stale
+        for f in ("energy_spectrum", "phase_space_z_KE", "transverse_r_pr"):
+            p = os.path.join(RESULTS, f + ".png")
+            if os.path.exists(p):
+                os.remove(p)
 
     last_ke = f"{ke[-1]:.1f} MeV" if len(ke) else "n/a"
     print(f"plot linac4-8: wrote figures to {RESULTS}/ "

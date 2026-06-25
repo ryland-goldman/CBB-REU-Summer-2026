@@ -340,14 +340,16 @@ def load_sec3_core(cfg):
     return Pc, info
 
 
-def _stat_vs_z(I, n=200):
+def _stat_vs_z(I, n=200, q_core_C=None, n_in=None):
     """Thin Impact-T's I.stat(...) z-arrays to ~`n` samples for the vs-z plots (write_beam dumps
-    are off). sigma_KE uses sigma_gamma*mc2 (sigma_energy is not a stat key)."""
+    are off). sigma_KE uses sigma_gamma*mc2 (sigma_energy is not a stat key). With `q_core_C`/`n_in`
+    the surviving macro count (fort.28 `n_particle`, aligned on mean_z) becomes a charge[pC] vs z
+    column -- the aperture-loss curve."""
     zc = I.stat("mean_z")
     if len(zc) == 0:
         return {}
     idx = np.unique(np.linspace(0, len(zc) - 1, min(n, len(zc))).astype(int))
-    return {
+    out = {
         "z_m": zc[idx].tolist(),
         "ke_mev": (I.stat("mean_kinetic_energy")[idx] / 1e6).tolist(),
         "sigma_ke_mev": (I.stat("sigma_gamma")[idx] * MC2_MEV).tolist(),
@@ -356,6 +358,12 @@ def _stat_vs_z(I, n=200):
         "norm_emit_x": I.stat("norm_emit_x")[idx].tolist(),
         "norm_emit_y": I.stat("norm_emit_y")[idx].tolist(),
     }
+    npart = I.stat("n_particle")
+    if len(npart) == len(zc):                            # fort.28 cadence matches fort.18
+        out["n_particle"] = npart[idx].tolist()
+        if q_core_C is not None and n_in:
+            out["charge_pc"] = (npart[idx] / n_in * q_core_C * 1e12).tolist()
+    return out
 
 
 def _write_outputs(I, outdir, inj, species="electrons", charge=-Q_E):
@@ -367,6 +375,8 @@ def _write_outputs(I, outdir, inj, species="electrons", charge=-Q_E):
 
     slices = []
     for _name, pg in I.particles.items():
+        if _name == "initial_particles":                 # the injected beam (z~0), not an exit slice
+            continue
         if pg is None or pg.n_particle < 50:
             continue
         slices.append((float(pg["mean_z"]), pg))
@@ -487,7 +497,7 @@ def main():
         min_ke_mev_cut=core_info["min_ke_mev_cut"],
         # The frozen per-section calibration table (scale, crest phase, ΔE target).
         calibration=calib,
-        stat_vs_z=_stat_vs_z(I),
+        stat_vs_z=_stat_vs_z(I, q_core_C=q_core, n_in=n_in),
     )
     sp = str(cfg["beam"].get("species", "electrons"))
     _write_outputs(I, outdir, inj, species=sp,

@@ -155,6 +155,11 @@ def evolution_vs_z(z_m, ke, emit, sigma, charge_pc=None, ke_unit="keV", title=""
         ax.plot(z_mm[ok], y[ok], "o-", color=color, ms=3)
         ax.set_ylabel(ylab)
         ax.grid(alpha=0.3)
+        # Charge loss can span decades (aperture scrape): log-y when it does, else linear.
+        if key == "charge":
+            pos = y[ok][y[ok] > 0]
+            if pos.size and pos.max() / pos.min() > 20:
+                ax.set_yscale("log")
         if key in notes:
             ax.set_title(notes[key], fontsize=8)
     axs[-1].set_xlabel("beam position  z  [mm]")

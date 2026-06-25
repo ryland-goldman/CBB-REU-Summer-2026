@@ -32,8 +32,15 @@ from sim.helpers.tools import C_LIGHT, prepare_env
 CONFIG = "config/linac4-8.yaml"
 WORKDIR = "logs/diags/autophase_impact"
 
+# Scan speed knobs. Impact-T (SC off) cost ~ Np x Ntstep per run, x (scan points) per section, x
+# sections -- and each section re-tracks all earlier ones. These keep the crest exact while cutting
+# the per-run cost: the mean-energy crest converges with far fewer particles, and the positron core
+# is beta >= 0.979 so the old 0.6c Ntstep floor over-stepped ~1.8x.
+N_SCAN = 800                 # macroparticles tracked per phase (mean exit-KE crest converges fast)
+BETA_FLOOR = 0.95            # min beta for Ntstep sizing (core beta_min ~0.979 -> 0.95 stays safe)
+NTSTEP_MARGIN = 1.15         # steps headroom beyond the floor estimate
 COARSE_STEP_DEG = 30.0       # wide 0..360 scan resolution
-FINE_HALF_DEG = 15.0         # +-window about the coarse max
+FINE_HALF_DEG = 15.0         # +-window about the coarse max (= COARSE/2: brackets the unimodal peak)
 FINE_STEP_DEG = 5.0          # fine scan resolution
 FEW_SURVIVORS_FRAC = 0.10    # WARN below this surviving fraction (crest maximises the surviving core)
 
@@ -96,7 +103,7 @@ def _truncated_ntstep(drv, cfg, sections):
     Size it from the truncated length so the bunch clears the deck with margin."""
     _I, total_len, _bounds = drv.build_impact({**cfg, "sections": sections}, workdir=WORKDIR)
     dt = float(cfg["deck"]["dt"])
-    n = math.ceil(total_len / (0.6 * C_LIGHT * dt)) * 1.3     # 0.6c floor + 30% margin
+    n = math.ceil(total_len / (BETA_FLOOR * C_LIGHT * dt)) * NTSTEP_MARGIN
     return int(n)
 
 
@@ -149,6 +156,9 @@ def main():
 
     P_in, info = drv.load_sec3_core(cfg)
     ke_in = info["ke_in_mev"]
+    if P_in.n_particle > N_SCAN:                              # the mean exit-KE crest converges fast;
+        sel = np.random.default_rng(0).choice(P_in.n_particle, N_SCAN, replace=False)
+        P_in = P_in[sel]                                      # a subsample slashes per-run tracking cost
     n_in = int(P_in.n_particle)
 
     # Crest is a LONGITUDINAL quantity. The bare positron core's ~600 mrad divergence scrapes on the

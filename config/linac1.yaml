@@ -56,7 +56,7 @@ diagnostics:
 # Stage knobs with no WarpX-native home (read by sim/linac1-3.py).
 params:
   POWER_MW: 11.0                       # RF input power [MW]
-  PHASE_DEG: 348.4844                       # injection RF phase offset [deg]; crest is on-arrival (capture beam)
+  PHASE_DEG: 120.8109                       # injection RF phase offset [deg]; crest is on-arrival (capture beam)
   F_RF: 2856.0e6                       # SLAC S-band [Hz]
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW)
   CFL: 0.5                             # dt = CFL · Δz / v_inject
