@@ -218,9 +218,8 @@ def build_injector_fields():
     assert abs(v1j / 1e3 - V1J_KEV) < 0.5, (
         f"1-J gap voltage {v1j/1e3:.2f} kV drifted from V1J_KEV={V1J_KEV}")
 
-    # Gap parity: Ez EVEN, Er ODD, Bphi EVEN about the gap. Reversing the coupler orientation of a
-    # symmetric even-Ez gap inverts the driven polarity, equivalent to a +pi phase shift -- this is
-    # the injector's PREB2_REV_PHASE=pi, NOT a z-flip (a z-flip would invert only the odd Er).
+    # Gap parity: Ez EVEN, Er ODD, Bphi EVEN about the gap -- so reversing this symmetric gap is a
+    # +pi phase flip (the injector's PREB2_REV_PHASE=pi), NOT a z-flip (which inverts only odd Er).
     def _parity(arr):
         f = arr[::-1]
         denom = float(np.sqrt((arr * arr).sum() * (f * f).sum()))

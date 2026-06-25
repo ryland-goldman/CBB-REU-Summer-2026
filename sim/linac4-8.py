@@ -21,9 +21,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# OpenMP latches OMP_NUM_THREADS when its runtime loads (at `import numpy`); prepare_env()'s
-# later set is ignored, so a standalone run would oversubscribe the grid (slower). Pin it here,
-# first. OMP_THREADS overrides; main.py sets it in the child env.
+# Must precede `import numpy`: OpenMP latches OMP_NUM_THREADS at load, so prepare_env()'s later
+# set is ignored and the grid oversubscribes.
 os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
 
 import json
@@ -271,9 +270,8 @@ def build_impact(cfg, workdir=None):
     h["Nx"], h["Ny"], h["Nz"] = n, n, n
     h["Xrad"], h["Yrad"] = cfg["deck"]["xyrad_m"], cfg["deck"]["xyrad_m"]
     h["Perdlen"] = total_len + 1.0                       # > total lattice length
-    h["Bkenergy"] = 78.0e6                               # ref-energy header placeholder [eV]; lume-impact
-                                                         # resets it from initial_particles before the run
-                                                         # (NOT the absolute-theta0 phase reference)
+    h["Bkenergy"] = 78.0e6                               # placeholder [eV]; lume-impact resets it from
+                                                         # initial_particles -- NOT the theta0 phase ref
     h["Bfreq"] = cfg["rf"]["rf_freq_hz"]
     h["Bmass"] = MC2_EV
     h["Bcharge"] = -1.0

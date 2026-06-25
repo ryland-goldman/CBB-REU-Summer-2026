@@ -14,9 +14,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# OpenMP latches OMP_NUM_THREADS when its runtime loads (at `import numpy`); prepare_env()'s
-# later set is ignored, so a standalone run would oversubscribe this tiny grid (slower). Pin it
-# here, first. OMP_THREADS overrides; main.py sets it in the child env.
+# Must precede `import numpy`: OpenMP latches OMP_NUM_THREADS at load, so prepare_env()'s later
+# set is ignored and the tiny grid oversubscribes.
 os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
 
 import json
@@ -143,10 +142,8 @@ def main():
         if cur != 0.0:
             print(f"Solenoid {nm}: I={cur:g} A", flush=True)
 
-    # The printed `V_gap~` (= scale*V1J_KEV, the bare on-axis integral of |Ez|dz) is a transit-time-FREE
-    # upper bound: it omits the transit-time factor T<1, so it overstates the delivered kick by 1/T. It
-    # feeds only printed diagnostics + the transit/n_steps sizing (which carry their own margins); WarpX
-    # integrates the real time-varying field independently, so this is not a physics input.
+    # `V_gap~` (= scale*V1J_KEV) is a transit-time-free upper bound for diagnostics/step sizing only,
+    # not a physics input -- WarpX integrates the real time-varying field independently.
     # -- Prebuncher 1 (forward map): centroid arrival uses v_beam over z_centroid->gap --
     e1, b1, scale1, phi1, t_gap1 = cavity_drive(
         p["PREB1_KW"], p["Q_L_1"], F_RF, Z_GAP_CENTER_1, v_beam, p["PREB1_PHI_OFF"],
