@@ -119,7 +119,7 @@ fieldmaps/ gdf/ (GPT inputs, committed) · h5/ (built, git-ignored) · rfdata/ (
   `beam_kinematics`/`load_warpx_exit_bunch` (captured-core cut)/`upstream_exit_lab_z` (lab-z chain)/
   the multi-plane iris scrape `pipe_violator_ids`+`survivor_mask`/the Impact-T adapters
   `read_warpx_dump`+`write_openpmd_particles`).
-- `metrics.py` — pure-numpy beam moments (`rms_emit`, `screen_profile`).
+- `metrics.py` — pure-numpy beam moments (`screen_profile`).
 - `tqdmwrapper.py` — the Impact-T `fort.18` progress bar (WarpX stages get theirs from lume-warpx's
   `w.run(progress=…)`).
 

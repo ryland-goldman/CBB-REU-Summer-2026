@@ -6,20 +6,6 @@ applies unit scaling.
 import numpy as np
 
 
-def rms_emit(q, uq, w):
-    """Charge-weighted normalized rms emittance sqrt(<q^2><uq^2> - <q*uq>^2) for one plane."""
-    w = np.asarray(w, dtype=float)
-    sw = w.sum()
-    if sw <= 0 or len(q) < 2:
-        return 0.0
-    qm = np.average(q, weights=w)
-    um = np.average(uq, weights=w)
-    q2 = np.average((q - qm) ** 2, weights=w)
-    u2 = np.average((uq - um) ** 2, weights=w)
-    qu = np.average((q - qm) * (uq - um), weights=w)
-    return float(np.sqrt(max(q2 * u2 - qu * qu, 0.0)))
-
-
 def _group_bounds(sorted_ids):
     """Start/stop indices of each run of equal ids in an id-sorted array."""
     edges = np.flatnonzero(np.r_[True, sorted_ids[1:] != sorted_ids[:-1], True])

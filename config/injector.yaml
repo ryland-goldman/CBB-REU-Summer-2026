@@ -86,6 +86,7 @@ params:
   I_LENS0D: 0.0
   I_SOL0: 40.0
   I_LENS0E: 10.0
-  COLLIM_R: 0.009547                   # [m] iris/pipe radius (diagnostic collimated-handoff report)
+  # The iris/pipe RADIUS is sourced once from sim.helpers.buildfields.RMAX (the SLAC bore = the
+  # linac's physical scrape radius), so the injector report and the linac cut cannot diverge.
   COLLIM_Z: 1.922                      # [m] iris start
   COLLIMATE: true

@@ -25,6 +25,13 @@ simulation:
   max_steps: 2000
   time_step_size: 1.0e-12              # overridden (dt = CFL·dz/v_final)
   particle_shape: linear
+  warpx_random_seed: 1                 # seed WarpX's PIC RNG (the cathode is the only stage that draws
+                                       # from it: UniformFlux + PseudoRandom emission + gaussian_flux
+                                       # momenta). NOTE: this build's flux-injection draws are not fully
+                                       # reset by the seed, so q_emit_C still varies ~0.4% run-to-run —
+                                       # the cathode is NOT bit-reproducible; the seed pins what it can.
+                                       # Downstream stages re-inject a fixed beam (numpy RNG_SEED only).
+                                       # WarpX requires the seed > 0.
 
 species:
   - particle_type: electron

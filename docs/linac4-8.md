@@ -2,7 +2,7 @@
 
 The rest of the straight electron line to CHESS, after the WarpX linac sections 1-3: five S-band
 (2856 MHz) traveling-wave (TW) accelerating sections (CU 5 + CEA 4/5 + CU 3/4), chained into **one**
-Impact-T deck and integrated as one time-ordered beam. Reads the linac1-3 sec3 captured ~71 MeV
+Impact-T deck and integrated as one time-ordered beam. Reads the linac1-3 sec3 captured relativistic
 exit beam (the **3->4 boundary**) and accelerates the captured core on-crest through the five
 sections.
 
@@ -96,7 +96,7 @@ dE_target,i(P_op) = dE_table,i * sqrt(P_op / 15)
 
 ## Captured-core cut (handoff IN)
 
-The sec3 exit dump (the 3->4 boundary) is already the relativistic captured core (~71 MeV; sec1/2/3
+The sec3 exit dump (the 3->4 boundary) is already the relativistic captured core (sec1/2/3
 dropped their slipping tails upstream), so the `MIN_KE_MEV` cut (default 12 MeV => beta > 0.99917)
 now removes little -- it is kept as a **model-validity guard** (the rigid-crest no-slip TW model over
 the ~29 m line is valid only for the relativistic core). The core is downsampled to `Np` (reweighted

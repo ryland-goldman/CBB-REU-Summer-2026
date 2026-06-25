@@ -3,8 +3,9 @@ then the cross-stage figures.
 
 Each stage runs as a fresh subprocess (pywarpx binds one geometry per interpreter, so the
 WarpX stages MUST be isolated; Impact-T runs the same way for uniformity). A stage's sim and
-its plotter are separate subprocess calls. Subprocess stdout (engine + status output) is
-captured to logs/pipeline/log_<date>.log; stderr (the progress bar) stays on the terminal.
+its plotter are separate subprocess calls. The Impact-T stage and the plotters pipe stdout to
+logs/pipeline/log_<date>.log with the bar on stderr; the WarpX stages keep stdout on the terminal
+(lume-warpx puts its bar on fd1 and routes the engine output to the log via PIPELINE_LOG_PATH).
 
 All tuning lives in the per-stage config/*.yaml -- there is no config() override layer.
 Run from the repo root:  python sim/main.py
@@ -17,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import subprocess
 import time
 
-from sim.helpers.tools import REPO_ROOT, MC2_EV
+from sim.helpers.tools import REPO_ROOT, MC2_EV, E_CHARGE
 
 # (label, sim script, plot script, extra args, exit-diag dir, KE unit)
 STAGES = [
@@ -41,11 +42,16 @@ def say(msg=""):
         _lf.flush()
 
 
-def run_subprocess(argv, title, fatal=True):
+def run_subprocess(argv, title, fatal=True, warpx=False):
     """Run one stage step as a subprocess: stdout -> log, stderr (progress bar) -> terminal.
 
     `fatal=True` (the simulations) aborts the pipeline on a non-zero exit; `fatal=False` (the
     plotters) only warns -- a figure bug must not discard the completed physics, which is on disk.
+
+    `warpx=True`: lume-warpx puts its bar on a dup of fd1 (disabled if that fd is not a tty) and
+    redirects the engine's stdout/stderr to PIPELINE_LOG_PATH itself during the step -- so leave the
+    child's stdout on the terminal (fd1 must stay a tty for the bar) and hand it the log path instead
+    of piping stdout to the log here (which would make fd1 a file and silently disable the bar).
     """
     say(f"\n> {title}")
     if _lf is not None:
@@ -54,9 +60,12 @@ def run_subprocess(argv, title, fatal=True):
     env.setdefault("OMP_NUM_THREADS", env.get("OMP_THREADS", "1"))
     env["HDF5_USE_FILE_LOCKING"] = "FALSE"
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    out = None if (warpx and _lf is not None) else (_lf or None)
+    if warpx and _lf is not None:
+        env["PIPELINE_LOG_PATH"] = os.path.abspath(_lf.name)
     t0 = time.time()
     rc = subprocess.run([sys.executable, *argv], cwd=REPO_ROOT, env=env,
-                        stdout=(_lf or None), stderr=None).returncode
+                        stdout=out, stderr=None).returncode
     dt = time.time() - t0
     flag = "ok" if rc == 0 else f"FAILED (exit {rc})"
     say(f"  {flag}  {title}  ({dt:.1f} s)")
@@ -73,11 +82,13 @@ def beam_summary(diag, label, unit="keV"):
         from openpmd_viewer import OpenPMDTimeSeries
         ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
         its = list(ts.iterations)
-        q0, q0_label = None, "captured"
+        # "end-to-end" denominator = full upstream injected charge, so the % folds BOTH the
+        # captured-core cut and in-transit loss (the per-stage sidecars split them via core_frac).
+        q0, q0_label = None, "end-to-end capture"
         summ = os.path.join(diag, "injection_summary.json")
         sdata = json.load(open(summ)) if os.path.isfile(summ) else {}
         if sdata.get("q_injected_C") is not None:    # linac sidecars carry it; injector's does not
-            q0 = sdata["q_injected_C"] / 1.602176634e-19
+            q0 = sdata["q_injected_C"] / E_CHARGE
         elif its:
             q0_label = "transmitted"
             _, _, _, _, w0 = ts.get_particle(["z", "ux", "uy", "uz", "w"],
@@ -101,7 +112,7 @@ def beam_summary(diag, label, unit="keV"):
         cap = f"   {q0_label} {w.sum()/q0*100:.0f}%" if q0 else ""
         say(f"  {label}: <z> {zm*1e3:.0f} mm   sigma_z {sz*1e3:.3f} mm   "
             f"<KE> {km:.1f} {unit}   sigma_KE {dk:.2f} {unit}   "
-            f"q {w.sum()*1.602176634e-19*1e9:.3f} nC{cap}")
+            f"q {w.sum()*E_CHARGE*1e9:.3f} nC{cap}")
     except Exception as e:
         say(f"  ({label} summary unavailable: {e})")
 
@@ -120,7 +131,7 @@ def main():
     say("=" * 72)
 
     for label, sim, plot, args, _diag, _unit in STAGES:
-        run_subprocess([sim, *args], f"{label}: simulation")
+        run_subprocess([sim, *args], f"{label}: simulation", warpx=(label != "linac4-8"))
         run_subprocess([plot, *args], f"{label}: plots", fatal=False)
 
     say("\n" + "-" * 72)

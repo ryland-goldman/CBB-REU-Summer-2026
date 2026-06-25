@@ -103,17 +103,18 @@ def _vs_z(diag, summ):
 
 
 def _achieved_de(calib, z, ke):
-    """Per-section achieved ΔE [MeV] from the vs-z KE curve: KE at each section's exit z minus
-    the entry KE. Section exit z's are reconstructed by cumulating the calibration order onto the
-    z-grid extent (the frozen calib carries no z, so split the line evenly across the sections --
-    a coarse but monotone read of the per-section gain for the target-vs-achieved bar).
+    """Per-section achieved ΔE [MeV] from the vs-z KE curve: KE at each section's exit z minus KE
+    at its entry z. The section z-edges come from the calibration table (`z_entry_m`/`z_exit_m`,
+    the real deck geometry written by sim/linac4-8.py); a legacy summary without them falls back to
+    an even split of the z-grid (coarse -- it mis-attributes gain across the inter-section drifts).
     """
     n = len(calib)
     if n == 0 or len(z) < 2:
         return []
-    z0, z1 = float(z[0]), float(z[-1])
-    edges = np.linspace(z0, z1, n + 1)
     ke_at = lambda zz: float(np.interp(zz, z, ke))
+    if all("z_entry_m" in c and "z_exit_m" in c for c in calib):
+        return [ke_at(c["z_exit_m"]) - ke_at(c["z_entry_m"]) for c in calib]
+    edges = np.linspace(float(z[0]), float(z[-1]), n + 1)
     return [ke_at(edges[i + 1]) - ke_at(edges[i]) for i in range(n)]
 
 

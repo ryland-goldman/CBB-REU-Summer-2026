@@ -1,5 +1,5 @@
 """
-Cornell Linac sections 4-8 (Impact-T). main(): handoff IN (the captured ~71 MeV core from the
+Cornell Linac sections 4-8 (Impact-T). main(): handoff IN (the captured relativistic core from the
 linac1-3 sec3 exit, the 3->4 boundary) -> build the chained 5-section traveling-wave Impact-T
 deck from the vendored rfdata4-7 field shapes -> apply the FROZEN per-section field scale + crest
 phase -> I.run() (space charge OFF, quads OFF) -> openPMD handoff OUT + injection_summary.json.
@@ -20,6 +20,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# OpenMP latches OMP_NUM_THREADS when its runtime loads (at `import numpy`); prepare_env()'s
+# later set is ignored, so a standalone run would oversubscribe the grid (slower). Pin it here,
+# first. OMP_THREADS overrides; main.py sets it in the child env.
+os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
 
 import json
 import math
@@ -193,7 +198,9 @@ def _load_vendored_fieldmaps(cfg):
 
 def build_impact(cfg, workdir=None):
     """Assemble the chained 5-section Impact-T deck (quads OFF / K1=0, SC OFF) from the vendored
-    rfdata4-7 shapes and return (configured `Impact`, total_lattice_length_m).
+    rfdata4-7 shapes and return (configured `Impact`, total_lattice_length_m, section_bounds),
+    where section_bounds is the (z_entry, z_exit) [m] of each TW section in deck z (real geometry,
+    used by the section_gains figure instead of an even split).
 
     Each section is placed at increasing `zedge`; a `drift`/zero-K1 `quadrupole`/`drift` spacing
     follows every section except the last (the quad at its real tabulated length is optically a
@@ -221,11 +228,14 @@ def build_impact(cfg, workdir=None):
     I.input["fieldmaps"] = _load_vendored_fieldmaps(cfg)
 
     lattice = []
+    section_bounds = []                                  # (z_entry, z_exit) [m] per TW section
     z = 0.0
     for i, sec in enumerate(sections):
         prefix = f"sec{i + first}"                       # sec4 .. sec8
+        z_entry = z
         lattice += _section_subelements(cfg, i, z, sec["field_scale"], base_phase, prefix, bore_on)
         z += sec["length_m"]
+        section_bounds.append((z_entry, z))
         if i < n_sec - 1:
             # Inter-section spacing: gap/2 drift, REAL-LENGTH zero-K1 quad, gap/2 drift -- matching
             # the old deck geometry EXACTLY. The quad is K1=0 (optically a drift), but it MUST keep
@@ -261,13 +271,15 @@ def build_impact(cfg, workdir=None):
     h["Nx"], h["Ny"], h["Nz"] = n, n, n
     h["Xrad"], h["Yrad"] = cfg["deck"]["xyrad_m"], cfg["deck"]["xyrad_m"]
     h["Perdlen"] = total_len + 1.0                       # > total lattice length
-    h["Bkenergy"] = 78.0e6                               # ref energy [eV] (~sec-3 exit; reset by beam)
+    h["Bkenergy"] = 78.0e6                               # ref-energy header placeholder [eV]; lume-impact
+                                                         # resets it from initial_particles before the run
+                                                         # (NOT the absolute-theta0 phase reference)
     h["Bfreq"] = cfg["rf"]["rf_freq_hz"]
     h["Bmass"] = MC2_EV
     h["Bcharge"] = -1.0
 
     I.configure()
-    return I, total_len
+    return I, total_len, section_bounds
 
 
 # ── Handoff IN: the captured core from the linac1-3 sec3 exit (the 3->4 boundary) ────────────────
@@ -385,7 +397,7 @@ def main():
 
     # ── Build the deck (quads OFF, SC off) and apply the FROZEN per-section scale + crest phase ──
     # Run in-place under workdir so fort.18 lands at <workdir>/fort.18 for the progress poll.
-    I, total_len = build_impact(cfg, workdir=workdir)
+    I, total_len, section_bounds = build_impact(cfg, workdir=workdir)
     n_sec = len(cfg["sections"])
     first = cfg["lattice"]["first_section"]
     power_mw = cfg["rf"]["power_mw"]
@@ -404,6 +416,8 @@ def main():
             "scale": float(sec["field_scale"]),
             "crest_phase_deg": float(sec["crest_phase_deg"]),
             "target_de_mev": float(section_de_target(sec, cfg)),
+            "z_entry_m": float(section_bounds[i][0]),
+            "z_exit_m": float(section_bounds[i][1]),
         })
     I.initial_particles = P_in
     I.configure()

@@ -149,7 +149,8 @@ Neumann plane would give a same-sign image that wrongly adds to it).
 ## Time step and run length
 
 The exit kinematics follow from `GUN_VOLTAGE`: γ = 1 + e·V/(m_e c²), `v_exit = c√(1 − γ⁻²)`.
-The time step is `dt = CFL·Δz/v_exit` (`CFL = 0.4`, `Δz = ZMAX/nz`). The run length is sized on
+The time step is `dt = CFL·Δz/v_exit` (`CFL = 0.7`, the shipped Fast value — Balanced is 0.4;
+`Δz = ZMAX/nz`). The run length is sized on
 the **field transit** (`ZMAX_FIELD`), not the padded domain: `PULSE_WIDTH +
 TRANSIT_MARGIN × (ZMAX_FIELD / (AVG_SPEED_FRAC·v_exit))`, so the last-released particle clears
 the gun while the run stops with the beam still in the pad (over-running drains the padded
@@ -169,7 +170,7 @@ Physics / numerics:
   grid is ~4× faster). The gun's cells are near-isotropic, so the MLMG solve stays
   well-conditioned at either `nz`.
 - `solver.required_precision` / `solver.warpx_magnetostatic_required_precision` — MLMG
-  tolerances; ship **1e-4** (Balanced; the Conservative/benchmark value is 1e-5).
+  tolerances; ship **1e-3** (the Fast value; Balanced is 1e-4, Conservative/benchmark 1e-5).
 - `species[0].warpx_do_not_deposit` — `false` (space charge ON). `true` turns the self-field
   off (a large physics change, not a mild diagnostic — the self-field is dominant here).
 
@@ -177,7 +178,7 @@ Operating point (`params:`):
 - `GUN_VOLTAGE` (150 kV) — cathode high voltage; sets the field-map scale and exit kinematics.
 - `BUNCH_CHARGE` (1 nC) — renormalized gun bunch charge.
 - `PULSE_WIDTH` (2 ns) — the grid-pulse emission window the beam is released over.
-- `CFL` (0.4), `TRANSIT_MARGIN` (1.15), `AVG_SPEED_FRAC` (0.6), `MAX_STEPS` (0 = auto) — time
+- `CFL` (0.7), `TRANSIT_MARGIN` (1.15), `AVG_SPEED_FRAC` (0.6), `MAX_STEPS` (0 = auto) — time
   step and run-length controls.
 - `ZMAX_FIELD` (51.765 mm), `ZPAD` (20 mm) — the field-map z-extent (exit plane) and the
   field-free drift pad past it (must equal the grid `upper_bound[1] − ZMAX_FIELD`).

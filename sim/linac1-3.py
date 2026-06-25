@@ -4,7 +4,8 @@ SLAC / Cornell Linac sections 1-3 in WarpX (RZ), merged into ONE parametrized dr
   Section 1 (capture): import the injector handoff beam at the z ≈ Z_HANDOFF plane, apply the
     multi-plane 9.547 mm iris scrape, and capture it in the 3 m 2π/3 traveling-wave SLAC
     structure with self-consistent space charge. RF amplitude = sqrt(POWER_MW/RF_NORM_MW),
-    phase referenced to bunch arrival (PHASE_DEG offset, default on-crest for the slipping beam).
+    phase referenced to bunch arrival (PHASE_DEG is the ABSOLUTE arrival-referenced base phase —
+    the autophase capture crest — applied directly, NOT a detune; 0 is not on-crest).
   Sections 2, 3 (accelerate): import the previous section's captured-core exit beam and accelerate
     the relativistic core through the SAME reused SLAC quadrature maps, scaled by a FROZEN
     FIELD_SCALE and phased to a FROZEN CREST_PHASE_DEG (the old runtime crest-finding +
@@ -29,6 +30,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import json
 import shutil
+
+# OpenMP latches OMP_NUM_THREADS when its runtime loads (at `import numpy`); prepare_env()'s
+# later set is ignored, so a standalone run would oversubscribe this tiny grid (~40x slower).
+# Pin it here, before numpy. OMP_THREADS overrides; main.py sets it in the child env.
+os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
 
 import numpy as np
 
@@ -81,6 +87,11 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
 
     # Iris/pipe collimation: multi-plane id scrape, NOT a single z_handoff cut. See loadparticles.
     scan_iters = [it for it, _n, zm in recs if (collim_z - 0.05) <= zm <= (z_handoff + 0.03)]
+    if not scan_iters:                                    # empty window => no scrape => over-stated transmission
+        raise RuntimeError(
+            f"no injector dump ⟨z⟩ in the iris-scrape window "
+            f"[{(collim_z - 0.05)*1e3:.0f}, {(z_handoff + 0.03)*1e3:.0f}] mm — the {RMAX*1e3:.3f} mm "
+            f"collimation would be silently skipped; the handoff diagnostic is too coarse.")
     violators = pipe_violator_ids(ts, scan_iters, RMAX, collim_z)
     keep = survivor_mask(idh, violators)
     idh, x, y, z, ux, uy, uz, w = (a[keep] for a in (idh, x, y, z, ux, uy, uz, w))

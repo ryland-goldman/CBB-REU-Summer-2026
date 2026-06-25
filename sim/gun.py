@@ -19,6 +19,11 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# OpenMP latches OMP_NUM_THREADS when its runtime loads (at `import numpy`); prepare_env()'s
+# later set is ignored, so a standalone run would oversubscribe this tiny grid (slower). Pin it
+# here, first. OMP_THREADS overrides; main.py sets it in the child env.
+os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
+
 import json
 import shutil
 

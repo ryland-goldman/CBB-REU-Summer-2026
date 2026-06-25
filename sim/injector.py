@@ -14,18 +14,23 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# OpenMP latches OMP_NUM_THREADS when its runtime loads (at `import numpy`); prepare_env()'s
+# later set is ignored, so a standalone run would oversubscribe this tiny grid (slower). Pin it
+# here, first. OMP_THREADS overrides; main.py sets it in the child env.
+os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
+
 import json
 import shutil
 
 import numpy as np
 
-from sim.helpers.tools import C_LIGHT as c, E_CHARGE as q_e, MC2_EV, prepare_env, rf_time_functions
+from sim.helpers.tools import C_LIGHT as c, E_CHARGE as q_e, MC2_KEV, prepare_env, rf_time_functions
 from sim.helpers.loadparticles import (
     make_particle_group, downsample, beam_kinematics, open_particle_series,
     pipe_violator_ids, survivor_mask)
 from sim.helpers.buildfields import (
     build_injector_fields, Z_GAP_CENTER_1, Z_GAP_CENTER_2, V1J_KEV, SOL_FILES,
-    INJ_Z_HANDOFF as Z_HANDOFF)
+    INJ_Z_HANDOFF as Z_HANDOFF, RMAX as IRIS_R)   # IRIS_R: the one iris radius (= the linac scrape RMAX)
 
 CONFIG = "config/injector.yaml"
 OUTDIR = "logs/diags/injector/main"
@@ -119,7 +124,6 @@ def main():
     omega = 2.0 * np.pi * F_RF
     PHASE = p["PHASE"]
     base = np.pi / 2.0 if PHASE == "zc" else np.pi
-    MC2_KEV = MC2_EV / 1e3
 
     # The last applied field MUST load_E or picmi forces the global E_ext style to "none" and the
     # RF cavities go dark -- solenoids (load_E:false) must precede them in the YAML fields list.
@@ -139,6 +143,10 @@ def main():
         if cur != 0.0:
             print(f"Solenoid {nm}: I={cur:g} A", flush=True)
 
+    # The printed `V_gap~` (= scale*V1J_KEV, the bare on-axis integral of |Ez|dz) is a transit-time-FREE
+    # upper bound: it omits the transit-time factor T<1, so it overstates the delivered kick by 1/T. It
+    # feeds only printed diagnostics + the transit/n_steps sizing (which carry their own margins); WarpX
+    # integrates the real time-varying field independently, so this is not a physics input.
     # -- Prebuncher 1 (forward map): centroid arrival uses v_beam over z_centroid->gap --
     e1, b1, scale1, phi1, t_gap1 = cavity_drive(
         p["PREB1_KW"], p["Q_L_1"], F_RF, Z_GAP_CENTER_1, v_beam, p["PREB1_PHI_OFF"],
@@ -207,7 +215,7 @@ def main():
                    n_steps=int(n_steps), dt_s=float(dt), period=int(period))
     if p["COLLIMATE"]:
         try:
-            summary.update(_report_collimated_handoff(outdir, p["COLLIM_R"], p["COLLIM_Z"]))
+            summary.update(_report_collimated_handoff(outdir, IRIS_R, p["COLLIM_Z"]))
         except Exception as e:
             print(f"  (collimated-handoff report failed: {e}; writing base summary)", flush=True)
     with open(os.path.join(outdir, "injection_summary.json"), "w") as fh:

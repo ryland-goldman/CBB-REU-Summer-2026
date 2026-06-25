@@ -81,10 +81,11 @@ bunch sits). How those are set differs between the capture section and the accel
 - **Section 1 (capture).** A ~150 keV beam injected into a phase-velocity-c wave **slips in phase**
   and must be *captured*. The amplitude is set from the klystron input power,
   `scale = sqrt(POWER_MW / RF_NORM_MW)` (`POWER_MW = 11 MW`, the original LinacSim `sec1_input_power`;
-  `RF_NORM_MW = 1 kW` is the map normalisation). The absolute synchronous phase for capture is
-  undocumented, so `PHASE_DEG` is an **offset relative to the bunch arrival** at the structure
-  entrance (`PHASE_DEG = 0` is on-crest for the slipping beam; sweep it to map the capture
-  acceptance).
+  `RF_NORM_MW = 1 kW` is the map normalisation). For section 1 `PHASE_DEG` is the **absolute**
+  arrival-referenced base phase — the driver applies it directly as `base_deg`, NOT as a detune from
+  a separate crest. It is the capture crest `sim/autophase.py` writes into `config/linac1.yaml`, so
+  it is re-derived with the upstream beam and **`0` is not on-crest**. (Sections 2/3 are the other
+  convention: there `PHASE_DEG` is a detune from the frozen `CREST_PHASE_DEG`, with `0` = on-crest.)
 
 - **Sections 2, 3 (accelerate).** The captured core is now **β ≈ 1 and locked** to the wave, and it
   is **micro-bunched** at λ_RF (≈105 mm): the charge sits in a narrow RF-phase band but spreads >1 λ
@@ -96,17 +97,12 @@ bunch sits). How those are set differs between the capture section and the accel
 
   **This merged driver drops that runtime derivation.** The crest base phase and the field scale
   were derived **once** from the old `linac_sec1 → sec2 → sec3` chain and are **hardcoded** as
-  `CREST_PHASE_DEG` and `FIELD_SCALE` in each section's yaml:
-
-  | section | `CREST_PHASE_DEG` | `FIELD_SCALE` | (`DE_TARGET_MEV` reference) |
-  |---------|-------------------|---------------|------------------------------|
-  | 2 | 147.0536° | 9.307480 × 10¹ | 28.3 MeV |
-  | 3 | 156.4050° | 9.179702 × 10¹ | 28.3 MeV |
-
-  `DE_TARGET_MEV = 28.3` (the details.md CEA per-section ΔE @11 MW, √P-scaled) is the energy budget
-  the scale was derived to hit; it is kept only as a comment/reference — the runtime no longer reads
-  it for any field calculation. `PHASE_DEG` remains as a **detune** offset from the frozen crest
-  (default 0 = on crest).
+  `CREST_PHASE_DEG` and `FIELD_SCALE` in each section's `config/linac{2,3}.yaml`. Those YAML values
+  are **authoritative** — they are re-derived (rewritten in place by `sim/autophase.py`) whenever the
+  upstream beam changes, so the actual numbers are not reproduced here. `DE_TARGET_MEV` (the
+  details.md CEA per-section ΔE @11 MW, √P-scaled) is the energy budget the scale was derived to hit;
+  it is kept only as a comment/reference — the runtime no longer reads it for any field calculation.
+  `PHASE_DEG` remains as a **detune** offset from the frozen crest (default 0 = on crest).
 
 The RF block is otherwise **uniform** across all three sections:
 
