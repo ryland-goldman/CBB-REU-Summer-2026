@@ -41,7 +41,7 @@ import numpy as np
 from sim.helpers.tools import (
     C_LIGHT as c, E_CHARGE as q_e, MC2_KEV, prepare_env, rf_time_functions)
 from sim.helpers.loadparticles import (
-    open_particle_series, make_particle_group, downsample, beam_kinematics,
+    open_particle_series, make_particle_group, downsample, resample, beam_kinematics,
     load_warpx_exit_bunch, upstream_exit_lab_z, pipe_violator_ids, survivor_mask)
 from sim.helpers.buildfields import build_linac_slac_fields, Z_STRUCT, RMAX, BORE_R, V1KW_KEV
 
@@ -57,11 +57,12 @@ PREV_SUMMARY = {2: "logs/diags/linac1-4/sec1/main/injection_summary.json",
 PREV_LABEL = {2: "linac1-4/sec1", 3: "linac1-4/sec2", 4: "linac1-4/sec3"}
 
 
-def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
+def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z, resample_n=0):
     """Import the injector beam at the z ≈ z_handoff plane and shift it to entry (section 1).
 
     Selects the dump whose bunch ⟨z⟩ is nearest z_handoff, applies the multi-plane iris scrape,
-    and returns (dict [γβ momenta], v_beam, mean KE [keV], inj summary).
+    and returns (dict [γβ momenta], v_beam, mean KE [keV], inj summary). `resample_n` > 0 forces
+    exactly that macroparticle count (up- or down-sample, reweighted); else downsample to max_part.
     """
     ts = open_particle_series(INJECTOR_DIAG, "injector")
 
@@ -101,8 +102,11 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z):
     q_dom = float(w.sum()) * q_e                          # in-iris survivors
     q_bore = float(w[r <= BORE_R].sum()) * q_e            # of those, within the RF bore
 
-    (x, y, z, ux, uy, uz), w = downsample(
-        (x, y, z, ux, uy, uz), w, max_part, np.random.default_rng(rng_seed))
+    rng = np.random.default_rng(rng_seed)
+    if resample_n:                                        # fixed macroparticle count (up- or down-sample)
+        (x, y, z, ux, uy, uz), w = resample((x, y, z, ux, uy, uz), w, resample_n, rng)
+    else:
+        (x, y, z, ux, uy, uz), w = downsample((x, y, z, ux, uy, uz), w, max_part, rng)
     z = z - z.min() + z_inject                            # bunch tail (smallest z) → z_inject
 
     v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
@@ -147,9 +151,11 @@ def main():
         shutil.rmtree(outdir)
 
     # ── Input beam + frozen RF setpoints (branch on section) ──────────────────────────────────
+    resample_n = p.get("RESAMPLE_N", 0)                 # >0 → resample beam to exactly N macroparticles
     if N == 1:
         bunch, v_beam, ke_mean, inj = load_injector_bunch(
-            p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"])
+            p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"],
+            resample_n=resample_n)
         summary = inj                                   # records z_handoff_m for downstream lab-z chaining
         # Capture beam (slipping ~150 keV): scale from input power, phase referenced to arrival.
         scale = float(np.sqrt(p["POWER_MW"] / p["RF_NORM_MW"]))
@@ -157,7 +163,8 @@ def main():
         z_span = 0.0                                    # section 1 stops the centroid (old sec1 behaviour)
     else:
         bunch, v_beam, ke_mean, info = load_warpx_exit_bunch(
-            PREV_PARTICLES[N], PREV_LABEL[N], p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
+            PREV_PARTICLES[N], PREV_LABEL[N], p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"],
+            resample_n=resample_n)
         # Lab-z of this section's injection: chain the upstream local→lab offset + its exit ⟨z⟩.
         z_inject_lab = upstream_exit_lab_z(PREV_SUMMARY[N], info["exit_zmean_local_m"])
         # FROZEN setpoints (no runtime crest-finding / ΔE-target loop): read from the yaml.

@@ -78,13 +78,16 @@ def _load_bunch(drv, N, p):
     injector handoff; 2/3/4 read the previous section's captured-core exit), subsampled for the
     scan. Returns (z [m], u = |gamma*beta| per particle, w, z_center [m], v_beam [m/s],
     ke_mean [keV], scale). `scale` is the field-map amplitude the driver would apply."""
+    resample_n = p.get("RESAMPLE_N", 0)                     # match the driver's injected beam size
     if N == 1:
         bunch, v_beam, ke_mean, _ = drv.load_injector_bunch(
-            p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"])
+            p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"],
+            resample_n=resample_n)
         scale = float(np.sqrt(p["POWER_MW"] / p["RF_NORM_MW"]))
     else:
         bunch, v_beam, ke_mean, _ = drv.load_warpx_exit_bunch(
-            drv.PREV_PARTICLES[N], drv.PREV_LABEL[N], p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
+            drv.PREV_PARTICLES[N], drv.PREV_LABEL[N], p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"],
+            resample_n=resample_n)
         scale = float(p["FIELD_SCALE"])
     z, w = np.asarray(bunch["z"], float), np.asarray(bunch["w"], float)
     u = np.sqrt(bunch["ux"] ** 2 + bunch["uy"] ** 2 + bunch["uz"] ** 2)   # |gamma*beta|

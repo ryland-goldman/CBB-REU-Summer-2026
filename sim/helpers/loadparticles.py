@@ -63,6 +63,22 @@ def downsample(arrays, w, max_part, rng):
     return tuple(a[sel] for a in arrays), w[sel] * (n / max_part)
 
 
+def resample(arrays, w, n_target, rng):
+    """Resample to EXACTLY `n_target` macroparticles, conserving total charge.
+
+    Downsamples without replacement when n > n_target; UPsamples WITH replacement when
+    n < n_target (bootstrap — useful to refill a depleted beam to a fixed macroparticle
+    count). Reweights the picks so sum(w) is preserved exactly (not just in expectation).
+    No-op if `n_target` is falsy or already equal. Returns (tuple of arrays, w).
+    """
+    n = w.size
+    if not n_target or n == n_target:
+        return tuple(arrays), w
+    sel = rng.choice(n, n_target, replace=(n_target > n))
+    w_sel = w[sel]
+    return tuple(a[sel] for a in arrays), w_sel * (w.sum() / w_sel.sum())
+
+
 def beam_kinematics(ux, uy, uz, w):
     """(weighted mean v_z [m/s], weighted mean KE [keV]) from gamma*beta momenta."""
     gb = np.sqrt(1.0 + ux ** 2 + uy ** 2 + uz ** 2)        # gamma (ux/uy/uz are gamma*beta)
@@ -72,15 +88,17 @@ def beam_kinematics(ux, uy, uz, w):
 
 
 def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=None,
-                          core_ke_frac=0.5):
+                          core_ke_frac=0.5, resample_n=0):
     """Import an upstream WarpX section's EXIT beam (last well-populated dump) for the next
     linac section. Used by linac sections 2 and 3 (no iris scrape -- that is the one-time
     injector->linac event at the section-1 entrance).
 
     Picks the last dump with >= `min_count` macroparticles (the captured beam coasting in the
     field-free exit drift, not a depleted boundary dump), keeps only the captured core
-    (KE >= `core_ke_frac` * median KE), downsamples it (reweighted), and shifts its tail to
-    `z_inject`. The cut is essential: the section-exit dump trails a sparse slipping low-energy
+    (KE >= `core_ke_frac` * median KE), resizes the macroparticle count (reweighted), and shifts
+    its tail to `z_inject`. `resample_n` > 0 forces EXACTLY that count (up- or down-sample, see
+    `resample`); otherwise the core is downsampled to `max_part`. The core cut is essential: the
+    section-exit dump trails a sparse slipping low-energy
     tail that lags the relativistic core by ~metres, not in the RF bucket -- genuinely lost
     between sections (same physics as the linac5-8 MIN_KE_MEV cut).
 
@@ -113,8 +131,11 @@ def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=N
     x, y, z, ux, uy, uz, w = (a[core] for a in (x, y, z, ux, uy, uz, w))
     q_core = float(w.sum()) * Q_E
 
-    (x, y, z, ux, uy, uz), w = downsample(
-        (x, y, z, ux, uy, uz), w, max_part, np.random.default_rng(rng_seed))
+    rng = np.random.default_rng(rng_seed)
+    if resample_n:                                       # fixed macroparticle count (up- or down-sample)
+        (x, y, z, ux, uy, uz), w = resample((x, y, z, ux, uy, uz), w, resample_n, rng)
+    else:
+        (x, y, z, ux, uy, uz), w = downsample((x, y, z, ux, uy, uz), w, max_part, rng)
     z = z - z.min() + z_inject                           # core tail (smallest z) -> z_inject
 
     v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
