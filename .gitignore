@@ -1,7 +1,5 @@
 # Generated simulation outputs (regenerate by re-running)
-logs/diags/
-logs/plots/
-logs/pipeline/
+logs/
 fieldmaps/h5/
 
 # Engine scratch / generated input echoes

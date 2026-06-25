@@ -3,7 +3,7 @@
 Consolidates the old pipeline/fieldio.py primitives and the four per-stage
 build_*_field.py scripts. Reads GPT .gdf maps from fieldmaps/gdf/ and writes openPMD
 thetaMode (RZ, m=0) .h5 maps to fieldmaps/h5/. The SLAC traveling-wave maps are built
-once and shared by linac sections 1-3.
+once and shared by linac sections 1-4.
 
 Map-geometry constants (gap centres, bore, 1-J/1-kW voltages) live here as facts of the
 fixed GDF inputs; tunable operating-point values (gun voltage, RF power, frequency, Q) live
@@ -250,7 +250,7 @@ def build_injector_fields():
     _build_solenoids()
 
 
-# ── SLAC traveling-wave maps (linac sections 1-3, shared) ────────────────────────
+# ── SLAC traveling-wave maps (linac sections 1-4, shared) ────────────────────────
 SLAC_RF1_GDF = os.path.join(GDF_DIR, "SLAC-3mLinac-field1.gdf")
 SLAC_RF2_GDF = os.path.join(GDF_DIR, "SLAC-3mLinac-field2.gdf")
 SLAC_RF1_OUT = os.path.join(H5_DIR, "linac_rf1.h5")
@@ -286,7 +286,7 @@ def _build_slac_rf(gdf, ez_name, er_name, h_name, out_file):
 
 
 def build_linac_slac_fields():
-    """Build the two SLAC quadrature RF files (1-kW normalised) shared by linac sections 1-3."""
+    """Build the two SLAC quadrature RF files (1-kW normalised) shared by linac sections 1-4."""
     r, z, ez1 = _build_slac_rf(SLAC_RF1_GDF, "EzRe", "ErRe", "HphiIm", SLAC_RF1_OUT)
     _, _, ez2 = _build_slac_rf(SLAC_RF2_GDF, "EzIm", "ErIm", "HphiRe", SLAC_RF2_OUT)
     env = np.sqrt(ez1 ** 2 + ez2 ** 2)

@@ -1,9 +1,9 @@
 # SLAC Linac Section 1 (capture) — lume-warpx config (WarpX RZ, single azimuthal mode). All
-# constants live here; sim/linac1-3.py (run as `python sim/linac1-3.py 1`) reads them back,
+# constants live here; sim/linac1-4.py (run as `python sim/linac1-4.py 1`) reads them back,
 # imports the captured injector beam via WarpX(initial_particles=...), and overrides only
 # runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
 # period). The two SLAC quadrature maps are the SAME shared fieldmaps used by sections 2 and 3.
-# See docs/linac1-3.md for physics, the iris scrape, and gotchas. The shipped values ARE the
+# See docs/linac1-4.md for physics, the iris scrape, and gotchas. The shipped values ARE the
 # single Balanced operating point.
 
 grid:
@@ -51,9 +51,9 @@ diagnostics:
     period: 100                                # overridden (max_steps // N_DIAGS)
     species: [electrons]
     data_list: [position, momentum, weighting]
-    write_dir: logs/diags/linac1-3/sec1/main   # → logs/diags/linac1-3/sec1/main/particles
+    write_dir: logs/diags/linac1-4/sec1/main   # → logs/diags/linac1-4/sec1/main/particles
 
-# Stage knobs with no WarpX-native home (read by sim/linac1-3.py).
+# Stage knobs with no WarpX-native home (read by sim/linac1-4.py).
 params:
   POWER_MW: 11.0                       # RF input power [MW]
   PHASE_DEG: 120.8109                       # injection RF phase offset [deg]; crest is on-arrival (capture beam)
@@ -61,6 +61,7 @@ params:
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW)
   CFL: 0.5                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the injected snapshot (reweighted)
+  RESAMPLE_N: 0                        # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
   MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 1.0

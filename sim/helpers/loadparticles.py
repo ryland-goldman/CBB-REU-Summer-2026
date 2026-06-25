@@ -63,6 +63,27 @@ def downsample(arrays, w, max_part, rng):
     return tuple(a[sel] for a in arrays), w[sel] * (n / max_part)
 
 
+def resample(arrays, w, n_target, rng):
+    """Resample to EXACTLY `n_target` macroparticles, conserving total charge.
+
+    Downsamples without replacement when n > n_target; UPsamples WITH replacement when
+    n < n_target (bootstrap — useful to refill a depleted beam to a fixed macroparticle
+    count). Reweights the picks so sum(w) is preserved exactly (not just in expectation).
+    No-op if `n_target` is falsy or already equal. Returns (tuple of arrays, w).
+
+    Upsampling adds COINCIDENT duplicate macroparticles (no new phase-space information); it
+    does NOT increase resolution. Safe only ahead of a stage that decorrelates them (the
+    converter's stochastic showers) or with self-fields off — do not upsample into an SC-ON
+    stage (cathode/gun/linac section 1), where duplicates would inject a spurious self-field.
+    """
+    n = w.size
+    if not n_target or n == n_target:
+        return tuple(arrays), w
+    sel = rng.choice(n, n_target, replace=(n_target > n))
+    w_sel = w[sel]
+    return tuple(a[sel] for a in arrays), w_sel * (w.sum() / w_sel.sum())
+
+
 def beam_kinematics(ux, uy, uz, w):
     """(weighted mean v_z [m/s], weighted mean KE [keV]) from gamma*beta momenta."""
     gb = np.sqrt(1.0 + ux ** 2 + uy ** 2 + uz ** 2)        # gamma (ux/uy/uz are gamma*beta)
@@ -72,17 +93,19 @@ def beam_kinematics(ux, uy, uz, w):
 
 
 def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=None,
-                          core_ke_frac=0.5):
+                          core_ke_frac=0.5, resample_n=0):
     """Import an upstream WarpX section's EXIT beam (last well-populated dump) for the next
-    linac section. Used by linac sections 2 and 3 (no iris scrape -- that is the one-time
+    linac section. Used by linac sections 2, 3 and 4 (no iris scrape -- that is the one-time
     injector->linac event at the section-1 entrance).
 
     Picks the last dump with >= `min_count` macroparticles (the captured beam coasting in the
     field-free exit drift, not a depleted boundary dump), keeps only the captured core
-    (KE >= `core_ke_frac` * median KE), downsamples it (reweighted), and shifts its tail to
-    `z_inject`. The cut is essential: the section-exit dump trails a sparse slipping low-energy
+    (KE >= `core_ke_frac` * median KE), resizes the macroparticle count (reweighted), and shifts
+    its tail to `z_inject`. `resample_n` > 0 forces EXACTLY that count (up- or down-sample, see
+    `resample`); otherwise the core is downsampled to `max_part`. The core cut is essential: the
+    section-exit dump trails a sparse slipping low-energy
     tail that lags the relativistic core by ~metres, not in the RF bucket -- genuinely lost
-    between sections (same physics as the linac4-8 MIN_KE_MEV cut).
+    between sections (same physics as the linac5-8 MIN_KE_MEV cut).
 
     Returns (bunch dict [gamma*beta momenta], v_beam [m/s], core <KE> [keV], info dict).
     info["exit_zmean_local_m"] is the read dump's <z> in the UPSTREAM local frame (for lab-z
@@ -113,8 +136,11 @@ def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=N
     x, y, z, ux, uy, uz, w = (a[core] for a in (x, y, z, ux, uy, uz, w))
     q_core = float(w.sum()) * Q_E
 
-    (x, y, z, ux, uy, uz), w = downsample(
-        (x, y, z, ux, uy, uz), w, max_part, np.random.default_rng(rng_seed))
+    rng = np.random.default_rng(rng_seed)
+    if resample_n:                                       # fixed macroparticle count (up- or down-sample)
+        (x, y, z, ux, uy, uz), w = resample((x, y, z, ux, uy, uz), w, resample_n, rng)
+    else:
+        (x, y, z, ux, uy, uz), w = downsample((x, y, z, ux, uy, uz), w, max_part, rng)
     z = z - z.min() + z_inject                           # core tail (smallest z) -> z_inject
 
     v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
@@ -175,10 +201,10 @@ def survivor_mask(ids, violator_ids):
     return ~np.isin(ids, np.fromiter(violator_ids, dtype=ids.dtype))
 
 
-# ── Impact-T <-> WarpX-openPMD adapters (linac4-8) ───────────────────────────────
+# ── Impact-T <-> WarpX-openPMD adapters (linac5-8) ───────────────────────────────
 def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
     """Read a WarpX-style openPMD particle dump into a `ParticleGroup` (handoff-IN reader
-    for linac4-8; default last iteration = the upstream section's exit dump).
+    for linac5-8; default last iteration = the upstream section's exit dump).
     """
     from pmd_beamphysics import ParticleGroup
     ts = open_particle_series(particles_dir)
@@ -196,7 +222,7 @@ def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
 def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0,
                             species="electrons", charge=-Q_E, mass=M_E):
     """Write a `ParticleGroup` to `out_dir` as a WarpX-style openPMD dump (handoff-OUT for
-    linac4-8). Hand-rolled (not ParticleGroup.write, which emits openPMD 2.0 with a STRING
+    linac5-8). Hand-rolled (not ParticleGroup.write, which emits openPMD 2.0 with a STRING
     extension openpmd-viewer rejects): replicate WarpX's byte-layout (openPMD 1.1.0, integer
     ED-PIC ext). `species` is the openPMD group key (PLURAL); `species`/`charge`/`mass` default to
     electrons, the converter passes positrons (`charge=+Q_E`). Records position [m], momentum
@@ -221,7 +247,7 @@ def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0,
     series = io.Series(os.path.join(out_dir, "openpmd_%06T.h5"), io.Access.create)
     series.set_openPMD("1.1.0")                           # viewer rejects 2.0 / STRING-ext
     series.set_openPMD_extension(1)                       # ED-PIC (integer)
-    series.set_software("sim.linac4-8")
+    series.set_software("sim.linac5-8")
     series.set_particles_path("particles")
 
     it = series.iterations[int(iteration)]

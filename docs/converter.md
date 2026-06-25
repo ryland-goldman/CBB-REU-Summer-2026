@@ -1,24 +1,22 @@
 # Positron converter target (G4beamline / Geant4)
 
-The e+/e- converter that fills the reserved **3->4 boundary** slot between the WarpX linac
-(sections 1-3) and the Impact-T linac (sections 4-8). It reads the linac1-3 sec3 exit **electron**
-beam (the ~46 MeV captured relativistic core), drives it into a thin high-Z tungsten target, and
-produces e+/e- pairs by bremsstrahlung -> pair production. The converted **positron** beam is the
-new input to linac sections 4-8, which are rewired to accelerate `q = +e`.
+The e+/e- converter that sits at the **4->5 boundary**, between the WarpX linac (sections 1-4) and
+the Impact-T linac (sections 5-8). It reads the WarpX section-4 exit **electron** beam (the captured
+relativistic core), drives it into a thin high-Z tungsten target, and produces e+/e- pairs by
+bremsstrahlung -> pair production. The converted **positron** beam is the input to linac sections
+5-8, which accelerate `q = +e`.
 
 ```
-... linac1-3 (sec3, WarpX RZ) --[3->4 boundary]--> converter (this, G4beamline) --> linac4-8 (Impact-T, e+ mode)
+... linac1-4 (sec4, WarpX RZ) --[4->5 boundary]--> converter (this, G4beamline) --> linac5-8 (Impact-T, e+ mode)
                                   e- in                7 mm W target              e+ out
 ```
 
-The 3->4 boundary (the sec3 exit) was reserved from the start as the future converter slot
-(Geant4-class physics, out of scope for the WarpX/Impact-T chain). This stage occupies it. Unlike
-every other stage it is **not** a self-field/RF tracking run: it is a single-shot Monte-Carlo
-particle-shower simulation through a solid radiator with **no field solve**.
+Unlike every other stage it is **not** a self-field/RF tracking run: it is a single-shot
+Monte-Carlo particle-shower simulation through a solid radiator with **no field solve**.
 
 ```bash
 conda activate CBB
-python sim/converter.py          # reads the linac3 exit e-, runs g4bl, writes the e+ handoff
+python sim/converter.py          # reads the sec4 exit e-, runs g4bl, writes the e+ handoff
 python sim/plot/converter.py     # figures from logs/diags/converter/main (sim must run first)
 ```
 
@@ -138,7 +136,7 @@ Together these are the standard accuracy levers for a converter: **what EM physi
 The yield is the physical quantity the stage exists to deliver, so the charge bookkeeping is kept
 exact rather than renormalised:
 
-- Each incident electron is **one g4bl event** (one `EventID`). The driver writes the linac3 exit
+- Each incident electron is **one g4bl event** (one `EventID`). The driver writes the section-4 exit
   beam as a BLTrackFile with `EventID = 1..N` (one per macroparticle) and runs g4bl with one primary
   per event.
 - Every secondary g4bl produces **inherits its primary's `EventID`**. So each output positron knows
@@ -180,10 +178,10 @@ read only for the yield-bar figure and the summary counts.)
 
 ## Lab-z chaining
 
-The converter sits at a known lab z (the sec3 exit, the 3->4 boundary), and the downstream Impact-T
+The converter sits at a known lab z (the WarpX section-4 exit, the 4->5 boundary), and the downstream Impact-T
 stage continues the lab-frame z chain via `upstream_exit_lab_z`. The converter therefore records
 `z_inject_lab_m` / `z_inject_mean_m` in its `injection_summary.json` the same way the linac sections
-do: the lab z at which its output beam sits, so `sim/linac4-8.py`'s `upstream_exit_lab_z` chain
+do: the lab z at which its output beam sits, so `sim/linac5-8.py`'s `upstream_exit_lab_z` chain
 continues unbroken across the converter. The g4bl run works in **local mm coordinates** (the target
 front face at the local origin); the driver maps the local-frame exit z back into the converter's
 place in the lab frame for the summary.
@@ -193,7 +191,7 @@ place in the lab frame for the summary.
 ## Output
 
 `logs/diags/converter/main/particles` — the converted **positron** beam as an openPMD `positrons`
-group (charge +e), in the repo's WarpX-compatible layout, ready for `sim/linac4-8.py`.
+group (charge +e), in the repo's WarpX-compatible layout, ready for `sim/linac5-8.py`.
 
 `logs/diags/converter/main/injection_summary.json` — the run's bookkeeping. It holds the **target
 geometry** (material, thickness, radius), the **precision settings** (physics list, `min_range_cut`,
@@ -220,7 +218,7 @@ documented here; the *values* are run output and are not quoted.)
 
 - **PDGid sign convention.** `e+ = -11`, `e- = +11` (positron is the *negative* PDG id). The driver
   selects positrons by `PDGid == -11`; getting the sign backwards silently hands the **electrons**
-  to linac4-8.
+  to linac5-8.
 - **Monte-Carlo determinism is conditional.** g4bl seeds its RNG per `EventID`, so the run is
   reproducible **only** with a fixed deck *and* a fixed input BLTrackFile (same events, same order).
   Any change to the upstream electron beam or to the physics block changes the shower realisation.
@@ -229,19 +227,19 @@ documented here; the *values* are run output and are not quoted.)
   (the alternates renumber or reformat it).
 - **The positron beam is not linac-ready as-is.** The converted positrons are **low-energy,
   high-divergence, and large-energy-spread** — a soft shower product, nothing like the relativistic
-  captured core the electron linac4-8 was tuned for. Two consequences:
-  - **linac4-8's crest phases must be re-derived for positrons.** The frozen per-section
+  captured core the electron linac5-8 was tuned for. Two consequences:
+  - **linac5-8's crest phases must be re-derived for positrons.** The frozen per-section
     `crest_phase_deg` were calibrated on the electron beam; for positrons they are wrong (the charge
     sign flips the accelerating phase, and the much lower injection energy/velocity shifts the
     arrival phase further). Run **`sim/autophase_impact.py`** *after* the converter and *before*
-    `sim/linac4-8.py` to re-derive them. (See the "Positron mode" section of `docs/linac4-8.md`.)
+    `sim/linac5-8.py` to re-derive them. (See the "Positron mode" section of `docs/linac5-8.md`.)
   - **Capture optic.** A real positron source places a **capture optic** (an adiabatic matching
     device / high-field solenoid) right at the target exit to collect the divergent positrons into
     the linac acceptance. This stage models it as a **uniform axial capture solenoid** (the
     `solenoid:` block — default 5 T over 1 m, starting at the target front face) that focuses the
     positrons before the sampling plane; set `enabled: false` to recover the bare field-free run. It
     is a uniform-field idealisation, not a tapered AMD, so the accepted transmission/yield through
-    linac4-8 are still qualitative — the deliverable is the converter physics (spectrum, yield,
+    linac5-8 are still qualitative — the deliverable is the converter physics (spectrum, yield,
     divergence), not an absolute accepted-positron number.
 - **g4bl is an external binary.** G4beamline 3.08 is invoked as a separate process (`g4bl`), not a
   pip/conda dependency — it must be installed and on `PATH` independently of the `CBB` environment.

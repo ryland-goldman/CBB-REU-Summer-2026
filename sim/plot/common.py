@@ -133,7 +133,7 @@ def evolution_vs_z(z_m, ke, emit, sigma, charge_pc=None, ke_unit="keV", title=""
     """Beam evolution along z: mean KE, normalized emittance eps_n,x, RMS spot size, and -- when
     `charge_pc` is given -- the charge [pC] crossing each screen (a 4th panel showing loss vs z).
 
-    Arrays are aligned on z_m [m]; the WarpX stages feed `evolution_screens` output and linac4-8
+    Arrays are aligned on z_m [m]; the WarpX stages feed `evolution_screens` output and linac5-8
     feeds the summary's stat_vs_z table. `notes` is an optional {panel: str} (panel in
     {"ke","emit","sigma","charge"}) for per-panel caveats.
     """

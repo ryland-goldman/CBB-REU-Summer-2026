@@ -1,18 +1,18 @@
 """
-Cornell Linac sections 4-8 (Impact-T). main(): handoff IN (the captured relativistic core from the
-linac1-3 sec3 exit, the 3->4 boundary) -> build the chained 5-section traveling-wave Impact-T
-deck from the vendored rfdata4-7 field shapes -> apply the FROZEN per-section field scale + crest
-phase -> I.run() (space charge OFF, quads OFF) -> openPMD handoff OUT + injection_summary.json.
+Cornell Linac sections 5-8 (Impact-T). main(): handoff IN (the positron core from the e+/e-
+converter, which sits after the WarpX section 4) -> build the chained 4-section traveling-wave
+Impact-T deck from the vendored rfdata4-7 field shapes -> apply the FROZEN per-section field scale
++ crest phase -> I.run() (space charge OFF, quads OFF) -> openPMD handoff OUT + injection_summary.json.
 
-Five S-band (2856 MHz) TW sections (CU 5 + CEA 4/5 + CU 3/4) chained into ONE Impact-T deck and
-integrated as one time-ordered beam. Sections 4-8 have no field maps; the vendored S-band TW shape
+Four S-band (2856 MHz) TW sections (CEA 4/5 + CU 3/4) chained into ONE Impact-T deck and
+integrated as one time-ordered beam. Sections 5-8 have no field maps; the vendored S-band TW shape
 (rfdata4-7) is reused verbatim and all per-section physics lives in the per-section field scale.
 
 CALIBRATION IS FROZEN. The old stage ran a per-section brentq scale-fit + crest-phase scan + §5
 validation gates each run; here the field_scale + crest_phase_deg are hardcoded in
-config/linac4-8.yaml (derived once) and applied directly. See docs/linac4-8.md.
+config/linac5-8.yaml (derived once) and applied directly. See docs/linac5-8.md.
 
-Run as `python sim/linac4-8.py` (hyphenated name is not importable). sim/plot/linac4-8.py makes
+Run as `python sim/linac5-8.py` (hyphenated name is not importable). sim/plot/linac5-8.py makes
 the figures. Do NOT call build/run from import -- main() does everything.
 """
 
@@ -36,7 +36,7 @@ from sim.helpers.tools import MC2_EV, C_LIGHT, M_E, E_CHARGE as Q_E, prepare_env
 from sim.helpers.loadparticles import read_warpx_dump, write_openpmd_particles, upstream_exit_lab_z
 from sim.helpers.tqdmwrapper import impact_progress
 
-CONFIG = "config/linac4-8.yaml"
+CONFIG = "config/linac5-8.yaml"
 MC2_MEV = MC2_EV / 1e6                  # electron rest energy [MeV]
 
 # 4-line TW phase offsets [deg] relative to the section base phase (SLAC-PUB-2295 two-SW
@@ -91,7 +91,7 @@ def section_de_target(sec, cfg):
 
 def section_ele_names(cfg, index):
     """(entrance, body_1, body_2, exit) solrf element names for section `index` (0-based)."""
-    prefix = f"sec{index + cfg['lattice']['first_section']}"   # sections labelled 4..8
+    prefix = f"sec{index + cfg['lattice']['first_section']}"   # sections labelled 5..8
     return tuple(f"{prefix}_{line}" for line in ("entrance", "body_1", "body_2", "exit"))
 
 
@@ -190,13 +190,13 @@ def _load_vendored_fieldmaps(cfg):
         if not os.path.exists(path):
             raise FileNotFoundError(
                 f"vendored field shape missing: {path} -- rfdata4-7 must be present in "
-                f"{rfdata_dir} (see docs/linac4-8.md).")
+                f"{rfdata_dir} (see docs/linac5-8.md).")
         fieldmaps[fname] = read_fieldmap_rfdata(path)
     return fieldmaps
 
 
 def build_impact(cfg, workdir=None):
-    """Assemble the chained 5-section Impact-T deck (quads OFF / K1=0, SC OFF) from the vendored
+    """Assemble the chained 4-section Impact-T deck (quads OFF / K1=0, SC OFF) from the vendored
     rfdata4-7 shapes and return (configured `Impact`, total_lattice_length_m, section_bounds),
     where section_bounds is the (z_entry, z_exit) [m] of each TW section in deck z (real geometry,
     used by the section_gains figure instead of an even split).
@@ -230,19 +230,19 @@ def build_impact(cfg, workdir=None):
     section_bounds = []                                  # (z_entry, z_exit) [m] per TW section
     z = 0.0
     for i, sec in enumerate(sections):
-        prefix = f"sec{i + first}"                       # sec4 .. sec8
+        prefix = f"sec{i + first}"                       # sec5 .. sec8
         z_entry = z
         lattice += _section_subelements(cfg, i, z, sec["field_scale"], base_phase, prefix, bore_on)
         z += sec["length_m"]
         section_bounds.append((z_entry, z))
         if i < n_sec - 1:
             # Inter-section spacing: gap/2 drift, REAL-LENGTH zero-K1 quad, gap/2 drift -- matching
-            # the old deck geometry EXACTLY. The quad is K1=0 (optically a drift), but it MUST keep
-            # its real tabulated length: the frozen crest phases are ABSOLUTE (Impact-T theta0, t=0
-            # reference) and were calibrated on this geometry, so the cumulative path length -- and
-            # thus the bunch arrival time at sections 5-8 -- must match or those sections fall
-            # off-crest. The quad length is NOT subtracted from `gap` (several real quads exceed the
-            # 0.4 m margin). radius 0.0 => no extra scrape plane (quads OFF, byte-identical to old).
+            # the deck geometry the crests were derived on. The quad is K1=0 (optically a drift), but
+            # it MUST keep its real tabulated length: the frozen crest phases are ABSOLUTE (Impact-T
+            # theta0, t=0 reference) and are calibrated on this geometry, so the cumulative path
+            # length -- and thus the bunch arrival time at sections 6-8 -- must match or those
+            # sections fall off-crest. The quad length is NOT subtracted from `gap` (several real
+            # quads exceed the 0.4 m margin). radius 0.0 => no extra scrape plane (quads OFF).
             qL = section_quad_length_m(sec)
             half = gap / 2.0
             lattice.append({"type": "drift", "name": f"drift{i + first}a",
@@ -281,15 +281,15 @@ def build_impact(cfg, workdir=None):
     return I, total_len, section_bounds
 
 
-# ── Handoff IN: the captured core from the linac1-3 sec3 exit (the 3->4 boundary) ────────────────
-def load_sec3_core(cfg):
-    """Read the sec3 exit beam (the 3->4 boundary), keep the captured core (KE >= MIN_KE_MEV),
+# ── Handoff IN: the positron core from the converter (which sits after the WarpX section 4) ──────
+def load_converter_core(cfg):
+    """Read the converter positron beam, keep the captured core (KE >= MIN_KE_MEV),
     downsample to Np (reweighted to preserve core charge), drift to mean t + zero z for Impact-T
     injection. Returns (ParticleGroup, info dict). The ParticleGroup carries the captured-core
     charge (no renormalisation).
     """
-    diag = cfg["io"]["sec3_particles"]
-    summary = cfg["io"]["sec3_summary"]
+    diag = cfg["io"]["conv_particles"]
+    summary = cfg["io"]["conv_summary"]
     min_ke_mev = cfg["beam"]["min_ke_mev"]
     np_keep = cfg["beam"]["np"]
     rng_seed = cfg["beam"]["rng_seed"]
@@ -297,16 +297,16 @@ def load_sec3_core(cfg):
     species = cfg["beam"].get("species", "electrons")
     P = read_warpx_dump(diag, species=species)           # configurable species, t-coords, last dump
     n_all = P.n_particle
-    z_local = float(P["mean_z"])                         # sec3 LOCAL frame
+    z_local = float(P["mean_z"])                         # converter LOCAL frame
     z_inject_lab = upstream_exit_lab_z(summary, z_local)  # chain local->lab so the segment places right
-    q_exit = float(P["charge"])                          # all sec3 exit charge (honest denominator)
+    q_exit = float(P["charge"])                          # all converter-beam charge (denominator)
 
     ke_mev = (P.energy - MC2_MEV * 1e6) / 1e6
     core = ke_mev >= min_ke_mev
     if core.sum() < 50:
         raise RuntimeError(
-            f"only {int(core.sum())} sec3 particles above MIN_KE_MEV={min_ke_mev} MeV -- "
-            f"capture cut too aggressive or upstream beam not accelerated")
+            f"only {int(core.sum())} converter positrons above MIN_KE_MEV={min_ke_mev} MeV -- "
+            f"capture cut too aggressive or converter yield too low")
     Pc = P[core]
     q_core = float(Pc.charge)
 
@@ -325,14 +325,14 @@ def load_sec3_core(cfg):
     g_min = 1.0 + ke_min / MC2_MEV
     beta_min = math.sqrt(max(0.0, 1.0 - 1.0 / (g_min * g_min)))
     info = dict(
-        n_sec3_exit=int(n_all), n_core=int(Pc.n_particle),
-        q_sec3_exit_C=q_exit, q_core_C=q_core,
+        n_conv_in=int(n_all), n_core=int(Pc.n_particle),
+        q_conv_in_C=q_exit, q_core_C=q_core,
         core_charge_frac=(q_core / q_exit if q_exit else 0.0),
         min_ke_mev_cut=float(min_ke_mev), ke_in_mev=ke_in,
         ke_min_core_mev=ke_min, beta_min_core=beta_min,
         z_inject_lab_m=z_inject_lab,
     )
-    print(f"upstream exit (3->4 boundary): {n_all} parts, {q_exit*1e12:.1f} pC; captured core "
+    print(f"converter positron beam: {n_all} parts, {q_exit*1e12:.1f} pC; captured core "
           f"(KE>={min_ke_mev} MeV): {Pc.n_particle} parts, {q_core*1e12:.1f} pC "
           f"({info['core_charge_frac']*100:.1f}% of exit charge). <KE>_in {ke_in:.2f} MeV, "
           f"min-core KE {ke_min:.2f} MeV (beta_min={beta_min:.5f}), inject lab-z "
@@ -404,8 +404,8 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     os.makedirs(workdir, exist_ok=True)
 
-    # ── Handoff IN: captured core from the linac1-3 sec3 exit (the 3->4 boundary) ──────────
-    P_in, core_info = load_sec3_core(cfg)
+    # ── Handoff IN: positron core from the converter (after the WarpX section 4) ──────────
+    P_in, core_info = load_converter_core(cfg)
 
     # ── Build the deck (quads OFF, SC off) and apply the FROZEN per-section scale + crest phase ──
     # Run in-place under workdir so fort.18 lands at <workdir>/fort.18 for the progress poll.
@@ -442,7 +442,7 @@ def main():
     # fort.18 lands at <workdir>/fort.18 (I.path is authoritative; poll it not the config value).
     print(f"Running Impact-T ({n_sec} sections, Ntstep={cfg['deck']['ntstep']})...", flush=True)
     fort18 = os.path.join(I.path, "fort.18")
-    with impact_progress(fort18, total_len, desc="linac4-8"):
+    with impact_progress(fort18, total_len, desc="linac5-8"):
         I.run()
     if not I.finished or I.error:
         raise RuntimeError(f"Impact-T did not finish cleanly (finished={I.finished}, "
@@ -456,7 +456,8 @@ def main():
     P_out = I.particles["final_particles"] if "final_particles" in I.particles else None
     if P_out is None or P_out.n_particle == 0:
         # Whole bunch lost: the uncaptured positron beam (~600 mrad divergence) scrapes on the bore
-        # long before the deck end -- no capture optic is modelled here. Report 0% transmission.
+        # long before the deck end -- this Impact-T deck adds no capture optic (the converter's
+        # capture solenoid is upstream and does not collimate to the bore). Report 0% transmission.
         n_out, transmission, q_out, ke_out = 0, 0.0, 0.0, None
     else:
         n_out = int(P_out.n_particle)
@@ -473,9 +474,9 @@ def main():
 
     # ── Handoff OUT: openPMD + summary ────────────────────────────────────────────────────
     inj = dict(
-        # HONEST capture denominator: the FULL sec3 exit charge at the 3->4 boundary, NOT the
+        # HONEST capture denominator: the FULL converter positron-beam charge, NOT the
         # post-cut core -- so q_out/q_injected counts the dropped tail + in-run loss.
-        q_injected_C=core_info["q_sec3_exit_C"],
+        q_injected_C=core_info["q_conv_in_C"],
         q_core_injected_C=core_info["q_core_C"],
         z_inject_lab_m=core_info["z_inject_lab_m"],
         z_inject_local_m=0.0,
@@ -493,7 +494,7 @@ def main():
         transmission_core=transmission,
         q_out_C=q_out,
         core_charge_frac=core_info["core_charge_frac"],
-        n_sec3_exit=core_info["n_sec3_exit"], n_core=core_info["n_core"],
+        n_conv_in=core_info["n_conv_in"], n_core=core_info["n_core"],
         min_ke_mev_cut=core_info["min_ke_mev_cut"],
         # The frozen per-section calibration table (scale, crest phase, ΔE target).
         calibration=calib,

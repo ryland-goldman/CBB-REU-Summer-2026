@@ -1,9 +1,9 @@
 # Cornell Linac Section 2 (CEA 2) — lume-warpx config (WarpX RZ, single azimuthal mode). All
-# constants live here; sim/linac1-3.py (run as `python sim/linac1-3.py 2`) reads them back,
+# constants live here; sim/linac1-4.py (run as `python sim/linac1-4.py 2`) reads them back,
 # imports linac section 1's captured exit beam via WarpX(initial_particles=...), and overrides
 # only runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
 # period). The geometry/grid are IDENTICAL to section 1 (the SAME shared SLAC 3 m maps are
-# reused); only the beam energy and the FROZEN RF setpoints differ. See docs/linac1-3.md.
+# reused); only the beam energy and the FROZEN RF setpoints differ. See docs/linac1-4.md.
 
 grid:
   grid_type: CylindricalGrid
@@ -49,9 +49,9 @@ diagnostics:
     period: 100                                # overridden (max_steps // N_DIAGS)
     species: [electrons]
     data_list: [position, momentum, weighting]
-    write_dir: logs/diags/linac1-3/sec2/main   # → logs/diags/linac1-3/sec2/main/particles
+    write_dir: logs/diags/linac1-4/sec2/main   # → logs/diags/linac1-4/sec2/main/particles
 
-# Stage knobs with no WarpX-native home (read by sim/linac1-3.py).
+# Stage knobs with no WarpX-native home (read by sim/linac1-4.py).
 params:
   # FROZEN RF setpoints — derived ONCE from the old linac_sec1 exit (the runtime crest-finding /
   # ΔE-target field-scale loop is dropped). CREST_PHASE_DEG is the bunch-averaged relativistic
@@ -64,6 +64,7 @@ params:
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW); report-only here
   CFL: 0.5                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the imported exit beam (reweighted)
+  RESAMPLE_N: 0                        # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
   MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 1.0

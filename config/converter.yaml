@@ -1,5 +1,5 @@
-# Cornell Linac e+/e- converter target (G4beamline / Geant4). Reads the linac3 exit electron beam
-# (the 3->4 boundary), drives it into a tungsten target, and writes the converted POSITRON beam as
+# Cornell Linac e+/e- converter target (G4beamline / Geant4). Reads the WarpX section-4 exit
+# electron beam (the 4->5 boundary), drives it into a tungsten target, and writes the converted POSITRON beam as
 # the standard openPMD handoff + injection_summary.json. sim/converter.py reads this back, resamples
 # the incident e- core, writes a BLTrackFile, generates the .g4bl deck programmatically, runs the
 # g4bl binary as a subprocess, and converts the BLTrackFile output via sim/helpers/g4bl.py.
@@ -54,11 +54,11 @@ detector:
 g4bl:
   exe: g4bl
 
-# IO: read the linac1-3 sec3 exit (the 3->4 boundary); write the converter handoff. g4bl runs IN
+# IO: read the WarpX linac1-4 sec4 exit (the 4->5 boundary); write the converter handoff. g4bl runs IN
 # PLACE under workdir (deck + beam_in + sample land there); particles/ + summary go under outdir.
 io:
-  sec3_particles: logs/diags/linac1-3/sec3/main/particles
-  sec3_summary:   logs/diags/linac1-3/sec3/main/injection_summary.json
+  sec4_particles: logs/diags/linac1-4/sec4/main/particles
+  sec4_summary:   logs/diags/linac1-4/sec4/main/injection_summary.json
   outdir:  logs/diags/converter/main
   workdir: logs/diags/converter
   deck_name:    converter.g4bl

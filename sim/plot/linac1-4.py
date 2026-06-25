@@ -1,9 +1,9 @@
 """
-Figures for the WarpX RZ Cornell Linac sections 1-3 (sim/linac1-3.py) over
-logs/diags/linac1-3/secN/main/. Writes PNGs to logs/plots/linac1-3/ (sec{N}_ prefix).
+Figures for the WarpX RZ Cornell Linac sections 1-4 (sim/linac1-4.py) over
+logs/diags/linac1-4/secN/main/. Writes PNGs to logs/plots/linac1-4/ (sec{N}_ prefix).
 (No field diagnostic is dumped, so no plot_fields.)
 
-Run as:  python sim/plot/linac1-3.py <N>   with N in {1, 2, 3}.
+Run as:  python sim/plot/linac1-4.py <N>   with N in {1, 2, 3, 4}.
 
 Four figures per section show the capture / acceleration physics:
   phase_space_z_KE — the captured/accelerated slice (longitudinal phase space),
@@ -26,7 +26,7 @@ from openpmd_viewer import OpenPMDTimeSeries
 
 from sim.plot import common as px
 
-RESULTS = "logs/plots/linac1-3"
+RESULTS = "logs/plots/linac1-4"
 
 
 def _last_populated(diag, species="electrons"):
@@ -42,18 +42,18 @@ def _last_populated(diag, species="electrons"):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("1", "2", "3"):
-        sys.exit("usage: python sim/plot/linac1-3.py <N>   with N in {1, 2, 3}")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("1", "2", "3", "4"):
+        sys.exit("usage: python sim/plot/linac1-4.py <N>   with N in {1, 2, 3, 4}")
     N = int(sys.argv[1])
 
     from warpx import WarpX
     os.makedirs(RESULTS, exist_ok=True)
 
     config = f"config/linac{N}.yaml"
-    diag_dir = f"logs/diags/linac1-3/sec{N}/main"
+    diag_dir = f"logs/diags/linac1-4/sec{N}/main"
     particles = os.path.join(diag_dir, "particles")
 
-    # The sim overrides write_dir to logs/diags/linac1-3/secN/main, so the particles series sits
+    # The sim overrides write_dir to logs/diags/linac1-4/secN/main, so the particles series sits
     # directly there (not under <path>/diags). Populate w._outputs by hand the way the cathode
     # plotter does, so plot2D/plot1D work without WarpX.load_output (which needs a path= on w).
     ts = OpenPMDTimeSeries(particles)

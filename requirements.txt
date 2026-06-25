@@ -3,12 +3,12 @@
 # PREFERRED: install everything from conda-forge (this is how the reference CBB env was
 # built). Note the conda package names that differ from the pip names:
 #   pip `pywarpx`  -> conda `warpx`    (bundles the pywarpx module + the lume `warpx` wrapper)
-#   ImpactTexe     -> conda `impact-t` (the serial Impact-T binary linac4-8 runs via lume-impact)
+#   ImpactTexe     -> conda `impact-t` (the serial Impact-T binary linac5-8 runs via lume-impact)
 # One-shot env creation:
 #   conda create -n CBB -c conda-forge 'warpx=26.03' impact-t openpmd-api openpmd-viewer \
 #       lume-impact openpmd-beamphysics easygdf numpy scipy matplotlib tqdm pandas
 # PIN warpx=26.03: warpx 26.04 regressed RZ + openPMD diagnostics — every RZ stage
-# (gun/injector/linac1-3) aborts at init with "Dynamic cast returned a nullptr!". 26.03 is the
+# (gun/injector/linac1-4) aborts at init with "Dynamic cast returned a nullptr!". 26.03 is the
 # last release with the magnetostatic picmi kwargs lume-warpx needs AND a working RZ openPMD path.
 #
 # EXTERNAL (not a pip/conda dep): the converter stage shells out to the `g4bl` binary from
@@ -17,7 +17,7 @@
 # FALLBACK: `pip install -r requirements.txt` into an env that already has
 # warpx / impact-t / openpmd-api from conda (those need C++/Fortran cores).
 
-# Core PIC engine + LUME wrapper (cathode/gun/injector/linac1-3 drive WarpX via a YAML config).
+# Core PIC engine + LUME wrapper (cathode/gun/injector/linac1-4 drive WarpX via a YAML config).
 pywarpx==26.3                  # NOT 26.4: 26.04 breaks RZ openPMD diags (see conda-create note above)
 lume-warpx==1.0.1
 
@@ -25,7 +25,7 @@ lume-warpx==1.0.1
 openpmd-api==0.17.0
 openpmd-viewer==1.11.0
 
-# Impact-T driver + beam I/O for the linac4-8 stage
+# Impact-T driver + beam I/O for the linac5-8 stage
 lume-impact==0.11.0
 openpmd-beamphysics==0.14.1
 
