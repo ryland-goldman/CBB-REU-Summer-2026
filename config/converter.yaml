@@ -5,10 +5,10 @@
 # g4bl binary as a subprocess, and converts the BLTrackFile output via sim/helpers/g4bl.py.
 # See docs/converter.md. (g4bl is an EXTERNAL binary -- G4beamline 3.08 -- not a pip/conda dep.)
 
-# Target geometry (the physics: 7 mm tungsten, 10 mm radius solid cylinder, ~2 X0 of W).
+# Target geometry (the physics: 6.35 mm tungsten, 10 mm radius solid cylinder, 1.81 X0 of W).
 geometry:
   target_material: W            # Geant4 NIST tungsten (G4_W)
-  target_length_mm: 7.0         # 7 mm thickness along the beam axis
+  target_length_mm: 6.35        # Fromowitz present thickness = 1.81 X0 (W X0 = 3.5 mm)
   target_radius_mm: 10.0        # 10 mm radius (20 mm diameter)
   target_front_z_mm: 0.0        # z of the target FRONT face [mm] in the g4bl frame
   front_clearance_mm: 2.0       # vacuum gap: incident-bunch head sits this far upstream of the face
@@ -30,12 +30,15 @@ physics:
 # sags toward the ends and fringes out past them. `enabled: false` reverts to the field-free run.
 solenoid:
   enabled: true
-  b_tesla: 5.0                  # target PEAK (central) axial field [T]; current density auto-solved
-  length_mm: 1000.0            # coil length along z [mm] (1 m)
-  inner_radius_mm: 50.0        # coil bore inner radius [mm] (clears the target+beam; field fills it)
-  outer_radius_mm: 100.0       # coil winding outer radius [mm] (sets current density for b_tesla)
+  b_tesla: 1.3                 # Fromowitz 1.3 T infinite-solenoid value (reached by the short coil at
+                               # the ~8 kA upgrade current). PEAK (central) axial field [T]; current
+                               # density auto-solved.
+  length_mm: 46.5              # short coil: 6 turns @ 7.75 mm spacing (two concentric rows, n~258/m)
+  inner_radius_mm: 13.0        # bore ~13 mm radius (tracked-distribution aperture; clears the target)
+  outer_radius_mm: 25.0        # two-row winding outer radius [mm] (estimate; thesis gives turns, not
+                               # the winding OD -- only affects the fringe shape, not the auto-solved peak)
   start_z_mm: 0.0              # coil upstream end rel. to the target front face [mm]
-  exit_drift_mm: 300.0         # field-free drift past the coil exit to the sampling plane [mm]
+  exit_drift_mm: 100.0         # field-free drift past the coil exit to the sampling plane [mm]
                                # (clears the exit fringe -- ~2% of peak by here -- so the handoff is
                                # field-free with the fringe focusing fully applied; longer = bigger
                                # beam, since the now-parallel beam expands over the drift)

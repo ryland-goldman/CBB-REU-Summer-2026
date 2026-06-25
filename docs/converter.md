@@ -8,7 +8,7 @@ bremsstrahlung -> pair production. The converted **positron** beam is the input 
 
 ```
 ... linac1-4 (sec4, WarpX RZ) --[4->5 boundary]--> converter (this, G4beamline) --> linac5-8 (Impact-T, e+ mode)
-                                  e- in                7 mm W target              e+ out
+                                  e- in              6.35 mm W target             e+ out
 ```
 
 Unlike every other stage it is **not** a self-field/RF tracking run: it is a single-shot
@@ -44,8 +44,8 @@ process rather than another WarpX/Impact-T driver.
 
 ## Target design — a thin tungsten radiator
 
-The converter is a single solid cylinder of **tungsten** (`G4_W`, the NIST material), **7 mm thick**,
-**radius 10 mm**, with the incident electron beam on-axis. Tungsten is the canonical converter
+The converter is a single solid cylinder of **tungsten** (`G4_W`, the NIST material), **6.35 mm
+thick**, **radius 10 mm**, with the incident electron beam on-axis. Tungsten is the canonical converter
 material: its high atomic number (Z = 74) gives a short radiation length and a large pair-production
 cross-section, so the bremsstrahlung -> pair-production cascade develops in a millimetre-scale depth,
 and its high density and melting point survive the deposited power.
@@ -58,13 +58,14 @@ The mechanism in the radiator is a two-step electromagnetic shower:
    positrons are the product of interest; the electrons (primaries that survive plus shower e-) and
    the un-converted photons are also tracked and counted but discarded at the handoff.
 
-**Why ~7 mm.** Target thickness is a trade. Too thin and few photons are produced and fewer convert,
-so the positron yield is low. Too thick and the shower over-develops: the positrons that *are*
-produced re-scatter, lose energy, and spread in angle before they can leave the back face, and the
-absorbed dose climbs. The yield-vs-thickness curve for a thin converter peaks around **~2 radiation
-lengths** of the radiator (X0 ~ 3.5 mm in tungsten, so ~7 mm), which is the qualitative basis for the
-7 mm choice here. (The actual optimum depends on the downstream capture acceptance; this stage fixes
-the geometry and reports the yield it gives rather than optimising it — see the caveats.)
+**Why 6.35 mm.** Target thickness is a trade. Too thin and few photons are produced and fewer
+convert, so the positron yield is low. Too thick and the shower over-develops: the positrons that
+*are* produced re-scatter, lose energy, and spread in angle before they can leave the back face, and
+the absorbed dose climbs. The yield-vs-thickness curve for a thin converter peaks broadly around ~2
+radiation lengths of the radiator (X0 ~ 3.5 mm in tungsten). **6.35 mm = 1.81 X0** is the Fromowitz
+present CESR-linac target thickness — slightly below the ~2 X0 optimum, but the optimum curve is
+broad over the 130–200 MeV incident range. (The actual optimum depends on the downstream capture
+acceptance; this stage fixes the geometry and reports the yield it gives rather than optimising it.)
 
 ---
 
@@ -72,10 +73,12 @@ the geometry and reports the yield it gives rather than optimising it — see th
 
 The positrons leaving the back face are **high-divergence** — a converter sprays them over a large
 solid angle — so a real e+ source immerses the target exit in a strong axial magnetic field to
-re-collect them into the downstream acceptance (the **capture optic**: a high-field solenoid, or an
-adiabatic matching device). This stage models it as a **real current coil** of default **5 T peak
-over 1 m**, starting at the target front face so the field surrounds the radiator and the drift to
-the sampling plane.
+re-collect them into the downstream acceptance (the **capture optic**: a short capture solenoid, or
+an adiabatic matching device). This stage models it as a **real current coil** at the Fromowitz
+operating point — **1.3 T peak over a short ~46 mm coil** (6 turns × 2 rows at 7.75 mm spacing,
+~13 mm bore), starting at the target front face so the field surrounds the radiator and the drift to
+the sampling plane. (The thesis quotes a 1.3 T infinite-solenoid value; the short coil reaches it at
+the ~8 kA upgrade current, which is the operating point modelled here.)
 
 It is realised in the g4bl deck as a `coil` + `solenoid`, so g4bl computes the **full Maxwellian
 field**, including the **end fringe** — the radial `B_r = -(r/2)·∂B_z/∂z` where the field ramps down
@@ -123,7 +126,7 @@ trades fidelity against runtime, and these three are the ones that matter for a 
   Geant4 to re-evaluate the shower (energy loss, scattering, secondary production) at a fine depth
   resolution through the radiator, rather than taking one long step that smears the shower's
   longitudinal development. Smaller `max_step` = better-resolved shower depth and exit phase space,
-  more steps, slower. It is set to a small fraction of the 7 mm thickness so the cascade is resolved.
+  more steps, slower. It is set to a small fraction of the 6.35 mm thickness so the cascade is resolved.
 
 Together these are the standard accuracy levers for a converter: **what EM physics** (`physics_list`),
 **how soft a secondary to keep** (`min_range_cut`), and **how finely to step the shower**
@@ -233,13 +236,14 @@ documented here; the *values* are run output and are not quoted.)
     sign flips the accelerating phase, and the much lower injection energy/velocity shifts the
     arrival phase further). Run **`sim/autophase_impact.py`** *after* the converter and *before*
     `sim/linac5-8.py` to re-derive them. (See the "Positron mode" section of `docs/linac5-8.md`.)
-  - **Capture optic.** A real positron source places a **capture optic** (an adiabatic matching
-    device / high-field solenoid) right at the target exit to collect the divergent positrons into
-    the linac acceptance. This stage models it as a **uniform axial capture solenoid** (the
-    `solenoid:` block — default 5 T over 1 m, starting at the target front face) that focuses the
-    positrons before the sampling plane; set `enabled: false` to recover the bare field-free run. It
-    is a uniform-field idealisation, not a tapered AMD, so the accepted transmission/yield through
-    linac5-8 are still qualitative — the deliverable is the converter physics (spectrum, yield,
+  - **Capture optic.** A real positron source places a **capture optic** (a short capture solenoid /
+    adiabatic matching device) right at the target exit to collect the divergent positrons into
+    the linac acceptance. This stage models it as a **real current-coil capture solenoid** (the
+    `solenoid:` block — Fromowitz 1.3 T peak over a short ~46 mm coil, starting at the target front
+    face) that focuses the positrons before the sampling plane; set `enabled: false` to recover the
+    bare field-free run. It is a short-coil idealisation, not a tapered AMD, so the accepted
+    transmission/yield through linac5-8 are still qualitative — the deliverable is the converter
+    physics (spectrum, yield,
     divergence), not an absolute accepted-positron number.
 - **g4bl is an external binary.** G4beamline 3.08 is invoked as a separate process (`g4bl`), not a
   pip/conda dependency — it must be installed and on `PATH` independently of the `CBB` environment.

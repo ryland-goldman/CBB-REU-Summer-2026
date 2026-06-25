@@ -58,15 +58,15 @@ params:
   # this stage); the value here is the seed used when running the stage standalone. FIELD_SCALE is
   # NOT autophased -- re-fit it to DE_TARGET_MEV (the old per-section ΔE-target loop) when retuning
   # the section-4 (CU 5) operating point; the shipped value is copied from section 3.
-  CREST_PHASE_DEG: 177.0000            # autophased by sim/main.py; standalone seed
-  FIELD_SCALE: 9.179702e+01            # NOT autophased — re-fit to DE_TARGET_MEV for CU 5
-  DE_TARGET_MEV: 43.7                  # reference — CU 5 ΔE target [MeV] (51 MeV @15 MW · √(11/15))
+  CREST_PHASE_DEG: 178.1528            # autophased by sim/main.py; standalone seed
+  FIELD_SCALE: 2.081400e+02            # re-fit to DE_TARGET 51 MeV (ΔE ∝ scale, measured on the chain)
+  DE_TARGET_MEV: 51.0                  # Fromowitz ACC_4 design energy gain [MeV] (5.248 m / 149 cells)
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
   F_RF: 2856.0e6                       # SLAC S-band [Hz]
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW); report-only here
   CFL: 0.5                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the imported exit beam (reweighted)
-  RESAMPLE_N: 0                        # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
+  RESAMPLE_N: 50000                      # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
   MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 1.0

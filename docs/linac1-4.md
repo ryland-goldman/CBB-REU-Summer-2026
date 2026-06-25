@@ -83,7 +83,7 @@ bunch sits). How those are set differs between the capture section and the accel
 
 - **Section 1 (capture).** A ~150 keV beam injected into a phase-velocity-c wave **slips in phase**
   and must be *captured*. The amplitude is set from the klystron input power,
-  `scale = sqrt(POWER_MW / RF_NORM_MW)` (`POWER_MW = 11 MW`, the original LinacSim `sec1_input_power`;
+  `scale = sqrt(POWER_MW / RF_NORM_MW)` (`POWER_MW = 19 MW`, the Fromowitz ACC_1 listed input power;
   `RF_NORM_MW = 1 kW` is the map normalisation). For section 1 `PHASE_DEG` is the **absolute**
   arrival-referenced base phase — the driver applies it directly as `base_deg`, NOT as a detune from
   a separate crest. It is the capture crest `sim/autophase.py` writes into `config/linac1.yaml`, so
@@ -103,8 +103,9 @@ bunch sits). How those are set differs between the capture section and the accel
   `CREST_PHASE_DEG` and `FIELD_SCALE` in each section's `config/linac{2,3,4}.yaml`. Those YAML values
   are **authoritative** — they are re-derived (rewritten in place by `sim/autophase.py`) whenever the
   upstream beam changes, so the actual numbers are not reproduced here. `DE_TARGET_MEV` (the
-  details.md CEA per-section ΔE @11 MW, √P-scaled) is the energy budget the scale was derived to hit;
-  it is kept only as a comment/reference — the runtime no longer reads it for any field calculation.
+  Fromowitz §4 design energy gains — ACC_2/3 33 MeV, ACC_4 51 MeV) is the energy budget the field
+  scale is fit to; it is kept as a reference — the runtime no longer reads it for any field
+  calculation, so re-fit `FIELD_SCALE` to it by hand (ΔE ∝ scale) when the upstream power changes.
   `PHASE_DEG` remains as a **detune** offset from the frozen crest (default 0 = on crest).
 
   > **Section 4 is new.** `sim/main.py` autophases its `CREST_PHASE_DEG` each run (it calls

@@ -56,15 +56,15 @@ params:
   # FROZEN RF setpoints — derived ONCE from the old linac_sec1 exit (the runtime crest-finding /
   # ΔE-target field-scale loop is dropped). CREST_PHASE_DEG is the bunch-averaged relativistic
   # crest base phase; FIELD_SCALE is the field-map amplitude scale that hit the DE_TARGET_MEV.
-  CREST_PHASE_DEG: 156.5857            # frozen on-crest base phase [deg]
-  FIELD_SCALE: 9.307480e+01            # frozen field-map amplitude scale
-  DE_TARGET_MEV: 28.3                  # reference only — per-section ΔE target [MeV] the scale was derived to hit
+  CREST_PHASE_DEG: 150.6386            # autophased by sim/main.py; standalone seed [deg]
+  FIELD_SCALE: 1.293100e+02            # re-fit to DE_TARGET 33 MeV (ΔE ∝ scale, measured on the chain)
+  DE_TARGET_MEV: 33.0                  # Fromowitz ACC_2 design energy gain [MeV]; field scale fit to it
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
   F_RF: 2856.0e6                       # SLAC S-band [Hz]
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW); report-only here
   CFL: 0.5                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the imported exit beam (reweighted)
-  RESAMPLE_N: 0                        # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
+  RESAMPLE_N: 50000                      # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
   MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 1.0

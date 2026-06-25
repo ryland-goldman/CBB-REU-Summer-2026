@@ -1,6 +1,6 @@
 """Cornell Linac e+/e- converter target (G4beamline). main(): read the WarpX section-4 exit
 electron beam (the 4->5 boundary) -> resample to the incident-event count + write a BLTrackFile -> generate the
-.g4bl deck -> run g4bl (7 mm W target, brems->pair production) -> sample the exit plane -> keep the
+.g4bl deck -> run g4bl (6.35 mm W target, brems->pair production) -> sample the exit plane -> keep the
 forward positron core -> openPMD handoff OUT (`positrons`, +e) + injection_summary.json.
 
 Run `python sim/converter.py [n_events]` (the optional arg overrides config n_events for a quick
@@ -107,7 +107,7 @@ def _solenoid_deck(cfg, front):
 
 
 def write_g4bl_deck(cfg, path, beam_in, out_file):
-    """Generate the .g4bl deck (7 mm W target + capture solenoid + forward sampling plane). Returns
+    """Generate the .g4bl deck (6.35 mm W target + capture solenoid + forward sampling plane). Returns
     sample_z_mm."""
     g, ph, det = cfg["geometry"], cfg["physics"], cfg["detector"]
     front, L = g["target_front_z_mm"], g["target_length_mm"]

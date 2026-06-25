@@ -10,7 +10,7 @@
 
 # RF / operating point (shared across all 4 sections).
 rf:
-  power_mw: 11.0                 # RF input power [MW] per section -- the Balanced klystron point
+  power_mw: 17.0                 # RF input power [MW] -- Fromowitz sec 5/6 forward power (capture sections)
   phase_deg: 0.0                 # nominal on-crest base phase (per-section crest is frozen below)
   rf_freq_hz: 2856.0e6           # S-band drive frequency [Hz]
   cell_length_m: 0.035           # S-band cell length d = 3.5 cm (sets beta0*d for the body scale)
@@ -25,7 +25,8 @@ lattice:
 beam:
   species: positrons             # upstream is the converter positron beam (q=+e); sign flips Bcharge
   min_ke_mev: 2.0                # positron captured-core energy cut [MeV] (soft converter spectrum)
-  np: 4000                       # macroparticles tracked in the final run (downsample core to this)
+  np: 50000                      # macroparticles tracked in the final run (downsample core to this;
+                                 # capped by the converter positron yield, so it keeps min(np, core))
   rng_seed: 0
 
 # Impact-T deck knobs.
@@ -37,22 +38,29 @@ deck:
 
 # Per-section physics table (details.md), lab order sections 5..8. de15_mev is ΔE @ 15 MW (the
 # √P reference); bore_in is the (entrance, exit) bore DIAMETER taper [inches] -> radii in code.
-# quad_in is the real tabulated drift-quad length [inches] AFTER the section (Q5..Q8); the quad is
-# placed at K1=0 (optically a drift) but at its REAL length so the cumulative path length -- and
-# thus the bunch arrival time -- matches the deck the frozen ABSOLUTE crest phases were calibrated
-# on (theta0 is referenced to t=0; a shorter deck would shift sections 6-8 off-crest). The Q8 entry
-# (after the last section) is never placed. field_scale [V/m] and crest_phase_deg are the FROZEN
-# per-section setpoints (see header).
+# quad_in is the real tabulated quad length [inches] AFTER the section (Q5..Q8). The Q8 entry
+# (after the last section) is never placed. field_scale [V/m] and crest_phase_deg are the
+# per-section setpoints; field_scale is the √P-scaled seed (re-fit BY HAND when retuning -- NOT
+# autophased), crest re-derived below.
 # crest_phase_deg is re-derived automatically by sim/main.py (it runs `sim/autophase_impact.py`
 # before this stage); the values here are the seed used when running the stage standalone. They are
 # absolute Impact-T theta0 values that depend on the positron species (q=+e) AND the deck geometry
 # (this deck starts at section 5; section 4 is now a WarpX stage upstream of the converter), so a
 # standalone run on a changed upstream beam must be preceded by `sim/autophase_impact.py`.
+#
+# FOCUSING (Fromowitz capture optics, capture_optics_specs.md):
+#   quad_k1 = machine k1 [m^-2] (Fig 6.32, ref energy 160 MeV); the trailing quad is a doublet at
+#     gradient +-k1*0.534 T/m (Table 6.3 calibration). sec5 quad ~0 (the solenoid focuses there).
+#     sec8's quad (k1 2.4) is the last and is NOT placed (snout boundary).
+#   solenoid_b_tesla = cavity-solenoid PEAK axial field [T] around sections 5 & 6 only (sec 7 is the
+#     first section without a solenoid). 1.3 T peak (the thesis gives the cavity-solenoid geometry
+#     only, not its field; matched to the 1.3 T converter capture solenoid); coil mean radius
+#     0.1304 m -> the thesis ~1/6-at-12cm end fringe.
 sections:
-  - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 179.5768}   # sec 5
-  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 255.0000}   # sec 6
-  - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 1.998574e7, crest_phase_deg: 182.6691}   # sec 7
-  - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, field_scale: 1.997594e7, crest_phase_deg: 9.3035}   # sec 8
+  - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, quad_k1: 0.0, solenoid_b_tesla: 1.3,  field_scale: 2.654174e7, crest_phase_deg: 181.1273}   # sec 5
+  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, quad_k1: 5.5, solenoid_b_tesla: 1.3,  field_scale: 2.655278e7, crest_phase_deg: 255.4155}   # sec 6
+  - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, quad_k1: 8.0, solenoid_b_tesla: 0.0,  field_scale: 2.483940e7, crest_phase_deg: 184.8214}   # sec 7
+  - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, quad_k1: 2.4, solenoid_b_tesla: 0.0,  field_scale: 2.482722e7, crest_phase_deg: 11.5413}   # sec 8
 
 # Vendored S-band TW template field shapes (committed at fieldmaps/rfdata/). The 4-line solrf
 # superposition reuses these verbatim: entrance rfdata4 (+0°), body_1 rfdata5 (+30°, /sin(beta0 d)),

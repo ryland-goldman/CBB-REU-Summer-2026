@@ -97,7 +97,7 @@ python sim/plot/linac1-4.py 2                   # a linac section's figures (fro
   sim/linac1-4.py 2` directly if `logs/diags/linac1-4/sec1/` already exists.
 
 There is no test suite or linter — validation is physics sanity checks (energy gain, Child–Langmuir
-current, bunching, the ~296 MeV exit) printed by each run and inspected in `logs/plots/`.
+current, bunching, the linac exit energy) printed by each run and inspected in `logs/plots/`.
 
 ## Project Architecture
 
@@ -186,7 +186,9 @@ log `logs/pipeline/log_<date>.log`; the progress bar (stderr) stays on the termi
   per-section crests for the positron beam each run (`sim/autophase_impact.py`, a numerical 1D model —
   finds the crest correctly; its reported `⟨KE⟩` is ~1.7× Impact-T's gain, an `ele_field`-vs-Fortran
   amplitude offset that does not move the crest);
-  SC off, quads off (K1=0); transmission measured from the **macro count before** re-imposing charge;
+  SC off, but the **Fromowitz capture optics are modelled**: cavity-solenoids on sec 5/6 (0.65 T,
+  solenoid-only `solrf` overlapping the cavity) + inter-section quad **doublets** (`quad_k1`×0.534
+  T/m, Fig 6.32); transmission measured from the **macro count before** re-imposing charge;
   `ParticleGroup.species` is `"electron"` (singular) but openPMD readers key `"electrons"` (plural);
   `ParticleGroup.write()` emits a viewer-incompatible openPMD — the handoff uses
   `loadparticles.write_openpmd_particles`.

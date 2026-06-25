@@ -72,8 +72,9 @@ parabolic refine) and fit its field scale to a ΔE target (`brentq`) -- expensiv
 - Each section's absolute crest phase is pinned per solrf sub-element via `theta0_deg`
   (entrance +0, body_1 +30, body_2 +90, exit +0 on top of `crest_phase_deg`).
 
-These setpoints were calibrated on-crest at the Balanced operating point (11 MW); they are an
-operating-point artifact, not first-principles values. There are **no per-run validation gates**.
+These setpoints were calibrated on-crest at the Fromowitz operating point (17 MW, the sec 5/6
+forward power); they are an operating-point artifact, not first-principles values. There are **no
+per-run validation gates**.
 
 > **The crests are autophased in the chain.** `sim/main.py` runs `sim/autophase_impact.py` before
 > this stage, re-deriving every section's `crest_phase_deg` for the positron beam on the
@@ -85,7 +86,7 @@ operating-point artifact, not first-principles values. There are **no per-run va
 
 ## Operating point & energy budget
 
-`POWER_MW = 11` (the Balanced klystron point) for the whole linac. The per-section ΔE target
+`POWER_MW = 17` (the Fromowitz sec 5/6 forward power) for the whole linac. The per-section ΔE target
 (recorded in the frozen-calibration table for the section-gains figure) is `sqrt(P_op/15)`-scaled
 from the @15 MW `details.md` column:
 
@@ -115,24 +116,33 @@ converter positron-beam charge at the handoff (NOT the post-cut core), so within
 (`q_out / q_injected`) counts both the dropped tail and in-run loss. The tracked core charge is
 recorded separately (`q_core_injected_C`).
 
-## Space charge & quads
+## Space charge, quads & cavity-solenoids
 
 - **SC OFF** (`space_charge: false` => `Bcurr = 0`): the headline. Transverse SC is negligible at
   >25 MeV (`~ 1/gamma^2`, gamma > 49 at entry).
-- **Quads OFF** (`K1 = 0`): the A->T (current->field) calibrations are undocumented. Each
-  inter-section spacing is `gap/2` drift, a **real-length** zero-K1 quadrupole (its real tabulated
-  drift-quad length, `quad_in`), `gap/2` drift, with `gap = DRIFT_M` (0.4 m). A K1=0 quad is
-  optically a drift, but it keeps its **real length** so the cumulative path length -- and thus the
-  bunch arrival time at sections 6-8 -- matches the deck the FROZEN ABSOLUTE crest phases were
-  calibrated on (a shorter deck would shift the absolute `theta0` arrival phase by several RF periods
-  per gap and throw sections 6-8 off-crest). The exploratory derived-FODO path of the old stage is
-  dropped.
-- **Transmission is a no-focusing LOWER BOUND, not a prediction.** With no quad focusing over the
-  ~29 m line the beam diverges and a fraction scrapes the real tapered bore (`bore_aperture_on`,
-  the solrf `radius` -- the binding aperture, deliberately not a widened numerical box). The robust,
-  quad-independent deliverable is the **longitudinal physics** (exit `<KE>`, per-section ΔE), which
-  does not depend on transverse confinement. Transmission is measured from the **macroparticle
-  count** (`n_out / n_in`) BEFORE the openPMD charge re-imposition, so it can never be masked to 1.0.
+- **Capture-optics focusing ON (Fromowitz `capture_optics_specs.md`).** The post-target capture
+  optics are the thesis's whole point, so they are modelled:
+  - **Cavity-solenoids on sections 5 & 6** (`solenoid_b_tesla`, 1.3 T peak). Sections 7 & 8 have
+    none (cavity 7 is "the first section without a solenoid"). Each is a **solenoid-only `solrf`**
+    (`rf_field_scale = 0`, static `solenoid_field_scale` Bz) **overlapping** the cavity over its full
+    length -- so it adds focusing without advancing the deck z (the crest geometry is unchanged).
+    The on-axis Bz is the finite-coil profile of a thin shell at mean radius 13.04 cm (inner 8.93 /
+    outer 17.15 cm), Fourier-decomposed for Impact-T's static type-105 paraxial expansion; it
+    reproduces the thesis fringe (~1/6 of peak 12 cm past the coil end). The thesis gives the
+    cavity-solenoid geometry only, not its field; 1.3 T is matched to the converter capture solenoid.
+  - **Quad doublets between sections** (`quad_k1`, machine k1 from Fig 6.32 -> gradient
+    `k1 x 0.534 T/m`, Table 6.3 at 160 MeV). Each inter-section spacing is `gap/2` drift, a
+    **real-length** `+grad / -grad` doublet (the thesis QH/QV per section) over the tabulated quad
+    length `quad_in`, `gap/2` drift, `gap = DRIFT_M` (0.4 m). Section 5's k1 ~ 0 (the solenoid
+    focuses there, so the quad is left off); 6/7/8 carry 5.5 / 8.0 / 2.4 m^-2 (8's trailing quad is
+    the last and is not placed). The doublet keeps the **real total length** so the cumulative path
+    length -- and thus the bunch arrival time at sections 6-8 -- matches the deck the ABSOLUTE crest
+    phases are calibrated on (a shorter deck would throw sections 6-8 off-crest).
+- **Transmission folds the real capture acceptance.** The beam scrapes the real tapered bore
+  (`bore_aperture_on`, the solrf `radius`); the sec5/6 solenoids + quads collect what the bore
+  accepts. Per the thesis the capture is intrinsically inefficient (a few %), so transmission stays
+  low. It is measured from the **macroparticle count** (`n_out / n_in`) BEFORE the openPMD charge
+  re-imposition, so it can never be masked to 1.0.
 
 ## Output
 
@@ -147,10 +157,9 @@ frozen calibration table, and `stat_vs_z` (`z_m`, `ke_mev`, `sigma_ke_mev`, `sig
 
 - `energy_gain` -- cumulative `<KE>` +/- sigma_KE vs z.
 - `energy_spread` -- absolute sigma_KE and relative sigma_KE/`<KE>` vs z.
-- `emittance` -- normalized emittance eps_n,x/eps_n,y vs z (the quads-OFF ~2.4x rise is a fort.10N
-  diagnostic artifact, not physical growth).
+- `emittance` -- normalized emittance eps_n,x/eps_n,y vs z.
 - `section_gains` -- per-section achieved ΔE (from the vs-z KE curve) vs the frozen target ΔE.
-- `fodo_optics` -- quads-OFF sigma_x / sigma_y vs z (placeholder optics, NOT predictive).
+- `fodo_optics` -- sigma_x / sigma_y vs z under the sec5/6 solenoids + quad doublets.
 
 ## Gotchas (Impact-T / lume-impact)
 
@@ -221,7 +230,7 @@ follow from the positron species.
 
 - **Standalone runs.** If you invoke `sim/linac5-8.py` alone on a changed upstream beam, run
   `sim/autophase_impact.py` first — otherwise the shipped crest seeds may be off-crest (decelerating
-  in places). Even with correct crests, the absolute transmission is a lower bound: the converter's
-  high-divergence positrons need a capture optic at the target that is not modelled
-  (see `docs/converter.md`). The robust positron deliverable is the **longitudinal** physics
-  (per-section delta-E, exit `<KE>`), not the unfocused transmission.
+  in places). The sec5/6 cavity-solenoids + quad doublets supply the post-target capture optics, but
+  the capture stays intrinsically low-efficiency (a few %, per the thesis), so absolute transmission
+  is small; the robust positron deliverable is the **longitudinal** physics (per-section delta-E,
+  exit `<KE>`).

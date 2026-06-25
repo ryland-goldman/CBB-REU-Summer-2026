@@ -1,151 +1,158 @@
-"""Tk control panel + beam explorer for the Cornell2 linac chain.
+"""Tk control panel for the Cornell Linac chain: a per-stage pipeline runner, a
+static-figure browser, and an interactive beam-properties explorer over the existing
+openPMD dumps (nothing re-simulated).
 
-One window over every stage's openPMD dumps, generated figures, and config, with per-stage
-actions wired to the real drivers:
-  • Edit Config     — raw YAML editor for config/<stage>.yaml (Load/Save)
-  • Run Section      — python sim/<driver> [args]
-  • Run From Here    — this stage + all downstream stages, in chain order
-  • Autophase        — sim/autophase.py N (linac1-4) / sim/autophase_impact.py (linac5-8)
-  • Generate Plots   — python sim/plot/<driver> [args]
+Three surfaces in one window:
+  - left  : one card per stage (cathode … linac5-8) with [edit config] [run] [plot]
+            and, for the linac stages, [autophase] — each shells out to the same
+            sim/plot/autophase scripts sim/main.py drives, streaming output to the console.
+  - right : a notebook — "Beam Explorer" (Trends / 1D / 2D over a stage's ⟨z⟩-ordered
+            screens) and "Plots" (the PNGs under logs/plots/<stage>/).
+  - bottom: a console mirroring every subprocess's stdout/stderr.
 
-Right pane is a notebook: Plots (PNG gallery from logs/plots/<stage>), Beam Explorer
-(Trends / 1D / 2D over the dumps), Config, and a live Run Log. Subprocesses run in the
-active env via sys.executable from the repo root; output streams to the Run Log.
-
-Nothing is re-simulated by the explorer — it reads existing logs/diags dumps. See the
-per-stage docs in docs/ for the physics.
+Run from the repo root in the CBB env:  python sim/gui.py
+See docs/ for the per-stage physics; the stage-local-z / σ_z-vs-σ_t conventions match sim/main.py.
 """
 
 import os
+import re
 import sys
+import pty
+import glob
 import queue
-import signal
+import base64
 import threading
 import subprocess
 import warnings
+from io import BytesIO
 
 warnings.filterwarnings("ignore")
 
-# Repo root so the stage-relative diagnostic / config / plot paths resolve, and prepare_env's
-# OMP + fd-limit setup applies to this process (the explorer leaks an fd per get_particle).
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from sim.helpers.tools import prepare_env  # noqa: E402
+# Run from the repo root so the stage-relative diagnostic/script paths resolve.
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_ROOT)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-prepare_env()
-_ROOT = os.getcwd()
-
-import numpy as np  # noqa: E402
-import tkinter as tk  # noqa: E402
-from tkinter import ttk, messagebox  # noqa: E402
-
-import matplotlib  # noqa: E402
-matplotlib.use("TkAgg")
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # noqa: E402
-
-from openpmd_viewer import OpenPMDTimeSeries  # noqa: E402
-from pmd_beamphysics import ParticleGroup  # noqa: E402
-
-from sim.helpers.loadparticles import make_particle_group  # noqa: E402
-
-# Optional Pillow for clean PNG scaling; without it we fall back to integer subsample.
+# openpmd-viewer leaks an fd per get_particle; raise RLIMIT_NOFILE so a full-stage
+# browse doesn't hit the fd wall. prepare_env() also pins OMP=1 / HDF5 locking. Best-effort.
 try:
-    from PIL import Image, ImageTk
-    _HAVE_PIL = True
+    from sim.helpers.tools import prepare_env
+    prepare_env()
 except Exception:
-    _HAVE_PIL = False
+    pass
 
+import numpy as np
+import tkinter as tk
+from tkinter import ttk, messagebox
 
-# ── Stages, in chain order (mirrors sim/main.py's STAGES) ─────────────────────
-# particles : openPMD series dir (a list = first existing wins, e.g. gun handoff→particles)
-# plots_dir : where the stage plotter writes PNGs; plot_prefix filters shared dirs (linac1-4)
-# autophase : argv (after sys.executable) for the stage's autophase tool, or None
-def _stage(name, driver, args, config, particles, plots_dir,
-           geom="rz", plot_prefix="", autophase=None):
-    return dict(name=name, driver=driver, plot="sim/plot/" + driver.split("/")[-1],
-                args=[str(a) for a in args], config=config,
-                particles=particles if isinstance(particles, list) else [particles],
-                plots_dir=plots_dir, geom=geom, plot_prefix=plot_prefix, autophase=autophase)
+import matplotlib
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
+from openpmd_viewer import OpenPMDTimeSeries
+from pmd_beamphysics import ParticleGroup
 
+from sim.helpers.loadparticles import make_particle_group
+
+# ── Stages, in chain order ───────────────────────────────────────────────────
+# Dumps store positions [m] and momenta u = γβ. The cathode is 2D (x–z, no y); the
+# rest are RZ. `sim`/`plot`/`autophase` are argv lists passed to the current interpreter;
+# `config` is the YAML edited by [edit config]; `plots` is the figure glob for the Plots tab.
 STAGES = [
-    _stage("cathode", "sim/cathode.py", [], "config/cathode.yaml",
-           "logs/diags/cathode/particles", "logs/plots/cathode", geom="2d"),
-    _stage("gun", "sim/gun.py", [], "config/gun.yaml",
-           ["logs/diags/gun/handoff", "logs/diags/gun/particles"], "logs/plots/gun"),
-    _stage("injector", "sim/injector.py", [], "config/injector.yaml",
-           "logs/diags/injector/main/particles", "logs/plots/injector"),
-    _stage("linac1", "sim/linac1-4.py", [1], "config/linac1.yaml",
-           "logs/diags/linac1-4/sec1/main/particles", "logs/plots/linac1-4",
-           plot_prefix="sec1_", autophase=["sim/autophase.py", "1"]),
-    _stage("linac2", "sim/linac1-4.py", [2], "config/linac2.yaml",
-           "logs/diags/linac1-4/sec2/main/particles", "logs/plots/linac1-4",
-           plot_prefix="sec2_", autophase=["sim/autophase.py", "2"]),
-    _stage("linac3", "sim/linac1-4.py", [3], "config/linac3.yaml",
-           "logs/diags/linac1-4/sec3/main/particles", "logs/plots/linac1-4",
-           plot_prefix="sec3_", autophase=["sim/autophase.py", "3"]),
-    _stage("linac4", "sim/linac1-4.py", [4], "config/linac4.yaml",
-           "logs/diags/linac1-4/sec4/main/particles", "logs/plots/linac1-4",
-           plot_prefix="sec4_", autophase=["sim/autophase.py", "4"]),
-    _stage("converter", "sim/converter.py", [], "config/converter.yaml",
-           "logs/diags/converter/main/particles", "logs/plots/converter"),
-    _stage("linac5-8", "sim/linac5-8.py", [], "config/linac5-8.yaml",
-           "logs/diags/linac5-8/main/particles", "logs/plots/linac5-8",
-           autophase=["sim/autophase_impact.py"]),
+    {"name": "Cathode",          "config": "config/cathode.yaml",   "geom": "2d",
+     "diag": "logs/diags/cathode/particles",
+     "sim": ["sim/cathode.py"],          "plot": ["sim/plot/cathode.py"],
+     "autophase": None,                  "plots": "logs/plots/cathode/*.png"},
+    {"name": "Gun",              "config": "config/gun.yaml",       "geom": "rz",
+     "diag": "logs/diags/gun/particles",
+     "sim": ["sim/gun.py"],              "plot": ["sim/plot/gun.py"],
+     "autophase": None,                  "plots": "logs/plots/gun/*.png"},
+    {"name": "Injector",         "config": "config/injector.yaml",  "geom": "rz",
+     "diag": "logs/diags/injector/main/particles",
+     "sim": ["sim/injector.py"],         "plot": ["sim/plot/injector.py"],
+     "autophase": None,                  "plots": "logs/plots/injector/*.png"},
+    {"name": "Linac Section 1",  "config": "config/linac1.yaml",    "geom": "rz",
+     "diag": "logs/diags/linac1-4/sec1/main/particles",
+     "sim": ["sim/linac1-4.py", "1"],    "plot": ["sim/plot/linac1-4.py", "1"],
+     "autophase": ["sim/autophase.py", "1"], "plots": "logs/plots/linac1-4/sec1_*.png"},
+    {"name": "Linac Section 2",  "config": "config/linac2.yaml",    "geom": "rz",
+     "diag": "logs/diags/linac1-4/sec2/main/particles",
+     "sim": ["sim/linac1-4.py", "2"],    "plot": ["sim/plot/linac1-4.py", "2"],
+     "autophase": ["sim/autophase.py", "2"], "plots": "logs/plots/linac1-4/sec2_*.png"},
+    {"name": "Linac Section 3",  "config": "config/linac3.yaml",    "geom": "rz",
+     "diag": "logs/diags/linac1-4/sec3/main/particles",
+     "sim": ["sim/linac1-4.py", "3"],    "plot": ["sim/plot/linac1-4.py", "3"],
+     "autophase": ["sim/autophase.py", "3"], "plots": "logs/plots/linac1-4/sec3_*.png"},
+    {"name": "Linac Section 4",  "config": "config/linac4.yaml",    "geom": "rz",
+     "diag": "logs/diags/linac1-4/sec4/main/particles",
+     "sim": ["sim/linac1-4.py", "4"],    "plot": ["sim/plot/linac1-4.py", "4"],
+     "autophase": ["sim/autophase.py", "4"], "plots": "logs/plots/linac1-4/sec4_*.png"},
+    {"name": "Converter",        "config": "config/converter.yaml", "geom": "rz",
+     "diag": "logs/diags/converter/main/particles",
+     "sim": ["sim/converter.py"],        "plot": ["sim/plot/converter.py"],
+     "autophase": None,                  "plots": "logs/plots/converter/*.png"},
+    {"name": "Linac 5–8",        "config": "config/linac5-8.yaml",  "geom": "rz",
+     "diag": "logs/diags/linac5-8/main/particles",
+     "sim": ["sim/linac5-8.py"],         "plot": ["sim/plot/linac5-8.py"],
+     "autophase": ["sim/autophase_impact.py"], "plots": "logs/plots/linac5-8/*.png"},
 ]
 
-# ── Per-particle variables: ParticleGroup key → (label, SI→display scale) ─────
+# ── Per-particle variables: ParticleGroup key → (label, SI→display scale) ────
 VARS = {
-    "x": ("x [mm]", 1e3), "y": ("y [mm]", 1e3), "z": ("z [mm]", 1e3), "r": ("r [mm]", 1e3),
-    "px": ("px [keV/c]", 1e-3), "py": ("py [keV/c]", 1e-3),
-    "pz": ("pz [keV/c]", 1e-3), "pr": ("pr [keV/c]", 1e-3),
-    "xp": ("x' [mrad]", 1e3), "yp": ("y' [mrad]", 1e3),
-    "energy": ("energy [MeV]", 1e-6), "kinetic_energy": ("KE [MeV]", 1e-6),
-    "gamma": ("gamma", 1.0),
+    "x":              ("x [mm]",            1e3),
+    "y":              ("y [mm]",            1e3),
+    "z":              ("z [mm]",            1e3),
+    "r":              ("r [mm]",            1e3),
+    "px":             ("px [keV/c]",        1e-3),
+    "py":             ("py [keV/c]",        1e-3),
+    "pz":             ("pz [keV/c]",        1e-3),
+    "pr":             ("pr [keV/c]",        1e-3),
+    "xp":             ("x' [mrad]",         1e3),
+    "yp":             ("y' [mrad]",         1e3),
+    "energy":         ("energy [MeV]",      1e-6),
+    "kinetic_energy": ("KE [MeV]",          1e-6),
+    "gamma":          ("gamma",             1.0),
 }
 VARS_2D_ONLY = {"y", "py", "yp"}   # hidden when the active stage is the 2D cathode
 
-# Bunch length is σ_z (NOT σ_t — WarpX dumps are time snapshots).
+# ── Trend Y options: label → (stat key(s), axis label, scale) ────────────────
+# Bunch length is σ_z (NOT σ_t — the dumps are time snapshots).
 TRENDS = {
-    "Beam size σ_x, σ_y": (["sigma_x", "sigma_y"], "σ [mm]", 1e3),
-    "Bunch length σ_z": (["sigma_z"], "σ_z [mm]", 1e3),
-    "Norm. emittance x, y": (["norm_emit_x", "norm_emit_y"], "ε_n [mm·mrad]", 1e6),
-    "Mean kinetic energy": (["mean_kinetic_energy"], "⟨KE⟩ [MeV]", 1e-6),
-    "Energy spread σ_E": (["sigma_energy"], "σ_E [keV]", 1e-3),
-    "Charge": (["charge"], "q [nC]", 1e9),
-    "Trajectory ⟨x⟩, ⟨y⟩": (["mean_x", "mean_y"], "⟨pos⟩ [mm]", 1e3),
+    "Beam size σ_x, σ_y":   (["sigma_x", "sigma_y"],          "σ [mm]",         1e3),
+    "Bunch length σ_z":     (["sigma_z"],                     "σ_z [mm]",       1e3),
+    "Norm. emittance x, y": (["norm_emit_x", "norm_emit_y"],  "ε_n [mm·mrad]",  1e6),
+    "Mean kinetic energy":  (["mean_kinetic_energy"],         "⟨KE⟩ [MeV]",     1e-6),
+    "Energy spread σ_E":    (["sigma_energy"],                "σ_E [keV]",      1e-3),
+    "Charge":               (["charge"],                      "q [nC]",         1e9),
+    "Trajectory ⟨x⟩, ⟨y⟩":  (["mean_x", "mean_y"],            "⟨pos⟩ [mm]",     1e3),
 }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Data layer: lazy per-stage loader with caching.
+# Data layer: lazy per-stage loader with caching (one StageData per diag path).
 # ═════════════════════════════════════════════════════════════════════════════
 class StageData:
     """One stage's openPMD series: cached ParticleGroups and a ⟨z⟩-ordered screen list."""
 
     def __init__(self, stage):
         self.name = stage["name"]
+        self.path = stage["diag"]
         self.geom = stage["geom"]
-        self.ts = None
-        self.path = None
-        for p in stage["particles"]:                      # first dir with a valid openPMD series wins
-            if not os.path.isdir(p):
-                continue
-            try:
-                self.ts = OpenPMDTimeSeries(p)             # raises if the dir holds no valid files
-                self.path = p
-                break
-            except Exception:
-                continue
-        self.species = (self.ts.avail_species[0] if self.ts and self.ts.avail_species
-                        else "electrons")
-        self.iterations = list(self.ts.iterations) if self.ts else []
-        self.screens = None          # [(iteration, mean_z)] sorted by ⟨z⟩
-        self._pg_cache = {}
-        self._trend_cache = {}
-        self._range_cache = {}
+        self.ts = OpenPMDTimeSeries(self.path)
+        self.species = self.ts.avail_species[0] if self.ts.avail_species else "electrons"
+        self.iterations = list(self.ts.iterations)
+        self.screens = None          # filled by build_screen_list(); list of (it, mean_z)
+        self._pg_cache = {}          # iteration -> ParticleGroup
+        self._trend_cache = {}       # trend-label -> (z[N], {key: vals[N]})
+        self._range_cache = {}       # var key -> (lo, hi) raw-unit data range over ALL screens
 
     def build_screen_list(self, progress=None):
+        """Populate `self.screens` = [(iteration, mean_z), …] sorted by ⟨z⟩.
+
+        Reads only z/w per dump. Dumps with <2 particles are skipped (boundary/empty).
+        """
         if self.screens is not None:
             return self.screens
         out = []
@@ -175,12 +182,14 @@ class StageData:
             y = np.zeros_like(x)
             uy = np.zeros_like(x)
         P = make_particle_group(x, y, z, ux, uy, uz, w)       # γβ → eV/c, count → charge [C]
-        if len(self._pg_cache) > 16:                          # bounded LRU
+        # Bounded LRU: keep 16 most-recent dumps so a full-stage sweep doesn't pin RAM.
+        if len(self._pg_cache) > 16:
             self._pg_cache.pop(next(iter(self._pg_cache)))
         self._pg_cache[iteration] = P
         return P
 
     def trend(self, label, progress=None):
+        """Return (z[N], {stat_key: values[N]}) for a TRENDS entry, cached per label."""
         if label in self._trend_cache:
             return self._trend_cache[label]
         keys, _, _ = TRENDS[label]
@@ -202,6 +211,10 @@ class StageData:
         return result
 
     def var_range(self, key, progress=None):
+        """Return (lo, hi) of `key` in raw units across ALL screens (locks fixed axes).
+
+        Zero/negative-weight macroparticles are ignored.
+        """
         if key in self._range_cache:
             return self._range_cache[key]
         self.build_screen_list(progress)
@@ -227,11 +240,95 @@ class StageData:
         return self._range_cache[key]
 
     def cached_range(self, key):
+        """The already-computed (lo, hi) for `key`, or None if var_range hasn't run yet."""
         return self._range_cache.get(key)
 
 
+def has_dumps(diag):
+    """True if `diag` holds at least one openPMD file (the dir alone may be empty)."""
+    exts = ("h5", "bp", "bp4", "bp5", "sst", "json", "toml")
+    return any(glob.glob(os.path.join(diag, f"*.{e}")) for e in exts)
+
+
+class BouncyScroll:
+    """Inertial, rubber-banding vertical scroll for a frame inside a Canvas, with a live
+    scrollbar. Tk has no native overscroll, so we drive the inner frame's y-coordinate
+    ourselves: wheel ticks add velocity, friction decays it, and an edge spring lets the
+    content overshoot the top/bottom and settle back (the macOS rubber-band feel).
+    """
+    FRICTION = 0.80       # per-frame velocity decay
+    SPRING = 0.18         # pull-back fraction once past an edge (gentle bounce)
+    IMPULSE = 14          # px of velocity added per wheel tick
+    VEL_MAX = 70          # cap so rapid trackpad events don't build runaway speed
+
+    def __init__(self, canvas, inner, win, scrollbar):
+        self.c, self.inner, self.win, self.sb = canvas, inner, win, scrollbar
+        self.offset = 0.0
+        self.vel = 0.0
+        self._job = None
+        scrollbar.config(command=self._on_scrollbar)
+        canvas.bind("<Configure>", self._on_resize)
+        inner.bind("<Configure>", self._on_resize)
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", self._wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+    def _max(self):
+        return max(0.0, self.inner.winfo_reqheight() - self.c.winfo_height())
+
+    def _on_resize(self, _e=None):
+        self.c.itemconfig(self.win, width=self.c.winfo_width())
+        if self._job is None:
+            self.offset = min(max(self.offset, 0.0), self._max())
+        self._render()
+
+    def _wheel(self, e):
+        self.vel += (-1 if e.delta > 0 else 1) * self.IMPULSE
+        self.vel = max(-self.VEL_MAX, min(self.VEL_MAX, self.vel))
+        if self._job is None:
+            self._job = self.c.after(16, self._tick)
+
+    def _on_scrollbar(self, *args):
+        m = self._max()
+        if args[0] == "moveto":
+            self.offset = float(args[1]) * m
+        elif args[0] == "scroll":
+            step = self.c.winfo_height() if args[2] == "pages" else self.IMPULSE
+            self.offset += int(args[1]) * step
+        self.offset = min(max(self.offset, 0.0), m)
+        self.vel = 0.0
+        self._render()
+
+    def _tick(self):
+        m = self._max()
+        self.offset += self.vel
+        self.vel *= self.FRICTION
+        edge = 0 if self.offset < 0 else (m if self.offset > m else None)
+        if edge is not None:
+            self.offset += (edge - self.offset) * self.SPRING
+            self.vel *= 0.6
+            if abs(self.offset - edge) < 0.6 and abs(self.vel) < 0.6:
+                self.offset, self.vel = float(edge), 0.0
+        self._render()
+        if abs(self.vel) > 0.5 or self.offset < 0 or self.offset > m:
+            self._job = self.c.after(16, self._tick)
+        else:
+            self._job = None
+
+    def _render(self):
+        self.c.coords(self.win, 0, -self.offset)
+        h = max(self.inner.winfo_reqheight(), 1)
+        vh = self.c.winfo_height()
+        top = max(self.offset, 0.0)
+        self.sb.set(top / h, min(top + vh, h) / h)
+
+
 def postprocess(P, *, kill_zero_weight=False, r_cut=None, z_slice=None):
-    """Return a (possibly filtered) copy of P (drop zero-weight / r-cut / z-slice)."""
+    """Return a (possibly filtered) copy of P.
+
+    kill_zero_weight : drop zero/negative-weight macroparticles.
+    r_cut            : keep only r ≤ r_cut [mm] (transverse collimation preview).
+    z_slice          : (center_mm, halfwidth_mm) — keep |z − center| ≤ halfwidth.
+    """
     mask = np.ones(len(P.x), dtype=bool)
     if kill_zero_weight:
         mask &= P.weight > 0
@@ -251,237 +348,269 @@ def postprocess(P, *, kill_zero_weight=False, r_cut=None, z_slice=None):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Subprocess runner: a serial command queue streaming output to a callback.
+# Subprocess runner: stream a stage script's output to the console (one at a time —
+# pywarpx binds one geometry per interpreter, so stage sims must not overlap).
 # ═════════════════════════════════════════════════════════════════════════════
-class ProcessRunner:
-    """Run argv lists one at a time in the repo-root env, streaming combined stdout/stderr.
-
-    on_line(text), on_done(label, returncode), on_all_done() are all invoked on the worker
-    thread — the GUI marshals them back to Tk via its own after()-polled queue.
-    """
-
-    def __init__(self, on_line, on_done, on_all_done):
-        self._on_line, self._on_done, self._on_all_done = on_line, on_done, on_all_done
+class Runner:
+    def __init__(self, console_write, on_state):
+        self._write = console_write
+        self._on_state = on_state          # called(busy: bool) on the main thread
+        self.q = queue.Queue()
         self._proc = None
-        self._thread = None
-        self._stop = False
+        self._pending = []                 # remaining (argv, title) jobs in the sequence
+        self._stopped = False
+        self.busy = False
 
-    @property
-    def busy(self):
-        return self._thread is not None and self._thread.is_alive()
+    def run(self, argv, title):
+        """Run a single job (skipped if a sequence/job is already live)."""
+        self.run_many([(argv, title)])
 
-    def start(self, commands):
-        """commands : list of (label, argv-after-python). Runs them sequentially; a non-zero
-        return code aborts the rest."""
+    def run_many(self, jobs):
+        """Run `jobs` = [(argv, title), …] sequentially, each starting when the prior ends."""
         if self.busy:
-            return False
-        self._stop = False
-        self._thread = threading.Thread(target=self._run, args=(commands,), daemon=True)
-        self._thread.start()
-        return True
+            self._write("\n[busy — a job is already running]\n")
+            return
+        if not jobs:
+            return
+        self._pending = list(jobs)
+        self._stopped = False
+        self.busy = True
+        self._on_state(True)
+        self._start_next()
+
+    def _start_next(self):
+        argv, title = self._pending.pop(0)
+        self._write(f"\n$ python {' '.join(argv)}\n")
+        env = dict(os.environ)
+        env.setdefault("OMP_NUM_THREADS", "1")
+        env["HDF5_USE_FILE_LOCKING"] = "FALSE"
+        env["PYTHONPATH"] = _ROOT + os.pathsep + env.get("PYTHONPATH", "")
+        env["PYTHONUNBUFFERED"] = "1"
+        env["COLUMNS"] = "100"   # tqdm sizes its bar to this when there's no real terminal width
+
+        def worker():
+            # Drive the child through a pty so tqdm / lume-warpx keep their progress bars:
+            # both gate the bar on stdout being a tty, which a plain pipe is not. The bar's
+            # in-place \r updates are reflected by _console_write.
+            try:
+                master, slave = pty.openpty()
+                self._proc = subprocess.Popen(
+                    [sys.executable, *argv], cwd=_ROOT, env=env,
+                    stdout=slave, stderr=slave, stdin=slave, close_fds=True)
+                os.close(slave)
+                while True:
+                    try:
+                        data = os.read(master, 4096)
+                    except OSError:           # master closes when the child exits
+                        break
+                    if not data:
+                        break
+                    self.q.put(("line", data.decode("utf-8", "replace")))
+                os.close(master)
+                rc = self._proc.wait()
+                self.q.put(("done", f"\n[{title} exited {rc}]\n"))
+            except Exception as e:
+                self.q.put(("done", f"\n[{title} failed: {e}]\n"))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def stop(self):
-        self._stop = True
-        p = self._proc
-        if p and p.poll() is None:
-            try:                                  # kill the whole group (WarpX/Impact spawn children)
-                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-            except Exception:
-                try:
-                    p.terminate()
-                except Exception:
-                    pass
+        """Abort the current job and cancel any remaining queued ones."""
+        self._stopped = True
+        self._pending = []
+        if self._proc is not None and self._proc.poll() is None:
+            self._proc.terminate()
 
-    def _run(self, commands):
-        for label, argv in commands:
-            if self._stop:
-                self._on_line(f"\n■ stopped before: {label}\n")
-                break
-            self._on_line(f"\n$ {' '.join([os.path.basename(sys.executable)] + argv)}\n")
-            try:
-                self._proc = subprocess.Popen(
-                    [sys.executable, *argv], cwd=_ROOT,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, start_new_session=True)
-            except Exception as e:
-                self._on_line(f"failed to launch: {e}\n")
-                self._on_done(label, -1)
-                break
-            for line in self._proc.stdout:
-                self._on_line(line)
-            rc = self._proc.wait()
-            self._on_done(label, rc)
-            if rc != 0:
-                if not self._stop:
-                    self._on_line(f"\n■ {label} exited {rc} — aborting remaining steps.\n")
-                break
-        self._proc = None
-        self._on_all_done()
+    def drain(self):
+        """Pump queued output to the console; advance the sequence when a job ends. Main thread."""
+        try:
+            while True:
+                kind, payload = self.q.get_nowait()
+                self._write(payload)
+                if kind == "done":
+                    self._proc = None
+                    if self._pending and not self._stopped:
+                        self._start_next()        # next job in the sequence
+                    else:
+                        self.busy = False
+                        self._on_state(False)
+        except queue.Empty:
+            pass
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Main application.
-# ═════════════════════════════════════════════════════════════════════════════
-class App:
+class BeamGUI:
     def __init__(self, root):
         self.root = root
-        root.title("Cornell Linac — Control & Beam Explorer")
-        self.current = STAGES[0]["name"]   # set before widgets (controls read it during build)
+        root.title("CESR Injector Linac Simulation (2026)")
         self.stage_data = {}          # name -> StageData (lazy)
-        self.q = queue.Queue()        # explorer worker-thread → main-thread results
+        self.q = queue.Queue()        # worker-thread → main-thread results (explorer)
         self._busy = False
-        self._gen = 0
-        self._progress_text = ""
-        self._png_imgref = None       # keep a ref so Tk doesn't GC the shown image
+        self._gen = 0                 # monotonic token; a newer _run_async supersedes older
+        self._progress_text = ""      # worker-written; reflected to Tk only on the main thread
 
-        # Marshal ProcessRunner callbacks (worker thread) → main thread.
-        self._proc_q = queue.Queue()
-        self.runner = ProcessRunner(
-            on_line=lambda s: self._proc_q.put(("line", s)),
-            on_done=lambda lbl, rc: self._proc_q.put(("done", (lbl, rc))),
-            on_all_done=lambda: self._proc_q.put(("all_done", None)))
+        self.runner = Runner(self._console_write, self._on_run_state)
+        self._run_buttons = []        # toggled while a subprocess is live
 
+        self._set_app_icon()
         self._build_widgets()
-        self.root.after(120, self._poll_proc_q)
-        self._select_stage(STAGES[0]["name"])
+        self._build_menubar()
+        self._bind_keys()
+        self._poll_runner()
+        # Beam explorer starts on the last stage that actually has dumps on disk.
+        self._on_stage_change()
 
-    def _stage(self, name=None):
-        name = name or self.current
-        return next(s for s in STAGES if s["name"] == name)
+    # ── chrome: app icon + menu bar ──────────────────────────────────────────
+    def _set_app_icon(self):
+        """Draw a small beam-line icon and set it as the window/dock icon.
 
-    def _data(self):
-        name = self.current
-        if name not in self.stage_data:
-            self.stage_data[name] = StageData(self._stage(name))
-        return self.stage_data[name]
-
-    # ── layout ────────────────────────────────────────────────────────────────
-    def _build_widgets(self):
-        outer = ttk.Frame(self.root, padding=6)
-        outer.pack(fill=tk.BOTH, expand=True)
-
-        left = ttk.Frame(outer)
-        left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 6))
-        right = ttk.Frame(outer)
-        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-        # ── Stage navigator ──
-        ttk.Label(left, text="Stage", font=("", 11, "bold")).pack(anchor=tk.W)
-        self.stage_list = tk.Listbox(left, height=len(STAGES), exportselection=False,
-                                     activestyle="none", width=18)
-        for s in STAGES:
-            self.stage_list.insert(tk.END, s["name"])
-        self.stage_list.pack(fill=tk.X, pady=(2, 6))
-        self.stage_list.bind("<<ListboxSelect>>", self._on_stage_pick)
-
-        # ── Per-stage actions ──
-        af = ttk.LabelFrame(left, text="Actions", padding=6)
-        af.pack(fill=tk.X)
-        self.btn_edit = ttk.Button(af, text="Edit Config", command=self._action_edit_config)
-        self.btn_run = ttk.Button(af, text="▶ Run Section", command=self._action_run_section)
-        self.btn_runfrom = ttk.Button(af, text="▶▶ Run From Here", command=self._action_run_from)
-        self.btn_autophase = ttk.Button(af, text="◴ Autophase", command=self._action_autophase)
-        self.btn_plots = ttk.Button(af, text="📈 Generate Plots", command=self._action_plots)
-        for b in (self.btn_edit, self.btn_run, self.btn_runfrom, self.btn_autophase, self.btn_plots):
-            b.pack(fill=tk.X, pady=2)
-        self.btn_stop = ttk.Button(af, text="■ Stop", command=self.runner.stop, state=tk.DISABLED)
-        self.btn_stop.pack(fill=tk.X, pady=(8, 2))
-
-        self.run_status = ttk.Label(left, text="idle", foreground="#357", wraplength=170)
-        self.run_status.pack(fill=tk.X, pady=(6, 0))
-
-        # ── Beam statistics (explorer) ──
-        ttk.Separator(left, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
-        ttk.Label(left, text="Beam statistics", font=("", 10, "bold")).pack(anchor=tk.W)
-        self.stats = tk.Text(left, width=28, height=12, font=("Menlo", 9),
-                             relief=tk.FLAT, background="#f4f4f4")
-        self.stats.pack(fill=tk.X)
-
-        # ── Notebook ──
-        self.nb = ttk.Notebook(right)
-        self.nb.pack(fill=tk.BOTH, expand=True)
-        self._build_plots_tab()
-        self._build_explorer_tab()
-        self._build_config_tab()
-        self._build_log_tab()
-
-    # ── Plots tab ──
-    def _build_plots_tab(self):
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="Plots")
-        top = ttk.Frame(tab)
-        top.pack(fill=tk.X, pady=2)
-        ttk.Button(top, text="⟳ Refresh", command=self._refresh_png_list).pack(side=tk.LEFT)
-        self.png_caption = ttk.Label(top, text="")
-        self.png_caption.pack(side=tk.LEFT, padx=8)
-
-        body = ttk.Frame(tab)
-        body.pack(fill=tk.BOTH, expand=True)
-        self.png_list = tk.Listbox(body, width=28, exportselection=False)
-        self.png_list.pack(side=tk.LEFT, fill=tk.Y)
-        self.png_list.bind("<<ListboxSelect>>", lambda _e: self._show_png())
-        # Scrollable image canvas (PNGs can exceed the pane).
-        self.png_canvas = tk.Canvas(body, background="#222")
-        self.png_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.png_canvas.bind("<Configure>", lambda _e: self._show_png())
-
-    def _refresh_png_list(self):
-        st = self._stage()
-        self.png_list.delete(0, tk.END)
-        d = st["plots_dir"]
-        pref = st["plot_prefix"]
-        files = []
-        if os.path.isdir(d):
-            files = sorted(f for f in os.listdir(d)
-                           if f.endswith(".png") and f.startswith(pref))
-        for f in files:
-            self.png_list.insert(tk.END, f)
-        self.png_caption.config(text=f"{d}  ({len(files)} png)")
-        self._png_files = [os.path.join(d, f) for f in files]
-        if files:
-            self.png_list.selection_set(0)
-            self._show_png()
-        else:
-            self.png_canvas.delete("all")
-            self._png_imgref = None
-
-    def _show_png(self):
-        sel = self.png_list.curselection()
-        if not sel:
-            return
-        path = self._png_files[sel[0]]
-        cw = max(self.png_canvas.winfo_width(), 50)
-        ch = max(self.png_canvas.winfo_height(), 50)
-        self.png_canvas.delete("all")
+        Rendered with matplotlib to an in-memory PNG so there's no committed asset; the
+        PhotoImage is kept on `self` so Tk doesn't garbage-collect it.
+        """
         try:
-            if _HAVE_PIL:
-                im = Image.open(path)
-                scale = min(cw / im.width, ch / im.height, 1.0)
-                if scale < 1.0:
-                    im = im.resize((max(1, int(im.width * scale)),
-                                    max(1, int(im.height * scale))), Image.LANCZOS)
-                img = ImageTk.PhotoImage(im)
-            else:
-                img = tk.PhotoImage(file=path)
-                factor = max(1, int(max(img.width() / cw, img.height() / ch) + 0.999))
-                if factor > 1:
-                    img = img.subsample(factor, factor)
-        except Exception as e:
-            self.png_canvas.create_text(cw // 2, ch // 2, fill="#ccc",
-                                        text=f"cannot display\n{os.path.basename(path)}\n{e}")
-            self._png_imgref = None
-            return
-        self._png_imgref = img        # prevent GC
-        self.png_canvas.create_image(cw // 2, ch // 2, image=img, anchor=tk.CENTER)
+            fig = plt.figure(figsize=(1, 1), dpi=64)
+            ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+            ax.add_patch(plt.Rectangle((0, 0), 1, 1, color="#101830"))
+            t = np.linspace(0, 1, 200)
+            ax.plot(t, 0.5 + 0.32 * np.sin(2 * np.pi * 2.2 * t) * np.exp(-1.6 * t),
+                    color="#36d6ff", lw=4, solid_capstyle="round")
+            ax.scatter([0.92], [0.5], s=180, color="#ffe14d", zorder=3)
+            ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+            buf = BytesIO()
+            fig.savefig(buf, format="png", transparent=False)
+            plt.close(fig)
+            self._icon = tk.PhotoImage(data=base64.b64encode(buf.getvalue()))
+            self.root.iconphoto(True, self._icon)
+        except Exception:
+            pass
 
-    # ── Explorer tab ──
-    def _build_explorer_tab(self):
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="Beam Explorer")
-        ctlcol = ttk.Frame(tab, padding=4)
-        ctlcol.pack(side=tk.LEFT, fill=tk.Y)
-        figcol = ttk.Frame(tab)
-        figcol.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+    def _build_menubar(self):
+        menubar = tk.Menu(self.root)
+        pipeline = tk.Menu(menubar, tearoff=0)
+        pipeline.add_command(label="Run Selected", command=self._run_selected)
+        pipeline.add_command(label="Stop", command=self.runner.stop)
+        pipeline.add_separator()
+        pipeline.add_command(label="Select All", command=lambda: self._select_all(True))
+        pipeline.add_command(label="Select None", command=lambda: self._select_all(False))
+        pipeline.add_separator()
+        pipeline.add_command(label="Quit", command=self.root.destroy)
+        menubar.add_cascade(label="Pipeline", menu=pipeline)
+
+        helpm = tk.Menu(menubar, tearoff=0)
+        helpm.add_command(label="About", command=self._about)
+        menubar.add_cascade(label="Help", menu=helpm)
+        self.root.config(menu=menubar)
+
+    def _about(self):
+        messagebox.showinfo(
+            "About",
+            "CESR Injector Linac Simulation (2026)\n\n"
+            "Cornell CHESS electron-source beam-dynamics chain:\n"
+            "cathode → gun → injector → linac 1–4 → converter → linac 5–8.\n\n"
+            "Run stages from the Pipeline panel; inspect beams in Beam Explorer.")
+
+    # ── layout ───────────────────────────────────────────────────────────────
+    def _build_widgets(self):
+        outer = ttk.PanedWindow(self.root, orient=tk.VERTICAL)
+        outer.pack(fill=tk.BOTH, expand=True)
+        work = ttk.PanedWindow(outer, orient=tk.HORIZONTAL)
+        outer.add(work, weight=4)
+
+        self._build_pipeline_panel(work)
+        self._build_right_notebook(work)
+        self._build_console(outer)
+
+    # ── left: per-stage pipeline cards ───────────────────────────────────────
+    def _build_pipeline_panel(self, parent):
+        wrap = ttk.Frame(parent, width=320)
+        wrap.pack_propagate(False)
+        parent.add(wrap, weight=0)
+
+        self.stage_selected = {}          # stage name -> BooleanVar (run-this-stage)
+        self.stage_autophase = {}         # stage name -> BooleanVar (autophase before run)
+        self._stage_dot = {}              # stage name -> readiness Checkbutton (●/○)
+
+        ttk.Label(wrap, text="Pipeline", font=("", 12, "bold")).pack(anchor=tk.W, padx=8, pady=(8, 2))
+        bar = ttk.Frame(wrap)
+        bar.pack(fill=tk.X, padx=8)
+        b = ttk.Button(bar, text="▶  Run Selected", command=self._run_selected)
+        b.pack(side=tk.LEFT)
+        self._run_buttons.append(b)
+        ttk.Button(bar, text="■  Stop", command=self.runner.stop).pack(side=tk.LEFT, padx=4)
+        bar2 = ttk.Frame(wrap)
+        bar2.pack(fill=tk.X, padx=8, pady=(2, 0))
+        ttk.Label(bar2, text="Select:").pack(side=tk.LEFT)
+        ttk.Button(bar2, text="☑ All", width=6,
+                   command=lambda: self._select_all(True)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar2, text="☐ None", width=7,
+                   command=lambda: self._select_all(False)).pack(side=tk.LEFT, padx=2)
+
+        # Scrollable, rubber-banding stack of full-width cards. BouncyScroll owns the
+        # canvas/scrollbar/wheel and keeps the inner frame pinned to the canvas width.
+        canvas = tk.Canvas(wrap, highlightthickness=0)
+        sb = ttk.Scrollbar(wrap, orient=tk.VERTICAL)
+        cards = ttk.Frame(canvas)
+        win = canvas.create_window((0, 0), window=cards, anchor=tk.NW)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=8)
+        sb.pack(side=tk.RIGHT, fill=tk.Y, pady=8)
+        self._pipe_scroll = BouncyScroll(canvas, cards, win, sb)
+
+        for st in STAGES:
+            self._make_stage_card(cards, st)
+
+    def _make_stage_card(self, parent, st):
+        ready = has_dumps(st["diag"])
+        card = ttk.Frame(parent, relief=tk.GROOVE, borderwidth=2)
+        card.pack(fill=tk.X, pady=4, padx=2)
+
+        # Header: selection checkbox + stage name (● = dumps on disk, ○ = none yet).
+        sel = tk.BooleanVar(value=True)
+        self.stage_selected[st["name"]] = sel
+        cb = ttk.Checkbutton(card, variable=sel,
+                             text=("● " if ready else "○ ") + st["name"])
+        cb.pack(anchor=tk.W, padx=4, pady=(4, 0))
+        self._stage_dot[st["name"]] = cb   # reconfigured by _refresh_after_run
+        grid = ttk.Frame(card)
+        grid.pack(fill=tk.X, padx=4, pady=4)
+
+        # (text, command, is_run_button). Wrap into a 2-column grid so the buttons
+        # always fit the narrow card regardless of how many a stage has.
+        buttons = [("✎  Edit Config", lambda s=st: self._edit_config(s), False),
+                   ("▶  Run", lambda s=st: self.runner.run(s["sim"], f"{s['name']} run"), True),
+                   ("📊  Plot", lambda s=st: self.runner.run(s["plot"], f"{s['name']} plot"), True)]
+
+        ncol = 2
+        grid.columnconfigure(tuple(range(ncol)), weight=1, uniform="b")
+        for i, (text, cmd, is_run) in enumerate(buttons):
+            b = ttk.Button(grid, text=text, command=cmd)
+            b.grid(row=i // ncol, column=i % ncol, sticky="ew", padx=1, pady=1)
+            if is_run:
+                self._run_buttons.append(b)
+
+        # Autophase (linac stages) is a toggle, not a one-shot: when checked it runs as
+        # a pre-step before this stage's sim in a "Run Selected" pass (as sim/main.py does).
+        if st["autophase"]:
+            ap = tk.BooleanVar(value=True)
+            self.stage_autophase[st["name"]] = ap
+            ttk.Checkbutton(card, variable=ap,
+                            text="⚡  Autophase before run").pack(anchor=tk.W, padx=6, pady=(0, 4))
+
+    # ── right: notebook with Beam Explorer + Plots tabs ──────────────────────
+    def _build_right_notebook(self, parent):
+        nb = ttk.Notebook(parent)
+        parent.add(nb, weight=4)
+        explorer = ttk.Frame(nb)
+        plots = ttk.Frame(nb)
+        nb.add(explorer, text="Beam Explorer")
+        nb.add(plots, text="Plots")
+        self._build_explorer(explorer)
+        self._build_plots_tab(plots)
+
+    def _build_explorer(self, parent):
+        controls = ttk.Frame(parent, padding=8, width=340)
+        controls.pack_propagate(False)
+        controls.pack(side=tk.RIGHT, fill=tk.Y)
+        figframe = ttk.Frame(parent)
+        figframe.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         def row(parent, label):
             f = ttk.Frame(parent)
@@ -489,21 +618,35 @@ class App:
             ttk.Label(f, text=label, width=14).pack(side=tk.LEFT)
             return f
 
-        f = row(ctlcol, "Plot type")
+        # Only stages with openPMD dumps on disk are browsable.
+        self.available = [s for s in STAGES if has_dumps(s["diag"])]
+        names = [s["name"] for s in self.available] or ["(no data)"]
+        default = "Gun" if "Gun" in names else names[-1]   # KE-vs-z phase space on the gun
+
+        f = row(controls, "Stage")
+        self.stage_var = tk.StringVar(value=default)
+        self._stage_menu = ttk.OptionMenu(f, self.stage_var, default, *names,
+                                          command=lambda _: self._on_stage_change())
+        self._stage_menu.pack(side=tk.LEFT)
+
+        f = row(controls, "Plot type")
         self.mode_var = tk.StringVar(value="2D Distribution")
         ttk.OptionMenu(f, self.mode_var, "2D Distribution",
                        "Trends", "1D Distribution", "2D Distribution",
                        command=lambda _: self._on_mode_change()).pack(side=tk.LEFT)
 
-        # Screen selector
-        self.screen_frame = ttk.Frame(ctlcol)
-        self.screen_frame.pack(fill=tk.X, pady=(4, 0))
+        ttk.Separator(controls, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
+
+        # Screen selector (1D / 2D modes)
+        self.screen_frame = ttk.Frame(controls)
+        self.screen_frame.pack(fill=tk.X)
         ttk.Label(self.screen_frame, text="Screen (by ⟨z⟩)").pack(anchor=tk.W)
         self.screen_scale = ttk.Scale(self.screen_frame, from_=0, to=0,
                                       orient=tk.HORIZONTAL, command=self._on_screen_slide)
         self.screen_scale.pack(fill=tk.X)
         self.screen_label = ttk.Label(self.screen_frame, text="—")
         self.screen_label.pack(anchor=tk.W)
+
         pf = ttk.Frame(self.screen_frame)
         pf.pack(fill=tk.X, pady=(4, 0))
         self._playing = False
@@ -515,201 +658,315 @@ class App:
         self.play_delay = tk.IntVar(value=200)
         ttk.Entry(pf, textvariable=self.play_delay, width=6).pack(side=tk.RIGHT)
 
-        ttk.Separator(ctlcol, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
-        self.ctl = ttk.Frame(ctlcol)
+        ttk.Separator(controls, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
+
+        # Variable / option controls (rebuilt per mode in _refresh_controls)
+        self.ctl = ttk.Frame(controls)
         self.ctl.pack(fill=tk.X)
 
-        ttk.Separator(ctlcol, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
-        ttk.Label(ctlcol, text="Postprocessing", font=("", 10, "bold")).pack(anchor=tk.W)
+        ttk.Separator(controls, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
+
+        ttk.Label(controls, text="Postprocessing", font=("", 10, "bold")).pack(anchor=tk.W)
         self.kill_zero = tk.BooleanVar(value=False)
-        ttk.Checkbutton(ctlcol, text="Drop zero-weight", variable=self.kill_zero,
+        ttk.Checkbutton(controls, text="Drop zero-weight", variable=self.kill_zero,
                         command=self.replot).pack(anchor=tk.W)
-        f = row(ctlcol, "r cut [mm]")
+        f = row(controls, "r cut [mm]")
         self.rcut_on = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, variable=self.rcut_on, command=self.replot).pack(side=tk.LEFT)
         self.rcut_val = tk.DoubleVar(value=9.547)
         ttk.Entry(f, textvariable=self.rcut_val, width=8).pack(side=tk.LEFT)
-        f = row(ctlcol, "z slice ±[mm]")
+        f = row(controls, "z slice ±[mm]")
         self.zslice_on = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, variable=self.zslice_on, command=self.replot).pack(side=tk.LEFT)
         self.zslice_hw = tk.DoubleVar(value=1.0)
         ttk.Entry(f, textvariable=self.zslice_hw, width=8).pack(side=tk.LEFT)
-        ttk.Button(ctlcol, text="Redraw", command=self.replot).pack(fill=tk.X, pady=(8, 2))
-        self.status = ttk.Label(ctlcol, text="", foreground="#555", wraplength=200)
+
+        ttk.Button(controls, text="Redraw", command=self.replot).pack(fill=tk.X, pady=(8, 2))
+        self.status = ttk.Label(controls, text="", foreground="#555", wraplength=240)
         self.status.pack(fill=tk.X)
 
-        self.fig, self.ax = plt.subplots(figsize=(7.0, 5.6))
+        ttk.Separator(controls, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
+        ttk.Label(controls, text="Beam statistics", font=("", 10, "bold")).pack(anchor=tk.W)
+        self.stats = tk.Text(controls, width=30, height=12, font=("Menlo", 9),
+                             relief=tk.FLAT, background="#f4f4f4", foreground="#111111")
+        self.stats.pack(fill=tk.X)
+
+        # Figure + matplotlib toolbar
+        self.fig, self.ax = plt.subplots(figsize=(7.0, 5.5))
         self.cbar = None
-        self.canvas = FigureCanvasTkAgg(self.fig, master=figcol)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=figframe)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        NavigationToolbar2Tk(self.canvas, figcol).update()
+        NavigationToolbar2Tk(self.canvas, figframe).update()
+
+        if not self.available:
+            self.status.config(text="No diagnostics on disk. Run a stage from the Pipeline panel.")
         self._refresh_controls()
 
-    # ── Config tab ──
-    def _build_config_tab(self):
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="Config")
-        bar = ttk.Frame(tab)
-        bar.pack(fill=tk.X, pady=2)
-        self.config_path_lbl = ttk.Label(bar, text="")
-        self.config_path_lbl.pack(side=tk.LEFT)
-        ttk.Button(bar, text="Reload", command=self._load_config_text).pack(side=tk.RIGHT)
-        ttk.Button(bar, text="💾 Save", command=self._save_config_text).pack(side=tk.RIGHT, padx=4)
-        wrap = ttk.Frame(tab)
-        wrap.pack(fill=tk.BOTH, expand=True)
-        self.config_text = tk.Text(wrap, wrap=tk.NONE, font=("Menlo", 11), undo=True)
-        ysb = ttk.Scrollbar(wrap, orient=tk.VERTICAL, command=self.config_text.yview)
-        self.config_text.configure(yscrollcommand=ysb.set)
-        ysb.pack(side=tk.RIGHT, fill=tk.Y)
-        self.config_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    def _build_plots_tab(self, parent):
+        left = ttk.Frame(parent, width=240)
+        left.pack_propagate(False)
+        left.pack(side=tk.LEFT, fill=tk.Y)
+        ttk.Label(left, text="Figures", font=("", 10, "bold")).pack(anchor=tk.W, padx=6, pady=4)
+        ttk.Button(left, text="Refresh", command=self._refresh_plot_list).pack(fill=tk.X, padx=6)
+        self.plot_list = tk.Listbox(left, activestyle="none")
+        self.plot_list.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        self.plot_list.bind("<<ListboxSelect>>", self._show_plot)
 
-    def _load_config_text(self):
-        path = self._stage()["config"]
-        self.config_path_lbl.config(text=path)
-        self.config_text.delete("1.0", tk.END)
+        self.pfig, self.pax = plt.subplots(figsize=(7.0, 5.5))
+        self.pax.axis("off")
+        self.pcanvas = FigureCanvasTkAgg(self.pfig, master=parent)
+        self.pcanvas.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._plot_files = []
+        self._refresh_plot_list()
+
+    def _refresh_plot_list(self):
+        self.plot_list.delete(0, tk.END)
+        self._plot_files = []
+        for st in STAGES:
+            for path in sorted(glob.glob(st["plots"])):
+                self._plot_files.append(path)
+                self.plot_list.insert(tk.END, f"{st['name']}: {os.path.basename(path)}")
+        if not self._plot_files:
+            self.plot_list.insert(tk.END, "(no figures — run a stage's plot)")
+
+    def _show_plot(self, _evt=None):
+        sel = self.plot_list.curselection()
+        if not sel or sel[0] >= len(self._plot_files):
+            return
+        self.pax.clear()
+        self.pax.axis("off")
         try:
-            with open(path) as fh:
-                self.config_text.insert(tk.END, fh.read())
+            self.pax.imshow(plt.imread(self._plot_files[sel[0]]))
         except Exception as e:
-            self.config_text.insert(tk.END, f"# cannot read {path}: {e}")
+            self.pax.text(0.5, 0.5, f"Cannot load:\n{e}", ha="center", va="center")
+        self.pfig.tight_layout()
+        self.pcanvas.draw()
 
-    def _save_config_text(self):
-        path = self._stage()["config"]
-        try:
-            with open(path, "w") as fh:
-                fh.write(self.config_text.get("1.0", "end-1c"))
-            self.run_status.config(text=f"saved {path}")
-        except Exception as e:
-            messagebox.showerror("Save failed", str(e))
+    # ── console ──────────────────────────────────────────────────────────────
+    def _build_console(self, parent):
+        frame = ttk.Frame(parent)
+        parent.add(frame, weight=1)
+        bar = ttk.Frame(frame)
+        bar.pack(fill=tk.X)
+        ttk.Label(bar, text="Console", font=("", 10, "bold")).pack(side=tk.LEFT, padx=6, pady=2)
+        ttk.Button(bar, text="Clear", command=lambda: self.console.delete("1.0", tk.END)
+                   ).pack(side=tk.RIGHT, padx=6)
+        self.console = tk.Text(frame, height=10, font=("Menlo", 9),
+                               background="#101010", foreground="#d0d0d0",
+                               insertbackground="#d0d0d0", wrap=tk.NONE)
+        self.console.pack(fill=tk.BOTH, expand=True)
 
-    # ── Log tab ──
-    def _build_log_tab(self):
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="Run Log")
-        bar = ttk.Frame(tab)
-        bar.pack(fill=tk.X, pady=2)
-        ttk.Button(bar, text="Clear", command=lambda: self.log_text.delete("1.0", tk.END)).pack(
-            side=tk.RIGHT)
-        self.log_text = tk.Text(tab, wrap=tk.NONE, font=("Menlo", 10),
-                                background="#111", foreground="#ddd", insertbackground="#ddd")
-        ysb = ttk.Scrollbar(tab, orient=tk.VERTICAL, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=ysb.set)
-        ysb.pack(side=tk.RIGHT, fill=tk.Y)
-        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    def _console_write(self, text):
+        # Honor \r as "overwrite the current line" so tqdm/WarpX progress bars animate in
+        # place instead of stacking. `insert` stays at END (this is the only writer).
+        c = self.console
+        i, n = 0, len(text)
+        while i < n:
+            ch = text[i]
+            if ch == "\r":
+                c.delete("insert linestart", "insert")
+                i += 1
+            elif ch == "\n":
+                c.insert("insert", "\n")
+                i += 1
+            else:
+                j = i
+                while j < n and text[j] not in "\r\n":
+                    j += 1
+                c.insert("insert", text[i:j])
+                i = j
+        c.see(tk.END)
 
-    def _log(self, text):
-        self.log_text.insert(tk.END, text)
-        self.log_text.see(tk.END)
+    def _set_run_state(self, busy):
+        state = tk.DISABLED if busy else tk.NORMAL
+        for b in self._run_buttons:
+            try:
+                b.config(state=state)
+            except Exception:
+                pass
 
-    # ── stage selection ─────────────────────────────────────────────────────
-    def _on_stage_pick(self, _e):
-        sel = self.stage_list.curselection()
-        if sel:
-            self._select_stage(STAGES[sel[0]]["name"])
+    def _on_run_state(self, busy):
+        """Runner lifecycle hook: toggle the run buttons, and on the busy→idle edge
+        resync the UI to whatever dumps/figures the just-finished jobs wrote."""
+        self._set_run_state(busy)
+        if not busy:
+            self._refresh_after_run()
+
+    def _refresh_after_run(self):
+        """A run just finished: drop cached beam data and resync readiness dots, the stage
+        menu, the Plots list, and (if a stage is loaded) the explorer to what's now on disk."""
+        self.stage_data.clear()
+        for name, cb in self._stage_dot.items():
+            st = next(s for s in STAGES if s["name"] == name)
+            cb.config(text=("● " if has_dumps(st["diag"]) else "○ ") + name)
+
+        prev = self.stage_var.get()
+        self.available = [s for s in STAGES if has_dumps(s["diag"])]
+        names = [s["name"] for s in self.available] or ["(no data)"]
+        menu = self._stage_menu["menu"]
+        menu.delete(0, "end")
+        for nm in names:
+            menu.add_command(label=nm, command=lambda v=nm: self._select_stage(v))
+        if prev not in names:
+            self.stage_var.set(names[-1])
+
+        self._refresh_plot_list()
+        if self.available:
+            self._on_stage_change()   # re-index dumps + replot the current stage
 
     def _select_stage(self, name):
+        self.stage_var.set(name)
+        self._on_stage_change()
+
+    def _poll_runner(self):
+        self.runner.drain()
+        self.root.after(100, self._poll_runner)
+
+    # ── keyboard: ←/→ step the screen slider, space toggles play ──────────────
+    _KBD_TYPING = ("Entry", "TEntry", "Text", "Spinbox", "TSpinbox", "TCombobox")
+    _KBD_CLICKY = ("TButton", "Button", "TCheckbutton", "Checkbutton",
+                   "TMenubutton", "Menubutton", "TRadiobutton")
+
+    def _bind_keys(self):
+        self.root.bind("<Left>", lambda e: self._step_screen(-1))
+        self.root.bind("<Right>", lambda e: self._step_screen(1))
+        self.root.bind("<space>", self._space_toggle)
+
+    def _focus_cls(self):
+        w = self.root.focus_get()
+        return w.winfo_class() if w is not None else ""
+
+    def _step_screen(self, d):
+        # Let the Scale handle arrows itself when it has focus (avoids double-stepping).
+        if (self._focus_cls() in self._KBD_TYPING + self._KBD_CLICKY + ("TScale", "Scale")
+                or self.mode_var.get() == "Trends" or not self.available):
+            return
         self._stop_play()
-        self.current = name
-        idx = next(i for i, s in enumerate(STAGES) if s["name"] == name)
-        self.stage_list.selection_clear(0, tk.END)
-        self.stage_list.selection_set(idx)
-
-        st = self._stage()
-        self.btn_autophase.config(state=(tk.NORMAL if st["autophase"] else tk.DISABLED))
-        self._refresh_png_list()
-        self._load_config_text()
-        self._refresh_controls()
-
-        # Explorer: index dumps if this stage has any.
-        d = self._data()
-        if d.ts is None:
-            self.status.config(text=f"{name}: no dumps yet (run the stage)")
-            self.screen_scale.config(from_=0, to=0)
-            self.screen_label.config(text="—")
-            self._reset_axes()
-            self.canvas.draw()
-            self.stats.delete("1.0", tk.END)
+        n = len(self._data().screens or [])
+        if n == 0:
             return
-        self._run_async(lambda: self._load_screens(d), self._screens_ready)
+        i = int(float(self.screen_scale.get())) + d
+        self.screen_scale.set(max(0, min(i, n - 1)))   # fires _on_screen_slide → redraw
 
-    # ── actions ───────────────────────────────────────────────────────────────
-    def _set_running(self, on):
-        state = tk.DISABLED if on else tk.NORMAL
-        for b in (self.btn_run, self.btn_runfrom, self.btn_plots, self.btn_edit):
-            b.config(state=state)
-        self.btn_autophase.config(
-            state=(tk.DISABLED if on or not self._stage()["autophase"] else tk.NORMAL))
-        self.btn_stop.config(state=(tk.NORMAL if on else tk.DISABLED))
-
-    def _launch(self, commands, what):
-        if self.runner.busy:
-            messagebox.showinfo("Busy", "A run is already in progress.")
+    def _space_toggle(self, _e=None):
+        if (self._focus_cls() in self._KBD_TYPING + self._KBD_CLICKY
+                or self.mode_var.get() == "Trends" or not self.available):
             return
-        self.nb.select(3)             # Run Log tab
-        self.run_status.config(text=f"running: {what}")
-        self._set_running(True)
-        self.runner.start(commands)
+        self._toggle_play()
+        return "break"
 
-    def _action_run_section(self):
-        st = self._stage()
-        self._launch([(st["name"], [st["driver"], *st["args"]])], f"{st['name']} sim")
+    def _select_all(self, value):
+        for var in self.stage_selected.values():
+            var.set(value)
 
-    def _action_run_from(self):
-        start = next(i for i, s in enumerate(STAGES) if s["name"] == self.current)
-        cmds = [(s["name"], [s["driver"], *s["args"]]) for s in STAGES[start:]]
-        self._launch(cmds, f"{self.current} → {STAGES[-1]['name']}")
-
-    def _action_plots(self):
-        st = self._stage()
-        self._launch([(f"{st['name']} plots", [st["plot"], *st["args"]])], f"{st['name']} plots")
-
-    def _action_autophase(self):
-        st = self._stage()
-        if not st["autophase"]:
+    def _run_selected(self):
+        """Run the checked stages in chain order — autophase (if any) → sim → plot each,
+        mirroring sim/main.py but limited to the selection."""
+        jobs = []
+        for st in STAGES:
+            if not self.stage_selected[st["name"]].get():
+                continue
+            if st["autophase"] and self.stage_autophase[st["name"]].get():
+                jobs.append((st["autophase"], f"{st['name']} autophase"))
+            jobs.append((st["sim"], f"{st['name']} run"))
+            jobs.append((st["plot"], f"{st['name']} plot"))
+        if not jobs:
+            self._console_write("\n[no stages selected]\n")
             return
-        self._launch([(f"{st['name']} autophase", list(st["autophase"]))],
-                     f"{st['name']} autophase")
+        self.runner.run_many(jobs)
 
-    def _action_edit_config(self):
-        self.nb.select(2)             # Config tab
-        self._load_config_text()
+    # ── config editor ────────────────────────────────────────────────────────
+    # YAML token → (color); a dark VS-Code-ish palette so highlighting reads well.
+    _YAML_COLORS = {"comment": "#6a9955", "key": "#9cdcfe", "string": "#ce9178",
+                    "number": "#b5cea8", "const": "#569cd6"}
 
-    def _poll_proc_q(self):
+    def _edit_config(self, st):
+        path = os.path.join(_ROOT, st["config"])
         try:
-            while True:
-                kind, payload = self._proc_q.get_nowait()
-                if kind == "line":
-                    self._log(payload)
-                elif kind == "done":
-                    lbl, rc = payload
-                    self.run_status.config(text=f"{lbl}: {'ok' if rc == 0 else f'exit {rc}'}")
-                elif kind == "all_done":
-                    self._set_running(False)
-                    self.run_status.config(text="idle")
-                    self._on_run_finished()
-        except queue.Empty:
-            pass
-        self.root.after(120, self._poll_proc_q)
+            text = open(path, encoding="utf-8").read()
+        except Exception as e:
+            messagebox.showerror("Cannot open", f"{path}\n\n{e}")
+            return
+        top = tk.Toplevel(self.root)
+        top.title(st["config"])
+        ed = tk.Text(top, width=100, height=40, font=("Menlo", 12), wrap=tk.NONE, undo=True,
+                     background="#1e1e1e", foreground="#d4d4d4", insertbackground="#d4d4d4",
+                     selectbackground="#264f78", tabs="2c")
+        for tag, color in self._YAML_COLORS.items():
+            ed.tag_config(tag, foreground=color)
+        ed.pack(fill=tk.BOTH, expand=True)
+        ed.insert("1.0", text)
 
-    def _on_run_finished(self):
-        """A run finished — refresh derived views for the current stage."""
-        self._refresh_png_list()
-        self._load_config_text()      # autophase rewrites the YAML
-        self.stage_data.pop(self.current, None)   # dumps may have changed → drop cache
-        d = self._data()
-        if d.ts is not None:
-            self._run_async(lambda: self._load_screens(d), self._screens_ready)
+        def highlight(_=None):
+            self._highlight_yaml(ed)
 
-    # ── per-mode variable controls ─────────────────────────────────────────────
+        def save(_=None):
+            try:
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(ed.get("1.0", "end-1c"))
+                self._console_write(f"[saved {st['config']}]\n")
+                top.title(f"{st['config']} — saved ✓")
+                top.after(1500, lambda: top.winfo_exists() and top.title(st["config"]))
+            except Exception as e:
+                messagebox.showerror("Cannot save", str(e))
+            return "break"   # swallow the keystroke so no literal char is inserted
+
+        def close(_=None):
+            top.destroy()
+            return "break"
+
+        highlight()
+        ed.bind("<KeyRelease>", highlight)
+        for seq in ("<Command-s>", "<Control-s>"):
+            ed.bind(seq, save)
+            top.bind(seq, save)
+        for seq in ("<Command-w>", "<Control-w>"):
+            ed.bind(seq, close)
+            top.bind(seq, close)
+
+        bar = ttk.Frame(top)
+        bar.pack(fill=tk.X)
+        ttk.Label(bar, text="⌘/Ctrl+S save · ⌘/Ctrl+W close", foreground="#888").pack(side=tk.LEFT, padx=8)
+        ttk.Button(bar, text="Save", command=save).pack(side=tk.RIGHT, padx=6, pady=4)
+        ttk.Button(bar, text="Close", command=top.destroy).pack(side=tk.RIGHT, pady=4)
+        ed.focus_set()
+
+    def _highlight_yaml(self, ed):
+        """Re-tag the whole (small) YAML buffer: comments, keys, strings, numbers, consts.
+
+        Comments and strings are raised last so a '#' or digits inside them keep their color.
+        """
+        for tag in self._YAML_COLORS:
+            ed.tag_remove(tag, "1.0", "end")
+        for n, line in enumerate(ed.get("1.0", "end-1c").split("\n"), start=1):
+            code = line
+            m = re.search(r"(?:^|\s)#", line)         # comment: '#' at line start or after space
+            if m:
+                col = m.start() if line[m.start()] == "#" else m.start() + 1
+                ed.tag_add("comment", f"{n}.{col}", f"{n}.end")
+                code = line[:col]
+            mk = re.match(r"(\s*)([A-Za-z0-9_.\-]+)(?=\s*:)", code)   # mapping key before ':'
+            if mk:
+                ed.tag_add("key", f"{n}.{mk.start(2)}", f"{n}.{mk.end(2)}")
+            for sm in re.finditer(r"\"[^\"]*\"|'[^']*'", code):       # quoted strings
+                ed.tag_add("string", f"{n}.{sm.start()}", f"{n}.{sm.end()}")
+            for cm in re.finditer(r"\b(true|false|null|yes|no|on|off)\b", code, re.I):
+                ed.tag_add("const", f"{n}.{cm.start()}", f"{n}.{cm.end()}")
+            for nm in re.finditer(r"(?<![\w.])-?\d+\.?\d*(?:[eE][-+]?\d+)?", code):
+                ed.tag_add("number", f"{n}.{nm.start()}", f"{n}.{nm.end()}")
+        ed.tag_raise("string")
+        ed.tag_raise("comment")
+
+    # ── per-mode variable controls ───────────────────────────────────────────
     def _var_list(self):
         keys = [k for k in VARS if not (self._stage()["geom"] == "2d" and k in VARS_2D_ONLY)]
         return keys, [VARS[k][0] for k in keys]
 
     def _refresh_controls(self):
-        if not hasattr(self, "ctl"):
-            return
         for w in self.ctl.winfo_children():
             w.destroy()
+        if not self.available:
+            return
         mode = self.mode_var.get()
         keys, labels = self._var_list()
         self._key_by_label = {VARS[k][0]: k for k in keys}
@@ -735,31 +992,43 @@ class App:
             ttk.Label(f, text="Bins", width=14).pack(side=tk.LEFT)
             self.nbins_var = tk.IntVar(value=80)
             ttk.Entry(f, textvariable=self.nbins_var, width=8).pack(side=tk.LEFT)
-        else:  # 2D Distribution
-            self.x_var = var_row("X variable", VARS["x"][0])
-            self.y_var = var_row("Y variable", VARS["xp"][0])
+        else:  # 2D Distribution — default to the z–KE longitudinal phase space
+            self.x_var = var_row("X variable", VARS["z"][0])
+            self.y_var = var_row("Y variable", VARS["kinetic_energy"][0])
             f = ttk.Frame(self.ctl); f.pack(fill=tk.X, pady=2)
             ttk.Label(f, text="Method", width=14).pack(side=tk.LEFT)
             self.method_var = tk.StringVar(value="histogram")
             ttk.OptionMenu(f, self.method_var, "histogram", "histogram", "scatter",
                            command=lambda _: self.replot()).pack(side=tk.LEFT)
             f = ttk.Frame(self.ctl); f.pack(fill=tk.X, pady=2)
-            ttk.Label(f, text="Bins", width=14).pack(side=tk.LEFT)
-            self.nbins_var = tk.IntVar(value=120)
-            ttk.Entry(f, textvariable=self.nbins_var, width=8).pack(side=tk.LEFT)
-            self.fixaxes_var = tk.BooleanVar(value=False)
-            ttk.Checkbutton(self.ctl, text="Fixed axis range",
-                            variable=self.fixaxes_var,
-                            command=self._on_fixaxes).pack(anchor=tk.W)
+            ttk.Label(f, text="Bins X, Y", width=14).pack(side=tk.LEFT)
+            self.nbins_x = tk.IntVar(value=120)
+            self.nbins_y = tk.IntVar(value=120)
+            ttk.Entry(f, textvariable=self.nbins_x, width=6).pack(side=tk.LEFT, padx=(0, 2))
+            ttk.Entry(f, textvariable=self.nbins_y, width=6).pack(side=tk.LEFT)
+            self.fixaxes_x = tk.BooleanVar(value=False)
+            self.fixaxes_y = tk.BooleanVar(value=False)
+            f = ttk.Frame(self.ctl); f.pack(fill=tk.X, pady=2)
+            ttk.Label(f, text="Fix axis", width=14).pack(side=tk.LEFT)
+            ttk.Checkbutton(f, text="x", variable=self.fixaxes_x,
+                            command=self._on_fixaxes).pack(side=tk.LEFT)
+            ttk.Checkbutton(f, text="y", variable=self.fixaxes_y,
+                            command=self._on_fixaxes).pack(side=tk.LEFT, padx=(8, 0))
 
-    # ── fixed-axis-range machinery ─────────────────────────────────────────────
+    # ── fixed-axis-range machinery (lock the 2D window across animation frames) ─
     def _fixaxes_on(self):
         return (self.mode_var.get() == "2D Distribution"
-                and getattr(self, "fixaxes_var", None) is not None
-                and self.fixaxes_var.get())
+                and getattr(self, "fixaxes_x", None) is not None
+                and (self.fixaxes_x.get() or self.fixaxes_y.get()))
 
     def _needed_range_keys(self):
-        return [self._key_by_label[self.x_var.get()], self._key_by_label[self.y_var.get()]]
+        """The axis keys whose global range a locked-axis 2D plot needs (locked only)."""
+        keys = []
+        if self.fixaxes_x.get():
+            keys.append(self._key_by_label[self.x_var.get()])
+        if self.fixaxes_y.get():
+            keys.append(self._key_by_label[self.y_var.get()])
+        return keys
 
     def _on_var_change(self):
         if self._fixaxes_on():
@@ -768,7 +1037,7 @@ class App:
             self.replot()
 
     def _on_fixaxes(self):
-        if self.fixaxes_var.get():
+        if self._fixaxes_on():
             self._compute_ranges_async()
         else:
             self.replot()
@@ -785,11 +1054,14 @@ class App:
         self._run_async(work, lambda _d: self.replot())
 
     def _apply_fixed_range(self, d, kx, sx, ky, sy):
-        rx, ry = d.cached_range(kx), d.cached_range(ky)
-        if rx is not None:
-            self.ax.set_xlim(*self._pad(rx[0] * sx, rx[1] * sx))
-        if ry is not None:
-            self.ax.set_ylim(*self._pad(ry[0] * sy, ry[1] * sy))
+        if self.fixaxes_x.get():
+            rx = d.cached_range(kx)
+            if rx is not None:
+                self.ax.set_xlim(*self._pad(rx[0] * sx, rx[1] * sx))
+        if self.fixaxes_y.get():
+            ry = d.cached_range(ky)
+            if ry is not None:
+                self.ax.set_ylim(*self._pad(ry[0] * sy, ry[1] * sy))
 
     @staticmethod
     def _pad(lo, hi, frac=0.05):
@@ -801,62 +1073,29 @@ class App:
         m = (hi - lo) * frac
         return lo - m, hi + m
 
-    # ── explorer async loading ─────────────────────────────────────────────────
+    # ── helpers ──────────────────────────────────────────────────────────────
+    def _stage(self):
+        return next(s for s in self.available if s["name"] == self.stage_var.get())
+
+    def _data(self):
+        name = self.stage_var.get()
+        if name not in self.stage_data:
+            self.stage_data[name] = StageData(self._stage())
+        return self.stage_data[name]
+
     def _set_status(self, msg):
         self.status.config(text=msg)
         self.root.update_idletasks()
 
-    def _run_async(self, work, done):
-        self._gen += 1
-        gen = self._gen
-        self._busy = True
-        self._progress_text = "Loading…"
-        self._set_status(self._progress_text)
-
-        def runner():
-            try:
-                self.q.put((gen, "ok", work()))
-            except Exception as e:
-                self.q.put((gen, "err", e))
-        threading.Thread(target=runner, daemon=True).start()
-        self._drain(done, gen)
-
-    def _drain(self, done, gen):
-        if gen != self._gen:
+    # ── events ───────────────────────────────────────────────────────────────
+    def _on_stage_change(self):
+        if not self.available:
             return
-        try:
-            item_gen, kind, payload = self.q.get_nowait()
-        except queue.Empty:
-            self._set_status(self._progress_text)
-            self.root.after(60, lambda: self._drain(done, gen))
-            return
-        if item_gen != gen:
-            self.root.after(0, lambda: self._drain(done, gen))
-            return
-        self._busy = False
-        if kind == "err":
-            self._set_status(f"Error: {payload}")
-        else:
-            done(payload)
+        self._stop_play()
+        self._refresh_controls()
+        d = self._data()
+        self._run_async(lambda: self._load_screens(d), self._screens_ready)
 
-    def _load_screens(self, d):
-        d.build_screen_list(progress=lambda i, n: setattr(
-            self, "_progress_text", f"Indexing dumps {i}/{n}…"))
-        return d
-
-    def _screens_ready(self, d):
-        n = len(d.screens)
-        self._set_status(f"{d.name}: {n} screens, species '{d.species}'")
-        self.screen_scale.config(from_=0, to=max(n - 1, 0))
-        if n:
-            self.screen_scale.set(n - 1)
-            self._on_screen_slide(n - 1)
-        if self._fixaxes_on():
-            self._compute_ranges_async()
-        else:
-            self.replot()
-
-    # ── explorer events ─────────────────────────────────────────────────────────
     def _on_mode_change(self):
         self._stop_play()
         self._refresh_controls()
@@ -878,7 +1117,10 @@ class App:
             self.replot()
 
     def _toggle_play(self):
-        self._stop_play() if self._playing else self._start_play()
+        if self._playing:
+            self._stop_play()
+        else:
+            self._start_play()
 
     def _start_play(self):
         if self.mode_var.get() == "Trends":
@@ -920,12 +1162,64 @@ class App:
         delay = max(20, int(self.play_delay.get()))
         self._play_job = self.root.after(delay, self._play_tick)
 
+    def _run_async(self, work, done):
+        """Run `work()` off-thread; call `done(result)` on the main thread when finished.
+
+        `work` reports progress only via `self._progress_text` (NEVER touch Tk from the
+        worker). Re-entrant: each call bumps `self._gen` so a stale worker's result is
+        never delivered to a newer request's `done` (see _drain).
+        """
+        self._gen += 1
+        gen = self._gen
+        self._busy = True
+        self._progress_text = "Loading…"
+        self._set_status(self._progress_text)
+
+        def runner():
+            try:
+                self.q.put((gen, "ok", work()))
+            except Exception as e:
+                self.q.put((gen, "err", e))
+        threading.Thread(target=runner, daemon=True).start()
+        self._drain(done, gen)
+
+    def _drain(self, done, gen):
+        if gen != self._gen:
+            return
+        try:
+            item_gen, kind, payload = self.q.get_nowait()
+        except queue.Empty:
+            self._set_status(self._progress_text)
+            self.root.after(60, lambda: self._drain(done, gen))
+            return
+        if item_gen != gen:
+            self.root.after(0, lambda: self._drain(done, gen))
+            return
+        self._busy = False
+        if kind == "err":
+            self._set_status(f"Error: {payload}")
+        else:
+            done(payload)
+
+    def _load_screens(self, d):
+        d.build_screen_list(progress=lambda i, n: setattr(self, "_progress_text",
+                                                          f"Indexing dumps {i}/{n}…"))
+        return d
+
+    def _screens_ready(self, d):
+        n = len(d.screens)
+        self._set_status(f"{d.name}: {n} screens, species '{d.species}'")
+        self.screen_scale.config(from_=0, to=max(n - 1, 0))
+        self.screen_scale.set(n - 1)
+        self._on_screen_slide(n - 1)
+        if self._fixaxes_on():
+            self._compute_ranges_async()
+        else:
+            self.replot()
+
     # ── the plot ─────────────────────────────────────────────────────────────
     def replot(self, *_):
-        if self._busy:
-            return
-        d = self._data()
-        if d.ts is None:
+        if self._busy or not self.available:
             return
         try:
             mode = self.mode_var.get()
@@ -968,8 +1262,8 @@ class App:
         keys, ylabel, scale = TRENDS[label]
         self._set_status(f"Computing '{label}' over {d.name}…")
         self._run_async(
-            lambda: d.trend(label, progress=lambda i, n: setattr(
-                self, "_progress_text", f"{label}: {i}/{n}")),
+            lambda: d.trend(label, progress=lambda i, n: setattr(self, "_progress_text",
+                                                                 f"{label}: {i}/{n}")),
             lambda res: self._draw_trends(res, label, keys, ylabel, scale))
 
     def _draw_trends(self, res, label, keys, ylabel, scale):
@@ -996,7 +1290,8 @@ class App:
             return
         k = self._key_by_label[self.x_var.get()]
         lbl, sc = VARS[k]
-        self.ax.hist(P[k] * sc, bins=self.nbins_var.get(), weights=P.weight * 1e9,
+        vals = P[k] * sc
+        self.ax.hist(vals, bins=self.nbins_var.get(), weights=P.weight * 1e9,
                      color="C0", alpha=0.85)
         self.ax.set_xlabel(lbl)
         self.ax.set_ylabel("charge / bin [nC]")
@@ -1018,12 +1313,12 @@ class App:
         lx, sx = VARS[kx]
         ly, sy = VARS[ky]
         xv, yv = P[kx] * sx, P[ky] * sy
-        nb = self.nbins_var.get()
         if self.method_var.get() == "histogram":
-            h = self.ax.hist2d(xv, yv, bins=nb, weights=P.weight * 1e9, cmap="viridis")
+            bins = [max(1, self.nbins_x.get()), max(1, self.nbins_y.get())]
+            h = self.ax.hist2d(xv, yv, bins=bins, weights=P.weight * 1e9, cmap="viridis")
             self.cbar = self.fig.colorbar(h[3], ax=self.ax, label="charge [nC]")
         else:
-            order = np.argsort(P.weight)
+            order = np.argsort(P.weight)   # heavy macroparticles drawn on top
             sc = self.ax.scatter(xv[order], yv[order], c=P.weight[order] * 1e9,
                                  s=4, cmap="viridis")
             self.cbar = self.fig.colorbar(sc, ax=self.ax, label="charge [nC]")
@@ -1036,6 +1331,7 @@ class App:
         self.canvas.draw()
         self._update_stats(P)
 
+    # ── stats readout ────────────────────────────────────────────────────────
     def _update_stats(self, P):
         def g(k, default=np.nan):
             try:
@@ -1053,6 +1349,7 @@ class App:
             f"σ_z       : {g('sigma_z')*1e3:8.4f} mm",
             f"ε_n,x     : {g('norm_emit_x')*1e6:8.4f} mm·mrad",
             f"ε_n,y     : {g('norm_emit_y')*1e6:8.4f} mm·mrad",
+            f"⟨x⟩       : {g('mean_x')*1e3:8.4f} mm",
             f"⟨γ⟩       : {g('mean_gamma'):8.3f}",
         ]
         self.stats.delete("1.0", tk.END)
@@ -1065,8 +1362,8 @@ def main():
         root.tk.call("tk", "scaling", 1.3)
     except Exception:
         pass
-    root.geometry("1280x820")
-    App(root)
+    root.geometry("1280x980")
+    BeamGUI(root)
     root.mainloop()
 
 

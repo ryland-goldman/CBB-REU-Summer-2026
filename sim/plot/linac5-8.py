@@ -191,15 +191,15 @@ def main():
               flush=True)
         return
     z, ke, dke, enx, eny, sx, sy, charge = vs
-    power_mw = summ.get("power_mw", 11.0)
+    power_mw = summ.get("power_mw", 17.0)
 
     # 1) beam evolution vs z: mean KE / eps_n,x / sigma_x (+ surviving charge when available)
     fig = px.evolution_vs_z(
         z, ke, enx * 1e6, sx * 1e3, charge_pc=charge, ke_unit="MeV",
         title=f"linac5-8 beam evolution (sections 5-8, on-crest, {power_mw:g} MW)",
-        notes={"emit": "quads OFF: eps_n rises ~2.4x -- a fort.10N diagnostic artifact, not physical",
-               "sigma": "quads OFF: no focusing, placeholder optics, NOT predictive",
-               "charge": "surviving core charge (macro count x q/macro); quads OFF -> aperture loss"})
+        notes={"emit": "quad doublets + sec5/6 cavity-solenoids ON: norm. emittance vs z",
+               "sigma": "transverse size under the sec5/6 solenoids + inter-section quad doublets",
+               "charge": "surviving core charge (macro count x q/macro); bore aperture loss"})
     fig.savefig(os.path.join(RESULTS, "evolution_vs_z.png"), dpi=130)
     plt.close(fig)
 
