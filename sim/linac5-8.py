@@ -456,7 +456,8 @@ def main():
     P_out = I.particles["final_particles"] if "final_particles" in I.particles else None
     if P_out is None or P_out.n_particle == 0:
         # Whole bunch lost: the uncaptured positron beam (~600 mrad divergence) scrapes on the bore
-        # long before the deck end -- no capture optic is modelled here. Report 0% transmission.
+        # long before the deck end -- this Impact-T deck adds no capture optic (the converter's
+        # capture solenoid is upstream and does not collimate to the bore). Report 0% transmission.
         n_out, transmission, q_out, ke_out = 0, 0.0, 0.0, None
     else:
         n_out = int(P_out.n_particle)

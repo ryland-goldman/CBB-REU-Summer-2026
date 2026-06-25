@@ -70,6 +70,11 @@ def resample(arrays, w, n_target, rng):
     n < n_target (bootstrap — useful to refill a depleted beam to a fixed macroparticle
     count). Reweights the picks so sum(w) is preserved exactly (not just in expectation).
     No-op if `n_target` is falsy or already equal. Returns (tuple of arrays, w).
+
+    Upsampling adds COINCIDENT duplicate macroparticles (no new phase-space information); it
+    does NOT increase resolution. Safe only ahead of a stage that decorrelates them (the
+    converter's stochastic showers) or with self-fields off — do not upsample into an SC-ON
+    stage (cathode/gun/linac section 1), where duplicates would inject a spurious self-field.
     """
     n = w.size
     if not n_target or n == n_target:
@@ -90,7 +95,7 @@ def beam_kinematics(ux, uy, uz, w):
 def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=None,
                           core_ke_frac=0.5, resample_n=0):
     """Import an upstream WarpX section's EXIT beam (last well-populated dump) for the next
-    linac section. Used by linac sections 2 and 3 (no iris scrape -- that is the one-time
+    linac section. Used by linac sections 2, 3 and 4 (no iris scrape -- that is the one-time
     injector->linac event at the section-1 entrance).
 
     Picks the last dump with >= `min_count` macroparticles (the captured beam coasting in the

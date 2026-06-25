@@ -77,7 +77,7 @@ def _fourier_ez(z_local, coef, z0, zlen):
     phi_n = -2 pi n ((z_local - z0)/zlen - 1/2)."""
     fcomplex = coef[1::2] + 1j * coef[2::2]
     n = np.arange(len(fcomplex)) + 1
-    phi = -2.0 * np.pi * (np.outer(z_local, n) / zlen - (z0 / zlen) - 0.5)
+    phi = -2.0 * np.pi * (np.outer(z_local, n) / zlen - n * (z0 / zlen + 0.5))
     return coef[0] / 2.0 + np.real(np.exp(1j * phi) @ fcomplex)
 
 
