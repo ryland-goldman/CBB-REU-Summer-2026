@@ -54,12 +54,12 @@ diagnostics:
 
 # Stage knobs with no WarpX-native home (read by sim/linac1-4.py).
 params:
-  # ⚠ TODO — DERIVE. CREST_PHASE_DEG / FIELD_SCALE below are PLACEHOLDERS copied from section 3.
-  # Section 4 (CU 5) is a new WarpX section: its setpoints MUST be re-derived once the upstream
-  # chain through section 3 is run. Crest: `python sim/autophase.py 4`. Field scale: re-fit to
-  # DE_TARGET_MEV (the old per-section ΔE-target loop). Until then section-4 output is NOT physical.
-  CREST_PHASE_DEG: 177.0000            # PLACEHOLDER (section 3 value) — re-derive for section 4
-  FIELD_SCALE: 9.179702e+01            # PLACEHOLDER (section 3 value) — re-derive for section 4
+  # CREST_PHASE_DEG is re-derived automatically by sim/main.py (it runs `sim/autophase.py 4` before
+  # this stage); the value here is the seed used when running the stage standalone. FIELD_SCALE is
+  # NOT autophased -- re-fit it to DE_TARGET_MEV (the old per-section ΔE-target loop) when retuning
+  # the section-4 (CU 5) operating point; the shipped value is copied from section 3.
+  CREST_PHASE_DEG: 177.0000            # autophased by sim/main.py; standalone seed
+  FIELD_SCALE: 9.179702e+01            # NOT autophased — re-fit to DE_TARGET_MEV for CU 5
   DE_TARGET_MEV: 43.7                  # reference — CU 5 ΔE target [MeV] (51 MeV @15 MW · √(11/15))
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
   F_RF: 2856.0e6                       # SLAC S-band [Hz]

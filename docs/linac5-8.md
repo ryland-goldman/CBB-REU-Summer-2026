@@ -75,11 +75,11 @@ parabolic refine) and fit its field scale to a ΔE target (`brentq`) -- expensiv
 These setpoints were calibrated on-crest at the Balanced operating point (11 MW); they are an
 operating-point artifact, not first-principles values. There are **no per-run validation gates**.
 
-> **The shipped `crest_phase_deg` are STALE placeholders.** They are the old electron-derived
-> sections-4-8 values, on a different deck. This stage now runs **positrons** on a deck that starts
-> at **section 5** — both the species (q=+e flips the crest ~180°) and the deck geometry changed, so
-> the crests must be re-derived with `sim/autophase_impact.py` (see *Positron mode*) before a run is
-> physical.
+> **The crests are autophased in the chain.** `sim/main.py` runs `sim/autophase_impact.py` before
+> this stage (the chain's slow step), re-deriving every section's `crest_phase_deg` for the positron
+> beam on the section-5-start deck and rewriting the YAML. The shipped values are only the seed for a
+> standalone run; if you run `sim/linac5-8.py` alone on a changed upstream beam, run
+> `sim/autophase_impact.py` first (see *Positron mode*).
 
 ## Operating point & energy budget
 
@@ -188,21 +188,18 @@ follow from the positron species.
   **`positrons`** group with charge **+e** (via `loadparticles.write_openpmd_particles`, same as the
   electron path but with the positron species spelling).
 
-- **The shipped crest phases are STALE.** The per-section `crest_phase_deg` are **absolute** Impact-T
-  `theta0` values (referenced to the deck's t = 0). The shipped numbers are the old electron-derived
-  sections-4-8 values and are wrong now on three counts: (1) flipping the charge sign flips which RF
-  phase is **accelerating**, so the on-crest base phase moves by ~180 degrees; (2) the positron
-  **injection energy and velocity are much lower**, so the bunch arrives at each section at a
-  different phase and the chained-deck phase walk (drifts + finite beta) shifts the absolute `theta0`
-  by additional large amounts per section; and (3) the deck now **starts at section 5** (section 4 is
-  a WarpX stage upstream of the converter), so the geometry the crests were calibrated on has changed.
-  **Every section's crest must be re-derived.**
+- **The crests are species- and geometry-dependent — autophased each run.** The per-section
+  `crest_phase_deg` are **absolute** Impact-T `theta0` values (referenced to the deck's t = 0), so
+  they depend on (1) the charge sign — for positrons the accelerating phase moves ~180° from
+  electrons; (2) the positron injection energy/velocity, which sets the chained-deck phase walk
+  (drifts + finite beta) across sections; and (3) the deck geometry — this deck now **starts at
+  section 5** (section 4 is a WarpX stage upstream of the converter). `sim/main.py` therefore runs
+  **`sim/autophase_impact.py`** *after* the converter and *before* `sim/linac5-8.py` to re-derive
+  every section's crest for the positron beam and rewrite `config/linac5-8.yaml`.
 
-- **Re-derive before running.** Run **`sim/autophase_impact.py`** *after* the converter and *before*
-  `sim/linac5-8.py` to re-derive the per-section absolute crests for the positron beam and rewrite
-  them into `config/linac5-8.yaml`. Until that is done, a run with the shipped crest phases is
-  meaningless (the beam is off-crest, decelerating in places). Even with the re-derived
-  crests, the absolute transmission is a lower bound: the converter's high-divergence positrons need
-  a capture optic at the target that is not modelled (see `docs/converter.md`). The robust positron
-  deliverable is the **longitudinal** physics (per-section delta-E, exit
-  `<KE>`), not the unfocused transmission.
+- **Standalone runs.** If you invoke `sim/linac5-8.py` alone on a changed upstream beam, run
+  `sim/autophase_impact.py` first — otherwise the shipped crest seeds may be off-crest (decelerating
+  in places). Even with correct crests, the absolute transmission is a lower bound: the converter's
+  high-divergence positrons need a capture optic at the target that is not modelled
+  (see `docs/converter.md`). The robust positron deliverable is the **longitudinal** physics
+  (per-section delta-E, exit `<KE>`), not the unfocused transmission.

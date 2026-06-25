@@ -1,16 +1,16 @@
 """
 Auto-phase the linac 5-8 (Impact-T) RF sections for the POSITRON beam and rewrite the YAML.
 
-A standalone tool — NOT wired into the chain. The per-section crest_phase_deg in
-config/linac5-8.yaml are STALE placeholders (old electron-derived sections-4-8 values, on a
-different deck); positrons (q=+e) crest ~180 deg away and their lower injection energy/velocity
-shifts the ABSOLUTE Impact-T theta0 (referenced to t=0), so the crest must be re-found on the real
-deck with the positron core injected. For each section it builds the deck TRUNCATED to that section
-(earlier sections pinned to their already-found crest), scans the section base phase, and takes the
-bunch-averaged exit-energy maximum (coarse -> fine -> parabolic).
+`sim/main.py` runs this **before the linac5-8 stage** (it is the chain's slow step); it also works
+standalone. The per-section crest_phase_deg are absolute Impact-T theta0 values that depend on both
+the species (positrons: q=+e crest ~180 deg from electrons, lower injection energy shifts it) and the
+deck geometry, so they must be re-found on the real deck with the positron core injected. For each
+section it builds the deck TRUNCATED to that section (earlier sections pinned to their already-found
+crest), scans the section base phase, and takes the bunch-averaged exit-energy maximum
+(coarse -> fine -> parabolic).
 
-Runtime caveat: this drives Impact-T O(sections x scan-points) times — minutes to tens of minutes.
-DO NOT wire it into main(). See docs/linac5-8.md (Positron mode).
+Runtime caveat: this drives Impact-T O(sections x scan-points) times — minutes to tens of minutes;
+it is by far the most expensive step of a full `sim/main.py` run. See docs/linac5-8.md (Positron mode).
 
   python sim/autophase_impact.py            # phase sections 5 6 7 8, rewrite the YAML
   python sim/autophase_impact.py 5 6        # only sections 5-6

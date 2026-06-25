@@ -43,16 +43,16 @@ deck:
 # on (theta0 is referenced to t=0; a shorter deck would shift sections 6-8 off-crest). The Q8 entry
 # (after the last section) is never placed. field_scale [V/m] and crest_phase_deg are the FROZEN
 # per-section setpoints (see header).
-# ⚠ WARNING: the crest_phase_deg values below are STALE placeholders -- they are the old
-# electron-derived sections-4-8 values, and BOTH the species (positrons: q=+e flips the crest
-# ~180 deg, lower injection energy shifts it) AND the deck geometry changed (section 4 is now a
-# WarpX stage upstream of the converter, so this deck starts at section 5 -- a different absolute
-# t=0 arrival phase). Re-derive via `sim/autophase_impact.py` before a run is physical.
+# crest_phase_deg is re-derived automatically by sim/main.py (it runs `sim/autophase_impact.py`
+# before this stage); the values here are the seed used when running the stage standalone. They are
+# absolute Impact-T theta0 values that depend on the positron species (q=+e) AND the deck geometry
+# (this deck starts at section 5; section 4 is now a WarpX stage upstream of the converter), so a
+# standalone run on a changed upstream beam must be preceded by `sim/autophase_impact.py`.
 sections:
-  - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 105.0000}   # sec 5
-  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 177.6300}   # sec 6
-  - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 1.998574e7, crest_phase_deg: 105.0000}   # sec 7
-  - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, field_scale: 1.997594e7, crest_phase_deg: 293.8463}   # sec 8
+  - {name: "CEA 4", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 16.2, field_scale: 2.135676e7, crest_phase_deg: 179.5768}   # sec 5
+  - {name: "CEA 5", length_m: 5.15, de15_mev: 55.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 2.136564e7, crest_phase_deg: 255.0000}   # sec 6
+  - {name: "CU 3",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 22.0, field_scale: 1.998574e7, crest_phase_deg: 182.6691}   # sec 7
+  - {name: "CU 4",  length_m: 4.97, de15_mev: 51.0, bore_in: [1.16, 0.92], quad_in: 20.9, field_scale: 1.997594e7, crest_phase_deg: 9.3035}   # sec 8
 
 # Vendored S-band TW template field shapes (committed at fieldmaps/rfdata/). The 4-line solrf
 # superposition reuses these verbatim: entrance rfdata4 (+0°), body_1 rfdata5 (+30°, /sin(beta0 d)),

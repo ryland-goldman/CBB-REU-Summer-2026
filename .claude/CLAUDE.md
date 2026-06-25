@@ -70,16 +70,17 @@ python sim/plot/linac1-4.py 2                   # a linac section's figures (fro
 - **No `config()`/profile API.** Each WarpX stage reads `config/<stage>.yaml`; the Impact-T stage
   reads `config/linac5-8.yaml`. Retune by editing the YAML. The shipped values are the single
   Balanced operating point.
-- **Frozen RF setpoints.** The linac RF crest phases and field scales are **hardcoded** in
-  `config/linac2.yaml`, `linac3.yaml`, `linac4.yaml`, `linac5-8.yaml` (`CREST_PHASE_DEG`/`FIELD_SCALE`,
-  and the per-section `crest_phase_deg`/`field_scale` table). They were derived once from the beam and
-  the drivers simply read+apply them — there is no runtime crest-finding or calibration loop. **If you
-  change an upstream knob that shifts the beam, the affected setpoint must be re-derived** (load the
-  upstream exit dump + the on-axis field, run the crest math once, paste the result; tooling:
-  `sim/autophase.py` for WarpX 1–4, `sim/autophase_impact.py` for Impact-T 5–8). The Impact-T
-  per-section crest is *absolute* (`theta0_deg`), so it is only valid for the deck geometry it was
-  derived on — keep the real-length zero-K1 inter-section quads unchanged. **linac4 + linac5-8
-  setpoints are currently un-derived placeholders** (see the linac docs).
+- **RF setpoints — autophased in the chain, frozen per-stage.** The crest phases live in
+  `config/linac2.yaml`, `linac3.yaml`, `linac4.yaml`, `linac5-8.yaml` (`CREST_PHASE_DEG` / the
+  per-section `crest_phase_deg` table). The stage **drivers apply them directly** — no driver-internal
+  crest-finding. But `sim/main.py` runs an **autophase step before each linac stage** that re-derives
+  that stage's crest from the just-produced upstream dump and rewrites the YAML in place
+  (`sim/autophase.py <N>` for WarpX 1–4, cheap; `sim/autophase_impact.py` for Impact-T 5–8, the slow
+  step). So a full-chain run self-calibrates the crests; a **standalone** stage run (`python
+  sim/linac1-4.py 2`) uses the YAML value as-is, so re-run the matching autophase first if the
+  upstream beam changed. **`FIELD_SCALE` is NOT autophased** — re-fit it to `DE_TARGET_MEV` by hand
+  when retuning. The Impact-T per-section crest is *absolute* (`theta0_deg`), valid only for the deck
+  geometry it was derived on — keep the real-length zero-K1 inter-section quads unchanged.
 - **Space charge / speed.** The self-field MLMG Poisson solve dominates WarpX runtime. The
   relativistic linac sections 2–4 run with `warpx_do_not_deposit: true` (**SC off**): at γ≳45 the
   self-field is 1/γ²-negligible, so this is byte-identical physics for ~50–80× speedup. SC stays
@@ -174,14 +175,14 @@ log `logs/pipeline/log_<date>.log`; the progress bar (stderr) stays on the termi
   `RMAX=9.547 mm` is the SLAC bore / iris; keep cells near ≈3:1 aspect or the MLMG self-field solve
   diverges; the captured-core cut (`KE ≥ 0.5·median`) drops the slipping tail; lab-z chaining via
   `injection_summary.json` (`z_handoff_m` for sec1, `z_inject_lab_m` for sec2/3/4). **Section 4 (CU 5)
-  is new** — its `config/linac4.yaml` `CREST_PHASE_DEG`/`FIELD_SCALE` are placeholders to be
-  re-derived (`sim/autophase.py 4` + a field-scale fit) before it is physical.
+  is new** — `sim/main.py` autophases its `CREST_PHASE_DEG` each run; `FIELD_SCALE` is a section-3
+  copy to re-fit by hand when retuning CU 5.
 - **Linac 5–8** (Impact-T): no field maps exist — the four S-band TW sections reuse the vendored
   `rfdata4–7` shape as a 4-line `solrf` superposition (+0/+30/+90/+0, body `/sin(β₀d)`), all physics
   in the frozen per-section `field_scale`; it accelerates the **converter positron beam** (`q=+e`,
   `Bcharge=+1`); `theta0_deg` is **absolute** so each section's crest is a distinct frozen number
-  (and depends on deck geometry — keep the real-length quads); the shipped crests are STALE
-  placeholders (re-derive for positrons + the section-5-start deck via `sim/autophase_impact.py`);
+  (and depends on deck geometry — keep the real-length quads); `sim/main.py` autophases the
+  per-section crests for the positron beam each run (`sim/autophase_impact.py`, the chain's slow step);
   SC off, quads off (K1=0); transmission measured from the **macro count before** re-imposing charge;
   `ParticleGroup.species` is `"electron"` (singular) but openPMD readers key `"electrons"` (plural);
   `ParticleGroup.write()` emits a viewer-incompatible openPMD — the handoff uses

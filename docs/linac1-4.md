@@ -107,10 +107,11 @@ bunch sits). How those are set differs between the capture section and the accel
   it is kept only as a comment/reference — the runtime no longer reads it for any field calculation.
   `PHASE_DEG` remains as a **detune** offset from the frozen crest (default 0 = on crest).
 
-  > **Section 4 is new and not yet calibrated.** `config/linac4.yaml` ships `CREST_PHASE_DEG` /
-  > `FIELD_SCALE` as **placeholders copied from section 3**. Once the chain through section 3 is
-  > run, re-derive the crest with `python sim/autophase.py 4` and re-fit `FIELD_SCALE` to
-  > `DE_TARGET_MEV` (the CU 5 √P-scaled budget). Until then section-4 output is not physical.
+  > **Section 4 is new.** `sim/main.py` autophases its `CREST_PHASE_DEG` each run (it calls
+  > `python sim/autophase.py 4` before the stage), so a full-chain run self-calibrates the crest.
+  > `FIELD_SCALE` is **not** autophased — it ships as a section-3 copy; re-fit it to `DE_TARGET_MEV`
+  > (the CU 5 √P-scaled budget) by hand when retuning. A standalone `sim/linac1-4.py 4` uses the YAML
+  > crest as-is, so run `sim/autophase.py 4` first if section 3's beam changed.
 
 The RF block is otherwise **uniform** across all four sections:
 

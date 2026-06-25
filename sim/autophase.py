@@ -1,7 +1,8 @@
 """
 Auto-phase the linac 1-4 RF cavities and rewrite the section YAMLs.
 
-A standalone tool — NOT wired into the chain. It re-derives the frozen RF crest phase
+`sim/main.py` runs this **before each WarpX linac stage** (one section per call), so the chain
+re-derives the crest each run; it also works standalone. It re-derives the frozen RF crest phase
 (CREST_PHASE_DEG for sections 2/3/4, PHASE_DEG for section 1) the linac driver consumes, then
 writes it back into config/linacN.yaml (comments preserved). Run it whenever an upstream change
 shifts the beam and the hardcoded setpoints go stale.
