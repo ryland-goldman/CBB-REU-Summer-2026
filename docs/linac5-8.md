@@ -107,9 +107,22 @@ dE_target,i(P_op) = dE_table,i * sqrt(P_op / 15)
 
 The input is the **converter positron beam** (a soft, divergent shower product, NOT a relativistic
 captured core). The `MIN_KE_MEV` cut (default 2 MeV for positrons) keeps the usable core; the
-rigid-crest no-slip TW model is only valid for that relativistic core. The core is downsampled to
-`Np` (reweighted to preserve core charge), drifted to mean `t`, and `z`-zeroed for Impact-T
-injection.
+rigid-crest no-slip TW model is only valid for that relativistic core. The core is matched to `Np`
+(reweighted to preserve core charge), drifted to mean `t`, and `z`-zeroed for Impact-T injection.
+
+**Upsampling for statistics (`beam.upsample`).** The converter positron yield caps the core macro
+count (~11 k), and capture is ~1%, so a plain run ends with ~100 survivors -- too few for
+downstream emittance/energy statistics. Because **space charge is OFF**, each macroparticle is
+dynamically independent, so the core is *smeared-upsampled* to `Np`
+(`loadparticles.upsample_smeared`): bootstrap-draw parents, then jitter each clone by
+`upsample_smear` x its k-NN distance in the **transverse** phase space (x, y, px, py). Plain
+duplication would not help -- coincident clones track identically under the deterministic SC-off
+optics; the local smear decorrelates them so they sample the local density. pz/z/t are carried from
+the parent, so the energy spectrum is preserved to ~0.5% (not exact -- total energy still depends on
+the smeared px/py), and the `MIN_KE_MEV` floor is **re-imposed** after the smear (a low-pz,
+large-angle parent kept only by its transverse momentum can otherwise leak a clone below the floor). The survival fraction and the survivor moments are preserved; only the sampling
+density rises, so `Np` = 120 k injected -> ~1 k survivors. The genuine resolution is still set by
+the real converter-core count, recorded as `n_core_raw` in the summary.
 
 **Honest capture denominator:** `injection_summary.json` records `q_injected_C` = the **full**
 converter positron-beam charge at the handoff (NOT the post-cut core), so within-stage capture

@@ -25,8 +25,17 @@ lattice:
 beam:
   species: positrons             # upstream is the converter positron beam (q=+e); sign flips Bcharge
   min_ke_mev: 2.0                # positron captured-core energy cut [MeV] (soft converter spectrum)
-  np: 50000                      # macroparticles tracked in the final run (downsample core to this;
-                                 # capped by the converter positron yield, so it keeps min(np, core))
+  np: 120000                     # macroparticles tracked in the final run. Richer core -> downsample to
+                                 # this; sparser core -> smeared upsample to this if `upsample` (below).
+                                 # ~0.9% capture, so 120k injected -> ~1k survivors (enough for stats);
+                                 # lower it for a faster, coarser run.
+  upsample: true                 # smeared-split the converter core up to `np` (SC is off, so each macro
+                                 # is independent; preserves survival fraction + moments, raises sampling
+                                 # density). Plain duplication would NOT help -- coincident clones track
+                                 # identically. Set false to track only the genuine converter-core macros.
+  upsample_smear: 0.2            # jitter as a fraction of each clone's k-NN phase-space distance
+                                 # (local bandwidth); ~+2% emittance at 0.2. Raise for smoother, lower
+                                 # for less phase-space blur.
   rng_seed: 0
 
 # Impact-T deck knobs.

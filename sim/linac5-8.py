@@ -34,7 +34,8 @@ import numpy as np
 import yaml
 
 from sim.helpers.tools import MC2_EV, C_LIGHT, M_E, E_CHARGE as Q_E, prepare_env
-from sim.helpers.loadparticles import read_warpx_dump, write_openpmd_particles, upstream_exit_lab_z
+from sim.helpers.loadparticles import (
+    read_warpx_dump, write_openpmd_particles, upstream_exit_lab_z, upsample_smeared)
 from sim.helpers.tqdmwrapper import impact_progress
 
 CONFIG = "config/linac5-8.yaml"
@@ -50,7 +51,13 @@ IN_TO_M = 0.0254                        # inch -> metre
 # Capture-optics calibration (Fromowitz, capture_optics_specs.md):
 GRAD_PER_K1 = 0.534                     # Table 6.3: k1 = 1 m^-2 <-> 0.534 T/m gradient (160 MeV ref)
 SOL_COIL_RADIUS_M = 0.1304             # cavity-solenoid mean coil radius (inner 8.93 + outer 17.15 cm)/2
-SOL_END_MARGIN_M = 0.6                  # coil inset from each section end so on-axis Bz decays to ~1%
+SOL_END_MARGIN_M = 0.1                  # coil inset from each section end. Small on purpose: the coil
+                                        # must span nearly the full cavity so the capture solenoid grabs
+                                        # the divergent beam at the sec5 ENTRANCE and across the gaps -- a
+                                        # large inset leaves the low-energy core unfocused there and it
+                                        # scrapes the bore (a 0.6 m inset cut transmission ~18x). At 0.1 m
+                                        # the on-axis Bz is ~20% of peak and EQUAL at both ends, so the
+                                        # periodic Fourier extension stays continuous (slope kink only).
 SOL_N_FOURIER = 40                      # Fourier terms for the on-axis Bz expansion
 SOL_FILE_ID = 50                        # cavity-solenoid fieldmap file IDs: SOL_FILE_ID + section index
 
@@ -99,8 +106,10 @@ def _solenoid_fieldmap(L_sec, file_id):
     profile, peak 1) for a cavity-solenoid spanning one section. Returns (filename, fieldmap_dict).
 
     The on-axis Bz of a thin-shell solenoid (mean radius SOL_COIL_RADIUS_M, inset SOL_END_MARGIN_M
-    from each section end so the field decays to ~1% at the boundary -> clean Fourier period) is
-    decomposed into Impact-T Fourier coefficients. The element's `solenoid_field_scale` then sets the
+    from each section end -- small, so the coil spans nearly the full cavity and focuses the divergent
+    beam at the section entrance and across the inter-section gaps; the residual end field is equal at
+    both boundaries so the periodic Fourier extension stays continuous) is decomposed into Impact-T
+    Fourier coefficients. The element's `solenoid_field_scale` then sets the
     PEAK Bz [T]; Impact-T type-105 expands it paraxially as a STATIC field (Bz = B0 - B''0 r^2/4)."""
     from beamphysics.interfaces.impact import create_fourier_coefficients
     a = SOL_COIL_RADIUS_M
@@ -343,10 +352,11 @@ def build_impact(cfg, workdir=None):
 
 # ── Handoff IN: the positron core from the converter (which sits after the WarpX section 4) ──────
 def load_converter_core(cfg):
-    """Read the converter positron beam, keep the captured core (KE >= MIN_KE_MEV),
-    downsample to Np (reweighted to preserve core charge), drift to mean t + zero z for Impact-T
-    injection. Returns (ParticleGroup, info dict). The ParticleGroup carries the captured-core
-    charge (no renormalisation).
+    """Read the converter positron beam, keep the captured core (KE >= MIN_KE_MEV), match the core
+    to Np (downsample if richer; smeared upsample to Np if `beam.upsample` and the converter yield
+    left fewer -- so the ~1% survivors are enough for statistics), drift to mean t + zero z for
+    Impact-T injection. Returns (ParticleGroup, info dict). The ParticleGroup carries the
+    captured-core charge (no renormalisation).
     """
     diag = cfg["io"]["conv_particles"]
     summary = cfg["io"]["conv_summary"]
@@ -369,12 +379,28 @@ def load_converter_core(cfg):
             f"capture cut too aggressive or converter yield too low")
     Pc = P[core]
     q_core = float(Pc.charge)
+    n_core_raw = int(Pc.n_particle)                          # genuine converter-core macro count
 
     if Pc.n_particle > np_keep:
         rng = np.random.default_rng(rng_seed)
         sel = rng.choice(Pc.n_particle, np_keep, replace=False)
         Pc = Pc[sel]
         Pc.weight = Pc.weight * (q_core / float(Pc.charge))   # restore total core charge
+    elif Pc.n_particle < np_keep and cfg["beam"].get("upsample", False):
+        # The converter yield caps the core macro count, so the surviving handful is too few for
+        # downstream statistics. SC is OFF, so each macro is dynamically independent: split the core
+        # to Np with local phase-space smear (NOT plain bootstrap -- coincident duplicates track
+        # identically and add nothing). Survival fraction + moments are preserved; only the SAMPLING
+        # density rises. The genuine resolution is still set by n_core_raw (recorded for honesty).
+        Pc = upsample_smeared(Pc, np_keep, rng_seed=rng_seed,
+                              smear=float(cfg["beam"].get("upsample_smear", 0.2)))
+        # Re-impose the KE floor: smearing the transverse momentum of a low-pz / large-angle
+        # parent (kept only by its transverse p in the TOTAL-energy cut) can pull a clone below
+        # MIN_KE_MEV. Drop those so the relativistic-core guarantee (beta_min, no-slip crest) holds.
+        keep = (Pc.energy - MC2_MEV * 1e6) / 1e6 >= min_ke_mev
+        if not keep.all():
+            Pc = Pc[keep]
+            Pc.weight = Pc.weight * (q_core / float(Pc.charge))   # restore total core charge
 
     # Impact-T injects at a common time with z == 0: drift to mean t, then translate z to 0.
     Pc.drift_to_t(Pc["mean_t"])
@@ -385,7 +411,7 @@ def load_converter_core(cfg):
     g_min = 1.0 + ke_min / MC2_MEV
     beta_min = math.sqrt(max(0.0, 1.0 - 1.0 / (g_min * g_min)))
     info = dict(
-        n_conv_in=int(n_all), n_core=int(Pc.n_particle),
+        n_conv_in=int(n_all), n_core=int(Pc.n_particle), n_core_raw=n_core_raw,
         q_conv_in_C=q_exit, q_core_C=q_core,
         core_charge_frac=(q_core / q_exit if q_exit else 0.0),
         min_ke_mev_cut=float(min_ke_mev), ke_in_mev=ke_in,
@@ -557,6 +583,7 @@ def main():
         q_out_C=q_out,
         core_charge_frac=core_info["core_charge_frac"],
         n_conv_in=core_info["n_conv_in"], n_core=core_info["n_core"],
+        n_core_raw=core_info["n_core_raw"],
         min_ke_mev_cut=core_info["min_ke_mev_cut"],
         # The frozen per-section calibration table (scale, crest phase, ΔE target).
         calibration=calib,

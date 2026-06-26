@@ -84,6 +84,52 @@ def resample(arrays, w, n_target, rng):
     return tuple(a[sel] for a in arrays), w_sel * (w.sum() / w_sel.sum())
 
 
+def upsample_smeared(P, n_target, rng_seed=0, k_neighbors=8, smear=0.2,
+                     smear_cols=("x", "y", "px", "py")):
+    """Upsample a `ParticleGroup` to `n_target` macroparticles by KDE-style local smearing.
+
+    Bootstrap-draws parents WITH replacement, then jitters each clone by `smear` x its distance
+    to the `k_neighbors`-th nearest neighbour in std-whitened phase space, so the clones
+    decorrelate and sample the LOCAL density. This is what `resample()` (plain bootstrap) cannot
+    do: its coincident duplicates track identically under SC-off deterministic optics and add no
+    statistics. Only `smear_cols` are jittered -- the default is the TRANSVERSE phase space
+    (x, y, px, py), which governs aperture survival; pz/z/t are carried from the parent unchanged.
+    Energy is thus APPROXIMATELY preserved (~0.5%) -- not exact, since total energy still depends on
+    the smeared px/py -- so a clone of a low-pz / large-angle parent kept only by its transverse
+    momentum CAN drop below an upstream KE floor; re-impose the cut downstream if it must hold.
+    Total charge is preserved (uniform weight =
+    q/n_target). Emittance inflation grows ~ smear^2, kept small by the per-particle (local)
+    bandwidth -- dense regions get a small jitter, sparse halo a large one. No-op (returns P) if
+    `n_target` is falsy or <= the current count. Returns a NEW group.
+
+    SC-OFF ONLY: with self-fields on the synthetic clones would inject a spurious self-field.
+    """
+    from pmd_beamphysics import ParticleGroup
+    from scipy.spatial import cKDTree
+    n = P.n_particle
+    if not n_target or n_target <= n:
+        return P
+    cols = ("x", "y", "z", "px", "py", "pz", "t")
+    d = {c: np.asarray(getattr(P, c), dtype=float) for c in cols}
+    feat = [c for c in smear_cols if d[c].std() > 0]           # smear only the requested live axes
+    F = np.column_stack([d[c] for c in feat])
+    mu, sd = F.mean(0), F.std(0)
+    W = (F - mu) / sd                                           # per-axis std whitening
+    dist, _ = cKDTree(W).query(W, k=min(k_neighbors + 1, n))
+    h = dist[:, -1]                                             # whitened distance to the k-th neighbour
+    rng = np.random.default_rng(rng_seed)
+    par = rng.choice(n, n_target, replace=True)
+    Fnew = (W[par] + smear * h[par][:, None] * rng.standard_normal((n_target, W.shape[1]))) * sd + mu
+    out = {c: d[c][par].copy() for c in cols}                   # parents carry pz/z/t unchanged
+    for j, c in enumerate(feat):
+        out[c] = Fnew[:, j]
+    q = float(P.charge)
+    return ParticleGroup(data=dict(
+        x=out["x"], y=out["y"], z=out["z"], px=out["px"], py=out["py"], pz=out["pz"],
+        t=out["t"], weight=np.full(n_target, q / n_target),
+        status=np.ones(n_target, dtype=int), species=P.species))
+
+
 def beam_kinematics(ux, uy, uz, w):
     """(weighted mean v_z [m/s], weighted mean KE [keV]) from gamma*beta momenta."""
     gb = np.sqrt(1.0 + ux ** 2 + uy ** 2 + uz ** 2)        # gamma (ux/uy/uz are gamma*beta)
