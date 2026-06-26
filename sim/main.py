@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import subprocess
 import time
 
-from sim.helpers.tools import REPO_ROOT, MC2_EV, E_CHARGE
+from sim.helpers.tools import REPO_ROOT, MC2_EV, E_CHARGE, out_root
+from sim.helpers.sandbox import make_out_dir
 
 # (label, sim script, plot script, extra args, autophase argv (or None), exit-diag dir, KE unit)
 # autophase runs as a step BEFORE the stage's sim, re-deriving the frozen RF setpoint from the
@@ -67,15 +68,21 @@ def run_subprocess(argv, title, fatal=True, warpx=False):
     say(f"\n> {title}")
     if _lf is not None:
         _lf.flush()
+    out_dir = out_root()
     env = dict(os.environ)
     env.setdefault("OMP_NUM_THREADS", env.get("OMP_THREADS", "1"))
     env["HDF5_USE_FILE_LOCKING"] = "FALSE"
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    if out_dir != REPO_ROOT:                    # only a real sandbox; a plain run leaves it unset so
+        env["LINACSIM_OUT_DIR"] = out_dir       # the fieldmap skip-guard stays off (truncate-rebuild)
     out = None if (warpx and _lf is not None) else (_lf or None)
     if warpx and _lf is not None:
         env["PIPELINE_LOG_PATH"] = os.path.abspath(_lf.name)
     t0 = time.time()
-    rc = subprocess.run([sys.executable, *argv], cwd=REPO_ROOT, env=env,
+    # argv[0] is a repo-relative script path; resolve it against REPO_ROOT (the code lives there),
+    # but run with cwd=out_dir so config/logs I/O lands in the sandbox.
+    cmd = [sys.executable, os.path.join(REPO_ROOT, argv[0]), *argv[1:]]
+    rc = subprocess.run(cmd, cwd=out_dir, env=env,
                         stdout=out, stderr=None).returncode
     dt = time.time() - t0
     flag = "ok" if rc == 0 else f"FAILED (exit {rc})"
@@ -129,9 +136,27 @@ def beam_summary(diag, label, unit="keV"):
         say(f"  ({label} summary unavailable: {e})")
 
 
+def _stages_from(argv):
+    """Slice STAGES to start at the `--from <label>` stage (skipping earlier stages and their
+    autophase) for scope=downstream partial chains. No flag => the full chain (unchanged)."""
+    if "--from" not in argv:
+        return STAGES
+    start = argv[argv.index("--from") + 1]
+    labels = [s[0] for s in STAGES]
+    if start not in labels:
+        sys.exit(f"--from: unknown stage {start!r} (choices: {', '.join(labels)})")
+    return STAGES[labels.index(start):]
+
+
 def main():
     global _lf
-    os.chdir(REPO_ROOT)
+    stages = _stages_from(sys.argv)
+    out_dir = out_root()
+    # Build a not-yet-populated standalone sandbox; defer to a caller (Xopt) that already wrote
+    # overrides into <out_dir>/config (an unconditional copytree would wipe them).
+    if out_dir != REPO_ROOT and not os.path.isdir(f"{out_dir}/config"):
+        make_out_dir(out_dir)
+    os.chdir(out_dir)
     os.makedirs("logs/pipeline", exist_ok=True)
     log_path = os.path.join("logs", "pipeline", time.strftime("log_%Y%m%d_%H%M%S.log"))
     _lf = open(log_path, "a", buffering=1, encoding="utf-8")
@@ -142,7 +167,7 @@ def main():
     say(f" log: {log_path}")
     say("=" * 72)
 
-    for label, sim, plot, args, autophase, _diag, _unit in STAGES:
+    for label, sim, plot, args, autophase, _diag, _unit in stages:
         if autophase:
             # Re-derive this stage's frozen RF crest from the upstream exit dump (rewrites the YAML
             # the sim then reads). Fatal: a stale/garbage crest would silently invalidate the stage.
@@ -151,7 +176,7 @@ def main():
         run_subprocess([plot, *args], f"{label}: plots", fatal=False)
 
     say("\n" + "-" * 72)
-    for label, _sim, _plot, _args, _ap, diag, unit in STAGES:
+    for label, _sim, _plot, _args, _ap, diag, unit in stages:
         if label in ("cathode", "gun"):
             continue                       # source/low-energy: capture % not meaningful
         beam_summary(diag, f"{label} exit", unit)

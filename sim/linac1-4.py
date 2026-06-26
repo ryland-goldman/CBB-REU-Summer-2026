@@ -159,7 +159,9 @@ def main():
         summary = inj                                   # records z_handoff_m for downstream lab-z chaining
         # Capture beam (slipping ~150 keV): scale from input power, phase referenced to arrival.
         scale = float(np.sqrt(p["POWER_MW"] / p["RF_NORM_MW"]))
-        base_deg = p["PHASE_DEG"]
+        # PHASE_OFFSET_DEG is the optimizer's phase knob, added on top of the autophased PHASE_DEG
+        # (autophase.py owns PHASE_DEG for section 1). Absent => 0 (standalone runs unaffected).
+        base_deg = p["PHASE_DEG"] + p.get("PHASE_OFFSET_DEG", 0.0)
         z_span = 0.0                                    # section 1 stops the centroid (old sec1 behaviour)
     else:
         bunch, v_beam, ke_mean, info = load_warpx_exit_bunch(

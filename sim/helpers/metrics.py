@@ -5,6 +5,30 @@ applies unit scaling.
 
 import numpy as np
 
+# Exit beam-quality keys (NaN-filled on the no-survivor case so the summary schema is stable).
+BEAM_QUALITY_KEYS = ("eps_n_x_m", "eps_n_y_m", "sigma_E_mev", "sigma_E_rel",
+                     "sigma_x_mm", "sigma_y_mm")
+
+
+def beam_quality(pg):
+    """Exit beam-quality metrics from an openPMD-beamphysics ParticleGroup.
+
+    Returns normalized transverse emittances [m·rad] (centered, charge-weighted, via
+    ParticleGroup.norm_emit_x/y), absolute/relative energy spread (sigma_E_rel = std(KE)/mean(KE),
+    and std(KE)==std(total energy) since the rest mass is constant), and RMS spot size [mm].
+    All-NaN when `pg` is None or empty (the no-survivor case) so callers never KeyError on it.
+    """
+    if pg is None or getattr(pg, "n_particle", 0) == 0:
+        return {k: float("nan") for k in BEAM_QUALITY_KEYS}
+    return dict(
+        eps_n_x_m=float(pg.norm_emit_x),
+        eps_n_y_m=float(pg.norm_emit_y),
+        sigma_E_mev=float(pg["sigma_energy"]) / 1e6,
+        sigma_E_rel=float(pg["sigma_energy"]) / float(pg["mean_kinetic_energy"]),
+        sigma_x_mm=float(pg["sigma_x"]) * 1e3,
+        sigma_y_mm=float(pg["sigma_y"]) * 1e3,
+    )
+
 
 def _group_bounds(sorted_ids):
     """Start/stop indices of each run of equal ids in an id-sorted array."""

@@ -72,7 +72,15 @@ def write_thetamode_series(out_file, r0, z0, dr, dz, meshes):
 
     meshes = [(name, [(component, (nr,nz) array), ...], unit_dim_dict), ...].
     r0/z0 are the lab-frame coordinates of grid index 0 (grid_global_offset).
+
+    Per-output skip-guard (sandbox runs only): under LINACSIM_OUT_DIR the shared fieldmaps are
+    prebuilt once, so concurrent evals must NOT recreate them mid-read -- an existing target is left
+    intact. A plain repo run (no LINACSIM_OUT_DIR) keeps io.Access.create's truncate-rebuild so that
+    editing a source GDF / build parameter (e.g. GUN_VOLTAGE) regenerates the map per the repo's
+    "regenerate by re-running" contract.
     """
+    if os.environ.get("LINACSIM_OUT_DIR") and os.path.exists(out_file):
+        return
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
     series = io.Series(out_file, io.Access.create)
     it = series.iterations[0]

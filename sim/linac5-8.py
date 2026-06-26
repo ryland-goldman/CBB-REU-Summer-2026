@@ -36,6 +36,7 @@ import yaml
 from sim.helpers.tools import MC2_EV, C_LIGHT, M_E, E_CHARGE as Q_E, prepare_env
 from sim.helpers.loadparticles import (
     read_warpx_dump, write_openpmd_particles, upstream_exit_lab_z, upsample_smeared)
+from sim.helpers.metrics import beam_quality
 from sim.helpers.tqdmwrapper import impact_progress
 
 CONFIG = "config/linac5-8.yaml"
@@ -76,6 +77,8 @@ def load_config(path=CONFIG):
     for sec in cfg["sections"]:
         sec["field_scale"] = float(sec["field_scale"])
         sec["crest_phase_deg"] = float(sec["crest_phase_deg"])
+        if "crest_offset_deg" in sec:                # optimizer knob (added on top of the crest)
+            sec["crest_offset_deg"] = float(sec["crest_offset_deg"])
     return cfg
 
 
@@ -507,12 +510,16 @@ def main():
     calib = []
     for i, sec in enumerate(cfg["sections"]):
         gname = _ensure_section_group(I, cfg, i)
-        _set_section_phase(I, cfg, i, sec["crest_phase_deg"])
+        # crest_offset_deg is the optimizer's phase knob, added on top of the autophased crest
+        # (autophase owns crest_phase_deg, so it cannot write that key). Absent => 0 (standalone runs).
+        offset = float(sec.get("crest_offset_deg", 0.0))
+        _set_section_phase(I, cfg, i, sec["crest_phase_deg"] + offset)
         _set_group_scale(I, gname, sec["field_scale"])
         calib.append({
             "index": i, "name": sec["name"],
             "scale": float(sec["field_scale"]),
             "crest_phase_deg": float(sec["crest_phase_deg"]),
+            "crest_offset_deg": offset,
             "target_de_mev": float(section_de_target(sec, cfg)),
             "z_entry_m": float(section_bounds[i][0]),
             "z_exit_m": float(section_bounds[i][1]),
@@ -588,6 +595,9 @@ def main():
         # The frozen per-section calibration table (scale, crest phase, ΔE target).
         calibration=calib,
         stat_vs_z=_stat_vs_z(I, q_core_C=q_core, n_in=n_in),
+        # Exit beam-quality metrics (emittance, energy spread, spot); all-NaN on the no-survivor
+        # case (P_out None) so the optimizer's read never KeyErrors. See sim/helpers/metrics.py.
+        **beam_quality(P_out),
     )
     sp = str(cfg["beam"].get("species", "electrons"))
     _write_outputs(I, outdir, inj, species=sp,

@@ -32,6 +32,11 @@ openpmd-beamphysics==0.14.1
 # GPT/GDF field-map reader
 easygdf==2.1.1
 
+# Multi-objective optimizer (CNSGA over the chain; sim/optimize.py + config/xopt.yaml).
+# The CLASSE cluster executor (dask-sge; CLASSE runs SGE/qsub) additionally needs dask-jobqueue (not pinned here;
+# install on the cluster only). The default `process` executor needs nothing beyond xopt.
+xopt==3.1.1
+
 # Scientific stack
 numpy==2.4.6
 scipy==1.17.1

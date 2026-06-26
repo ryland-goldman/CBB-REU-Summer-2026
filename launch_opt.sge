@@ -1,0 +1,47 @@
+#!/bin/bash
+#$ -S /bin/bash
+#$ -N linac-opt
+#$ -cwd
+#$ -j y
+#$ -o logs/opt/sge/
+#$ -l mem_free=4G
+#$ -l h_rt=120:00:00
+#
+# Grid Engine launcher for the Xopt/CNSGA beam optimizer (sim/optimize.py).
+#
+# This submits ONE long-lived CONTROLLER job: it runs the CNSGA loop + the Dask scheduler and (when
+# config/xopt.yaml has `executor: dask-sge`) qsubs the per-eval worker jobs itself via SGECluster.
+# So you submit THIS once; the workers appear as separate `linac-opt`/dask jobs in `qstat`.
+#
+#   #$ -l mem_free  the controller is light (orchestration + the one-time field-map prebuild); 4G is plenty.
+#   #$ -l h_rt      whole-run walltime -- a full-chain population takes days; raise if needed.
+# The worker jobs' resources (cores=1, mem_free, walltime, queue, conda_env) come from the
+# `evaluator:` block of config/xopt.yaml -> sim/optimize.make_executor, NOT from this file.
+#
+# Prereqs (one-time, see the run instructions): scratch conda env with the full stack + xopt +
+# dask-jobqueue; g4bl on PATH; this repo checked out under BASE on /nfs scratch (NOT $HOME -- CephFS
+# is ~10G and near-full). Resumable: Xopt checkpoints to logs/opt/, and field maps are prebuilt once.
+#
+# Submit from the repo root on a CLASSE node:
+#   mkdir -p logs/opt/sge && qsub launch_opt.sge
+
+# ---- site config: EDIT these two for your checkout ----
+BASE=/nfs/acc/temp/rjg343/Cornell2     # this repo on shared /nfs scratch (REPO_ROOT for the run)
+ENV=/nfs/acc/temp/rjg343/cbb           # scratch conda env (full sim stack + xopt + dask-jobqueue)
+# Keep ENV consistent with evaluator.conda_env in config/xopt.yaml so workers use the same env.
+
+# ---- environment (mirrors injphase/submit.sge: the controller must match the worker env) ----
+export OMP_NUM_THREADS=1               # each WarpX/Impact-T eval is single-core (MLMG is BW-bound)
+export HDF5_USE_FILE_LOCKING=FALSE
+export PYTHONNOUSERSITE=1              # ~/.local lume/openpmd shadow the env otherwise
+# Do NOT export LINACSIM_OUT_DIR here -- the controller runs at REPO_ROOT (prebuilds the shared
+# fieldmaps/h5 there); each eval sets its own LINACSIM_OUT_DIR per subprocess (sim/optimize.evaluate).
+
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate "$ENV"
+
+cd "$BASE" || { echo "repo not found at $BASE"; exit 1; }
+command -v g4bl >/dev/null || echo "WARNING: g4bl not on PATH -- the converter stage will fail"
+
+echo "host=$(hostname) env=$ENV repo=$BASE python=$(command -v python)"
+exec python sim/optimize.py

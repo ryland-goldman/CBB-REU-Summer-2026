@@ -193,7 +193,7 @@ def main():
     if any(N not in (1, 2, 3, 4) for N in sections):
         sys.exit("usage: python sim/autophase.py [1] [2] [3] [4] [--dry-run]")
 
-    prepare_env()                                             # chdir repo root; no WarpX import
+    prepare_env()                                             # chdir LINACSIM_OUT_DIR (else repo root); no WarpX import
     drv = _load_driver()
     zmap_local, ez1, ez2 = onaxis_quadrature_ez()
     zmap = Z_STRUCT + zmap_local                              # lab z of the on-axis field samples

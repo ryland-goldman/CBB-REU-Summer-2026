@@ -1,0 +1,67 @@
+# Xopt CNSGA configuration for the Cornell linac chain. sim/optimize.py reads this.
+# Multi-objective: maximize transmitted charge AND minimize transverse emittance (the genuine
+# trade pair); energy, energy spread, spot, and core transmission are constraints. All objectives
+# read from logs/diags/linac5-8/main/injection_summary.json (extended by sim/linac5-8.py).
+xopt:
+  max_evaluations: 4000          # or drive by generations * population in code
+generator:
+  # The generator (CNSGAGenerator) and evaluator function are bound in sim/optimize.py:main, not read
+  # from here; population_size / executor / max_workers below ARE read.
+  population_size: 64            # match to available cores/slots (see isolation plan)
+evaluator:
+  executor: process              # process (local ProcessPool, DEFAULT) | dask-sge (CLASSE cluster runs
+                                 # SGE/qsub, not HTCondor/SLURM). See sim/optimize.make_executor.
+  max_workers: 64                # process: ProcessPool worker cap (unset => nproc-2). dask-sge: number
+                                 # of 1-core worker qsub jobs to scale to.
+  # --- dask-sge only (ignored by process) -- the worker qsub jobs reproduce submit.sge's env ---
+  # conda_env: /nfs/acc/temp/rjg343/cbb            # abs path to the scratch CBB env (conda activate)
+  # resource_spec: mem_free=4G                     # SGE -l request per worker (each chain peaks ~1-1.5 GB)
+  # queue: all.q                                   # site queue (omit => default queue)
+  # walltime: "48:00:00"                           # worker job h_rt (workers persist across many evals)
+vocs:
+  variables:                     # name: [lo, hi]  -- bounds in physical units
+    # --- final-stage beam-quality knobs (highest leverage, cheapest if scope=downstream) ---
+    l5_field_scale_0: [2.4e7, 2.9e7]   # linac5-8 sections[0].field_scale  (CEA 4)
+    l5_field_scale_1: [2.4e7, 2.9e7]   # sections[1].field_scale           (CEA 5)
+    l5_field_scale_2: [2.2e7, 2.7e7]   # sections[2].field_scale           (CU 3)
+    l5_field_scale_3: [2.2e7, 2.7e7]   # sections[3].field_scale           (CU 4)
+    l5_phase_off_0:   [-30, 30]        # crest OFFSET [deg] on sections[0] (added to autophased crest)
+    l5_phase_off_1:   [-30, 30]
+    l5_phase_off_2:   [-30, 30]
+    l5_phase_off_3:   [-30, 30]
+    l5_quad_k1_1:     [3.0, 8.0]       # sections[1].quad_k1  (sec5~0 solenoid-focused; sec8 unplaced)
+    l5_quad_k1_2:     [5.0, 11.0]      # sections[2].quad_k1
+    l5_sol_b_5:       [0.8, 1.6]       # sections[0].solenoid_b_tesla (capture)
+    l5_sol_b_6:       [0.8, 1.6]       # sections[1].solenoid_b_tesla
+    # --- converter (positron yield + emittance into linac5-8) ---
+    conv_target_len_mm: [4.0, 9.0]     # converter geometry.target_length_mm
+    conv_sol_b_tesla:   [0.8, 1.6]     # converter solenoid.b_tesla
+    conv_exit_drift_mm: [50, 150]      # converter solenoid.exit_drift_mm
+    # --- capture (linac1) -- auto-dropped unless scope=full (upstream of --from converter) ---
+    l1_power_mw:  [14, 24]             # linac1 POWER_MW
+    l1_phase_off: [-30, 30]            # crest OFFSET [deg] on linac1 sec-1 (added to autophased PHASE_DEG)
+    # --- injector match -- auto-dropped unless scope=full (expensive upstream) ---
+    inj_i_sol0:   [20, 60]             # injector I_SOL0
+    inj_i_lens0e: [0, 20]             # injector I_LENS0E
+    inj_preb1_kw: [4, 14]             # injector PREB1_KW (prebuncher-1 RF power)
+    inj_preb2_kw: [4, 16]             # injector PREB2_KW (prebuncher-2 RF power)
+    inj_preb1_phi: [-45, 45]          # injector PREB1_PHI_OFF [deg] -- prebuncher-1 cavity phase (bunching)
+    inj_preb2_phi: [-45, 45]          # injector PREB2_PHI_OFF [deg] -- prebuncher-2 cavity phase (bunching)
+  objectives:
+    q_out_C: MAXIMIZE
+    eps_n: MINIMIZE
+    # Beam quality as objectives, NOT hard constraints: the captured tungsten-converter positron
+    # spectrum sits at ~9% rel energy spread and ~8 mm spot even at the ~235 MeV exit, so a <1% / <2 mm
+    # cut admits no population member (an empty feasible Pareto front). Trade them on the front instead.
+    sigma_E_rel: MINIMIZE
+    sigma_x_mm: MINIMIZE
+  constraints:
+    ke_out_mev:        [GREATER_THAN, 200.0]
+    transmission_core: [GREATER_THAN, 0.005]   # linac5-8 internal n_out/n_in (already emitted); the
+                                               # q_out_C MAXIMIZE objective already pushes end-to-end charge
+run:
+  scope: full              # downstream (converter+linac5-8) | full (cathode->linac5-8)
+  eval_timeout_s: 1800
+  keep_failed_sandboxes: true        # keep diverged-eval sandboxes for triage
+  keep_successful_sandboxes: false   # rmtree a successful eval's sandbox after its summary is read
+                                     # (each scope=full sandbox holds a full chain's diags -> TB over a run)

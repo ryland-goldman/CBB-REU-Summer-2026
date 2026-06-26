@@ -27,6 +27,11 @@ MC2_KEV = MC2_EV / 1e3
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def out_root():
+    """This run's config/output root: $LINACSIM_OUT_DIR if set, else REPO_ROOT. Always absolute."""
+    return os.path.abspath(os.environ.get("LINACSIM_OUT_DIR", REPO_ROOT))
+
+
 # ── Emission physics (cathode + gun) ─────────────────────────────────────────────
 def child_langmuir_current_density(voltage, gap):
     """Space-charge-limited current density J [A/m^2] across a planar gap; 0 for V<=0."""
@@ -56,8 +61,9 @@ def rf_time_functions(scale, omega, phi, amp_prec=10, phase_prec=10):
 
 # ── Runtime plumbing ─────────────────────────────────────────────────────────────
 def prepare_env():
-    """Set the env WarpX/HDF5 latch at import time, raise the fd limit, and run from the
-    repo root (every stage uses repo-relative paths). Call before importing warpx.
+    """Set the env WarpX/HDF5 latch at import time, raise the fd limit, and run from this
+    run's out_root() (every stage uses out-root-relative paths for config/logs). Call before
+    importing warpx.
     """
     # OMP_NUM_THREADS must be set before pywarpx loads OpenMP; OMP_THREADS overrides.
     os.environ["OMP_NUM_THREADS"] = os.environ.get(
@@ -69,7 +75,8 @@ def prepare_env():
             resource.setrlimit(resource.RLIMIT_NOFILE, (min(hard, 16384), hard))
     except (ValueError, OSError):
         pass
-    if os.getcwd() != REPO_ROOT:
-        os.chdir(REPO_ROOT)
-    if REPO_ROOT not in sys.path:
+    root = out_root()
+    if os.getcwd() != root:
+        os.chdir(root)
+    if REPO_ROOT not in sys.path:          # code lives in the repo, not the sandbox
         sys.path.insert(0, REPO_ROOT)
