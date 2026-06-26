@@ -13,8 +13,10 @@ evaluator:
                                  # SGE/qsub, not HTCondor/SLURM). See sim/optimize.make_executor.
   max_workers: 64                # process: ProcessPool worker cap (unset => nproc-2). dask-sge: number
                                  # of 1-core worker qsub jobs to scale to.
-  # --- dask-sge only (ignored by process) -- the worker qsub jobs reproduce submit.sge's env ---
-  # conda_env: /nfs/acc/temp/rjg343/cbb            # abs path to the scratch CBB env (conda activate)
+  # --- dask-sge only (ignored by process) -- worker qsub jobs reproduce the cluster env ---
+  # env_setup: /nfs/acc/temp/rjg343/Cornell2/cluster_env.sh  # PREFERRED: each worker `source`s this (conda +
+  #                                                # OMP/HDF5/PYTHONNOUSERSITE + g4bl PATH + Geant4 data vars)
+  # conda_env: /nfs/acc/temp/rjg343/cbb            # fallback if no env_setup (NO g4bl/G4 data => converter fails)
   # resource_spec: mem_free=4G                     # SGE -l request per worker (each chain peaks ~1-1.5 GB)
   # queue: all.q                                   # site queue (omit => default queue)
   # walltime: "48:00:00"                           # worker job h_rt (workers persist across many evals)

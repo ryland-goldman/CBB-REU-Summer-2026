@@ -62,7 +62,7 @@ params:
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
   F_RF: 2856.0e6                       # SLAC S-band [Hz]
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW); report-only here
-  CFL: 0.5                             # dt = CFL · Δz / v_inject
+  CFL: 0.7                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the imported exit beam (reweighted)
   RESAMPLE_N: 50000                      # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
   MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed

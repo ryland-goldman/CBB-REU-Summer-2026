@@ -92,6 +92,16 @@ def run_subprocess(argv, title, fatal=True, warpx=False):
     return rc == 0
 
 
+def _fmt_charge(q):
+    """Charge with an auto-scaled SI prefix (nC/pC/fC) so sub-nC bunches keep their figures."""
+    aq = abs(q)
+    if aq >= 1e-9:
+        return f"{q*1e9:.3f} nC"
+    if aq >= 1e-12:
+        return f"{q*1e12:.3f} pC"
+    return f"{q*1e15:.3f} fC"
+
+
 def beam_summary(diag, label, unit="keV"):
     """Report the final bunch from `diag` (prefers the true injected charge sidecar for capture %)."""
     try:
@@ -131,26 +141,34 @@ def beam_summary(diag, label, unit="keV"):
         cap = f"   {q0_label} {w.sum()/q0*100:.0f}%" if q0 else ""
         say(f"  {label}: <z> {zm*1e3:.0f} mm   sigma_z {sz*1e3:.3f} mm   "
             f"<KE> {km:.1f} {unit}   sigma_KE {dk:.2f} {unit}   "
-            f"q {w.sum()*E_CHARGE*1e9:.3f} nC{cap}")
+            f"q {_fmt_charge(w.sum()*E_CHARGE)}{cap}")
     except Exception as e:
         say(f"  ({label} summary unavailable: {e})")
 
 
-def _stages_from(argv):
-    """Slice STAGES to start at the `--from <label>` stage (skipping earlier stages and their
-    autophase) for scope=downstream partial chains. No flag => the full chain (unchanged)."""
-    if "--from" not in argv:
-        return STAGES
-    start = argv[argv.index("--from") + 1]
+def _select_stages(argv):
+    """Slice STAGES by optional `--from <label>` (start) and `--to <label>` (inclusive end) -- a
+    partial chain that skips frozen upstream stages (and their autophase) and/or stops early. No
+    flags => the full chain (unchanged)."""
     labels = [s[0] for s in STAGES]
-    if start not in labels:
-        sys.exit(f"--from: unknown stage {start!r} (choices: {', '.join(labels)})")
-    return STAGES[labels.index(start):]
+    lo, hi = 0, len(STAGES)
+    if "--from" in argv:
+        start = argv[argv.index("--from") + 1]
+        if start not in labels:
+            sys.exit(f"--from: unknown stage {start!r} (choices: {', '.join(labels)})")
+        lo = labels.index(start)
+    if "--to" in argv:
+        end = argv[argv.index("--to") + 1]
+        if end not in labels:
+            sys.exit(f"--to: unknown stage {end!r} (choices: {', '.join(labels)})")
+        hi = labels.index(end) + 1
+    return STAGES[lo:hi]
 
 
 def main():
     global _lf
-    stages = _stages_from(sys.argv)
+    stages = _select_stages(sys.argv)
+    no_plots = "--no-plots" in sys.argv          # optimizer runs read the diags, never the figures
     out_dir = out_root()
     # Build a not-yet-populated standalone sandbox; defer to a caller (Xopt) that already wrote
     # overrides into <out_dir>/config (an unconditional copytree would wipe them).
@@ -173,7 +191,8 @@ def main():
             # the sim then reads). Fatal: a stale/garbage crest would silently invalidate the stage.
             run_subprocess(autophase, f"{label}: autophase")
         run_subprocess([sim, *args], f"{label}: simulation", warpx=(label not in ("linac5-8", "converter")))
-        run_subprocess([plot, *args], f"{label}: plots", fatal=False)
+        if not no_plots:
+            run_subprocess([plot, *args], f"{label}: plots", fatal=False)
 
     say("\n" + "-" * 72)
     for label, _sim, _plot, _args, _ap, diag, unit in stages:

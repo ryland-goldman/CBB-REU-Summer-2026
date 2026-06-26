@@ -40,8 +40,8 @@ beam:
 
 # Impact-T deck knobs.
 deck:
-  ntstep: 200000                 # step cap (sized for the deck length at dt=2e-12; mean_z is asserted reached)
-  dt: 2.0e-12                    # time step [s]
+  ntstep: 200000                 # step cap (sized for the deck length at dt=3e-12; mean_z is asserted reached)
+  dt: 3.0e-12                    # time step [s]
   nxyz: 16                       # Impact-T SC mesh per axis (power of 2; inert while SC is off)
   xyrad_m: 0.02                  # transverse computational-domain half-width [m] (box wall, not pipe)
 

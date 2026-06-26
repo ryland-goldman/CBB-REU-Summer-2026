@@ -52,8 +52,8 @@ def impact_progress(fort18_path, total_length_m, desc="linac5-8"):
                             tail = fh.read().decode("ascii", "replace").splitlines()
                         for line in reversed(tail):
                             parts = line.split()
-                            if parts:
-                                z = float(parts[0])      # col 1 = reference z [m]
+                            if len(parts) >= 2:
+                                z = float(parts[1])      # col 2 = reference z [m] (col 1 is time [s])
                                 if z > last:
                                     bar.update(z - last)
                                     last = z

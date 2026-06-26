@@ -61,7 +61,7 @@ diagnostics:
 # Stage knobs with no WarpX-native home (read by sim/injector.py). Solenoid currents [A] and
 # prebuncher powers [kW] are the config-overridable operating point; 0 A/kW => no field.
 params:
-  CFL: 0.95                            # dt = CFL * dz / v_beam  (Balanced; Conservative 0.8)
+  CFL: 1.0                            # dt = CFL * dz / v_beam  (Balanced; Conservative 0.8)
   MAX_PART: 50000                      # downsample the gun snapshot (reweighted)
   MAX_STEPS: 0                         # 0 -> auto-derive from transit; >0 -> fixed
   N_DIAGS: 60

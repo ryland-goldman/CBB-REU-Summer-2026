@@ -2,7 +2,8 @@
 Multi-objective optimization of the Cornell linac chain with Xopt/CNSGA.
 
 Reads config/xopt.yaml (VOCS + CNSGA + executor), then for each population member: builds a unique
-LINACSIM_OUT_DIR sandbox (isolation plan), seeds the frozen upstream dump (scope=downstream),
+LINACSIM_OUT_DIR sandbox (isolation plan), seeds the frozen upstream dump (every stage upstream of
+the earliest varied one -- the freeze boundary),
 writes the variables into the sandbox config COPY (NEVER the canonical config/ -- phase variables
 go to the crest_offset_deg / PHASE_OFFSET_DEG knobs autophase never rewrites, NOT crest_phase_deg/
 PHASE_DEG), runs the chain as a subprocess, and reads the objectives/constraints from the (extended)
@@ -68,6 +69,38 @@ OVERRIDES = {
     "inj_preb1_phi":      ("config/injector.yaml", ("block", "PREB1_PHI_OFF")),
     "inj_preb2_phi":      ("config/injector.yaml", ("block", "PREB2_PHI_OFF")),
 }
+
+# Pipeline stage order (mirrors sim/main.py STAGES) and which stage each OVERRIDES config feeds.
+# Every stage UPSTREAM of the earliest varied one is parameter-independent across the whole
+# population: it runs ONCE and each eval symlinks its frozen dump instead of recomputing it. The
+# scope=full VOCS varies injector onward, so cathode+gun (~16 min/eval) are frozen.
+STAGE_ORDER = ["cathode", "gun", "injector", "linac1", "linac2", "linac3", "linac4",
+               "converter", "linac5-8"]
+CONFIG_STAGE = {
+    "config/cathode.yaml": "cathode", "config/gun.yaml": "gun",
+    "config/injector.yaml": "injector", "config/linac1.yaml": "linac1",
+    "config/converter.yaml": "converter", "config/linac5-8.yaml": "linac5-8",
+}
+# Boundary `--from` stage -> (frozen-upstream dump symlinked into each sandbox, the `--to` stage of
+# the one-time prefix prerun that produces it). Keyed by every stage that reads a previous stage's
+# openPMD dump; a boundary not listed (cathode/gun) means nothing upstream is frozen.
+FREEZE_SEED = {
+    "injector":  ("logs/diags/gun",           "gun"),
+    "linac1":    ("logs/diags/injector",      "injector"),
+    "converter": ("logs/diags/linac1-4/sec4", "linac4"),
+    "linac5-8":  ("logs/diags/converter",     "converter"),
+}
+
+
+def freeze_boundary(cfg):
+    """The earliest pipeline stage any ACTIVE variable targets (= the first `--from` stage each eval
+    runs); everything before it is frozen. None if a variable targets the very first stages
+    (cathode/gun) -- then the chain runs from the top with nothing frozen."""
+    stages = {CONFIG_STAGE[OVERRIDES[n][0]] for n in cfg["vocs"]["variables"]}
+    if not stages:
+        return None
+    first = min(stages, key=STAGE_ORDER.index)
+    return first if first in FREEZE_SEED else None
 
 
 # ── Config ────────────────────────────────────────────────────────────────────────
@@ -167,32 +200,33 @@ def apply_overrides(out_dir, inputs):
             fh.write(text)
 
 
-def seed_upstream(out_dir, scope):
-    """scope=downstream: symlink the frozen repo linac1-4/sec4 dump into the sandbox so the converter
-    (the --from stage) finds its upstream electron beam. Read-only and identical across the population.
-    scope=full: no-op (the chain regenerates everything)."""
-    if scope != "downstream":
+def seed_upstream(out_dir, from_stage):
+    """Symlink the frozen upstream dump the `--from` boundary stage reads into the sandbox (read-only,
+    identical across the population): converter reads linac1-4/sec4, injector reads gun, etc.
+    from_stage is None => the chain runs from the top and regenerates everything (no-op)."""
+    if from_stage is None:
         return
-    src = os.path.join(REPO_ROOT, "logs/diags/linac1-4/sec4")
+    rel = FREEZE_SEED[from_stage][0]
+    src = os.path.join(REPO_ROOT, rel)
     if not os.path.isdir(src):
         raise FileNotFoundError(
-            f"scope=downstream needs the frozen upstream dump at {src} -- run the chain through "
-            f"linac4 once (e.g. `python sim/main.py`) before optimizing downstream.")
-    parent = os.path.join(out_dir, "logs/diags/linac1-4")
-    os.makedirs(parent, exist_ok=True)
-    dst = os.path.join(parent, "sec4")
+            f"freeze boundary '{from_stage}' needs the frozen upstream dump at {src} -- run the chain "
+            f"through it once (e.g. `python sim/main.py`) before optimizing.")
+    dst = os.path.join(out_dir, rel)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
     if not (os.path.islink(dst) or os.path.exists(dst)):
         os.symlink(src, dst)
 
 
 # ── Run the chain + read objectives ─────────────────────────────────────────────────
-def run_chain(out_dir, scope, timeout_s):
-    """Run the (partial) chain as a subprocess with LINACSIM_OUT_DIR=out_dir. scope=downstream passes
-    `--from converter` (converter + linac5-8 off the seeded sec4 dump). cwd=out_dir mirrors how
+def run_chain(out_dir, from_stage, timeout_s):
+    """Run the (partial) chain as a subprocess with LINACSIM_OUT_DIR=out_dir. `--from <boundary>`
+    starts at the earliest varied stage off the seeded frozen dump (full -> injector, downstream ->
+    converter); `--no-plots` drops the figures the optimizer never reads. cwd=out_dir mirrors how
     sim/main.py launches its own stages; the script path is absolutized against REPO_ROOT."""
-    argv = [sys.executable, os.path.join(REPO_ROOT, "sim/main.py")]
-    if scope == "downstream":
-        argv += ["--from", "converter"]
+    argv = [sys.executable, os.path.join(REPO_ROOT, "sim/main.py"), "--no-plots"]
+    if from_stage is not None:
+        argv += ["--from", from_stage]
     env = dict(os.environ)
     env["LINACSIM_OUT_DIR"] = out_dir
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
@@ -221,7 +255,7 @@ def evaluate(inputs):
     """One CNSGA evaluation: sandbox -> seed -> overrides -> run -> read objectives. Any failure
     (timeout, run error, OR a successful-but-empty beam) routes to penalty NaN so the worker survives."""
     cfg = load_xopt_config()
-    scope = cfg["run"]["scope"]
+    from_stage = freeze_boundary(cfg)               # freeze every stage upstream of the first varied one
     timeout_s = cfg["run"].get("eval_timeout_s", 1800)
     keep_failed = cfg["run"].get("keep_failed_sandboxes", True)
     keep_success = cfg["run"].get("keep_successful_sandboxes", False)
@@ -230,9 +264,9 @@ def evaluate(inputs):
     make_out_dir(out_dir)                            # config/ copy + empty logs/ + fieldmaps symlink
     failed = False
     try:
-        seed_upstream(out_dir, scope)
+        seed_upstream(out_dir, from_stage)
         apply_overrides(out_dir, inputs)            # into the COPY
-        run_chain(out_dir, scope, timeout_s)
+        run_chain(out_dir, from_stage, timeout_s)
         m = read_summary(out_dir)
         if not (_finite(m.get("eps_n_x_m")) and _finite(m.get("eps_n_y_m"))
                 and _finite(m.get("ke_out_mev"))):
@@ -270,12 +304,19 @@ def make_executor(evcfg):
         # `job_script_prologue` is dask-jobqueue >= 0.8 (older: `env_extra`).
         from dask_jobqueue import SGECluster
         from dask.distributed import Client
-        conda_env = evcfg.get("conda_env")          # abs path to the scratch CBB env
-        prologue = ["source ~/miniforge3/etc/profile.d/conda.sh",
-                    f"conda activate {conda_env}" if conda_env else "",
-                    "export OMP_NUM_THREADS=1",
-                    "export HDF5_USE_FILE_LOCKING=FALSE",
-                    "export PYTHONNOUSERSITE=1"]     # ~/.local lume/openpmd shadow the env otherwise
+        # Prefer sourcing cluster_env.sh (the ONE site env: conda + OMP/HDF5/PYTHONNOUSERSITE + g4bl
+        # PATH + Geant4 data vars) so workers match the controller exactly (the converter needs g4bl).
+        env_setup = evcfg.get("env_setup")
+        if env_setup:
+            prologue = [f"source {env_setup}"]
+        else:                                        # minimal fallback (NO g4bl/G4 data -> converter fails)
+            conda_env = evcfg.get("conda_env")
+            prologue = ["source ~/miniforge3/etc/profile.d/conda.sh",
+                        f"conda activate {conda_env}" if conda_env else "",
+                        "export OMP_NUM_THREADS=1",
+                        "export HDF5_USE_FILE_LOCKING=FALSE",
+                        "export PYTHONNOUSERSITE=1"]  # ~/.local lume/openpmd shadow the env otherwise
+            prologue = [ln for ln in prologue if ln]
         cluster = SGECluster(
             cores=1, processes=1, memory=evcfg.get("memory", "4GB"),
             queue=evcfg.get("queue"),
@@ -334,6 +375,25 @@ def prebuild_fieldmaps():
     build_linac_slac_fields()
 
 
+def prefreeze_upstream(from_stage):
+    """Run the frozen prefix (cathode..the stage before `from_stage`) ONCE at REPO_ROOT so every eval
+    symlinks its dump instead of recomputing a parameter-independent prefix (scope=full freezes
+    cathode+gun, ~16 min/eval). Idempotent: a no-op once the seed dump exists (resume / prior run)."""
+    if from_stage is None:
+        return
+    rel, to_stage = FREEZE_SEED[from_stage]
+    if os.path.isdir(os.path.join(REPO_ROOT, rel)):
+        print(f"frozen upstream prefix present ({rel}) -- skipping prerun", flush=True)
+        return
+    print(f"freezing upstream prefix (cathode..{to_stage}) once -> {rel} ...", flush=True)
+    env = dict(os.environ)
+    env.pop("LINACSIM_OUT_DIR", None)               # write the shared REPO_ROOT dump, not a sandbox
+    env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    env.setdefault("OMP_NUM_THREADS", "1")
+    subprocess.run([sys.executable, os.path.join(REPO_ROOT, "sim/main.py"),
+                    "--to", to_stage, "--no-plots"], cwd=REPO_ROOT, env=env, check=True)
+
+
 def main():
     from xopt import Xopt, VOCS, Evaluator
     from xopt.generators.ga.cnsga import CNSGAGenerator
@@ -342,6 +402,7 @@ def main():
     if cfg["run"]["scope"] == "full":               # upstream stages build the shared maps -> prebuild
         print("prebuilding shared field maps (fieldmaps/h5) ...", flush=True)
         prebuild_fieldmaps()
+        prefreeze_upstream(freeze_boundary(cfg))    # run cathode..gun once; evals symlink the dump
     opt_dir = os.path.join(REPO_ROOT, "logs", "opt")
     os.makedirs(opt_dir, exist_ok=True)             # dump dir must exist before X.dump_file writes
 
