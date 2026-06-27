@@ -6,6 +6,9 @@
 #$ -o logs/opt/sge/
 #$ -l mem_free=4G
 #$ -l h_rt=47:50:00
+# dask-sge: the controller is LIGHT (1 slot) -- it runs the CNSGA loop + Dask scheduler and qsubs
+# `max_workers` (config/xopt.yaml) one-core worker jobs itself. (For executor: process on one node
+# instead, add `#$ -pe sge_pe N`.)
 #
 # Grid Engine launcher for the Xopt/CNSGA beam optimizer (sim/optimize.py).
 #

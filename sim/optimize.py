@@ -22,6 +22,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -128,9 +129,13 @@ def load_xopt_config(path=XOPT_CONFIG):
 
 # ── Sandbox + override writing ──────────────────────────────────────────────────────
 def eval_sandbox(inputs):
-    """The ONE unique-per-eval sandbox dir (deterministic in the inputs, so a resumed run reuses it)."""
+    """The ONE unique-per-eval sandbox dir, on NODE-LOCAL scratch. Each stage writes hundreds of
+    openPMD diagnostic dumps; concurrent evals sharing /nfs saturate the NFS server (the whole job
+    stalls in D/disk-sleep). Prefer $LINACSIM_RUNS_DIR, else $TMPDIR (SGE per-job, auto-cleaned), else
+    /tmp -- all node-local. Deterministic in the inputs so a resumed run reuses it."""
     h = hashlib.sha1(repr(sorted(inputs.items())).encode()).hexdigest()[:16]
-    return os.path.join(REPO_ROOT, "logs", "runs", h)
+    base = os.environ.get("LINACSIM_RUNS_DIR") or os.environ.get("TMPDIR") or "/tmp"
+    return os.path.join(base, "linac_runs", h)
 
 
 def _fmt(value):
@@ -231,7 +236,22 @@ def run_chain(out_dir, from_stage, timeout_s):
     env["LINACSIM_OUT_DIR"] = out_dir
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("OMP_NUM_THREADS", "1")
-    subprocess.run(argv, cwd=out_dir, env=env, timeout=timeout_s, check=True)
+    # start_new_session=True makes main.py its own process-group leader; on timeout kill the WHOLE
+    # group. subprocess.run(timeout=) would SIGKILL only main.py and ORPHAN its WarpX/g4bl
+    # grandchildren (reparented to init), which keep burning the node's cores long after the eval is
+    # abandoned -- the failure mode that collapsed the first 128-worker run.
+    proc = subprocess.Popen(argv, cwd=out_dir, env=env, start_new_session=True)
+    try:
+        rc = proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        raise
+    if rc != 0:
+        raise subprocess.CalledProcessError(rc, argv)
 
 
 def read_summary(out_dir):
@@ -404,21 +424,29 @@ def main():
         prebuild_fieldmaps()
         prefreeze_upstream(freeze_boundary(cfg))    # run cathode..gun once; evals symlink the dump
     opt_dir = os.path.join(REPO_ROOT, "logs", "opt")
-    os.makedirs(opt_dir, exist_ok=True)             # dump dir must exist before X.dump_file writes
+    os.makedirs(opt_dir, exist_ok=True)             # holds the per-step data.csv checkpoint + Pareto output
 
     vocs = VOCS(**cfg["vocs"])
     gen = CNSGAGenerator(vocs=vocs, population_size=cfg["generator"]["population_size"])
     ev = Evaluator(function=evaluate, executor=make_executor(cfg["evaluator"]),
                    max_workers=cfg["evaluator"].get("max_workers", 1))
     X = Xopt(generator=gen, evaluator=ev)           # Xopt 3.x derives vocs from the generator
-    X.dump_file = os.path.join(opt_dir, "xopt.yaml")
+    # Do NOT set X.dump_file: its per-step auto-dump serializes the CNSGA generator's population
+    # DataFrame through pandas to_json(orient="columns"), which raises "index must be unique" under
+    # this pandas/py3.14 once a generation rolls over. Checkpoint X.data to CSV each step instead.
+    data_csv = os.path.join(opt_dir, "data.csv")
 
     max_eval = cfg["xopt"]["max_evaluations"]
     print(f"CNSGA: scope={cfg['run']['scope']}, population={cfg['generator']['population_size']}, "
           f"max_evaluations={max_eval}, {len(vocs.variables)} variables -> {opt_dir}/", flush=True)
     while (len(X.data) if X.data is not None else 0) < max_eval:
         X.step()                                    # CNSGA is async -- keeps the executor saturated
-    save_pareto(X, opt_dir)
+        if X.data is not None and len(X.data):
+            X.data.reset_index(drop=True).to_csv(data_csv)   # per-step checkpoint (unique index)
+    try:
+        save_pareto(X, opt_dir)
+    except Exception as e:
+        print(f"save_pareto skipped ({type(e).__name__}); data.csv holds all evaluations", flush=True)
     print(f"Done. {len(X.data)} evaluations. Pareto + checkpoints in {opt_dir}/", flush=True)
 
 

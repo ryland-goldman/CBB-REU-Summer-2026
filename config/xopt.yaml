@@ -3,23 +3,24 @@
 # trade pair); energy, energy spread, spot, and core transmission are constraints. All objectives
 # read from logs/diags/linac5-8/main/injection_summary.json (extended by sim/linac5-8.py).
 xopt:
-  max_evaluations: 4000          # or drive by generations * population in code
+  max_evaluations: 1792          # 64 CNSGA generations x 28 population
 generator:
   # The generator (CNSGAGenerator) and evaluator function are bound in sim/optimize.py:main, not read
   # from here; population_size / executor / max_workers below ARE read.
-  population_size: 64            # match to available cores/slots (see isolation plan)
+  population_size: 28            # CNSGA generation size (64 generations x 28 = 1792 evals)
 evaluator:
-  executor: process              # process (local ProcessPool, DEFAULT) | dask-sge (CLASSE cluster runs
-                                 # SGE/qsub, not HTCondor/SLURM). See sim/optimize.make_executor.
-  max_workers: 64                # process: ProcessPool worker cap (unset => nproc-2). dask-sge: number
-                                 # of 1-core worker qsub jobs to scale to.
-  # --- dask-sge only (ignored by process) -- worker qsub jobs reproduce the cluster env ---
-  # env_setup: /nfs/acc/temp/rjg343/Cornell2/cluster_env.sh  # PREFERRED: each worker `source`s this (conda +
-  #                                                # OMP/HDF5/PYTHONNOUSERSITE + g4bl PATH + Geant4 data vars)
-  # conda_env: /nfs/acc/temp/rjg343/cbb            # fallback if no env_setup (NO g4bl/G4 data => converter fails)
-  # resource_spec: mem_free=4G                     # SGE -l request per worker (each chain peaks ~1-1.5 GB)
-  # queue: all.q                                   # site queue (omit => default queue)
-  # walltime: "48:00:00"                           # worker job h_rt (workers persist across many evals)
+  executor: process              # process (local ProcessPool, one node) | dask-sge: each worker is its
+                                 # OWN 1-core qsub job, spread across the cluster -- real N-way parallelism.
+  max_workers: 14                # local run on a 14-core / 26 GB Mac: 14 concurrent full-chain evals
+                                 # saturate every core (each eval is single-core, OMP=1); peak RAM ~21 GB
+                                 # of 26. (dask-sge cluster value was 64; recover via git.)
+  # --- dask-sge worker qsub jobs reproduce the cluster env (sim/optimize.make_executor) ---
+  env_setup: /nfs/acc/temp/rjg343/Cornell2/cluster_env.sh   # each worker `source`s this: conda + g4bl +
+                                                            # Geant4 data + OMP/HDF5 + LINACSIM_RUNS_DIR + PYTHONPATH
+  resource_spec: mem_free=8G,os_name=el9   # 8G per worker: gives each chain headroom AND makes SGE pack
+                                           # fewer workers/node (memory-bandwidth contention was the killer)
+  queue: all.q                             # site queue holding the free slots
+  walltime: "47:50:00"                     # worker job h_rt -- UNDER the 48:00:00 cap (else rejected like 120h was)
 vocs:
   variables:                     # name: [lo, hi]  -- bounds in physical units
     # --- final-stage beam-quality knobs (highest leverage, cheapest if scope=downstream) ---
@@ -63,7 +64,8 @@ vocs:
                                                # q_out_C MAXIMIZE objective already pushes end-to-end charge
 run:
   scope: full              # downstream (converter+linac5-8) | full (cathode->linac5-8)
-  eval_timeout_s: 1800
-  keep_failed_sandboxes: true        # keep diverged-eval sandboxes for triage
+  eval_timeout_s: 5400             # 90 min -- with linac5-8 np=48k a full-chain eval is ~40 min solo,
+                                   # ~60-80 min under node memory-bandwidth contention; 1 h timed them out
+  keep_failed_sandboxes: false       # local: 51 GB free disk -- don't accumulate failed full-chain sandboxes
   keep_successful_sandboxes: false   # rmtree a successful eval's sandbox after its summary is read
                                      # (each scope=full sandbox holds a full chain's diags -> TB over a run)

@@ -16,7 +16,15 @@ conda activate "$CBB_ENV"
 # ---- WarpX/Impact-T/HDF5 (mirrors injphase/submit.sge) ----
 export OMP_NUM_THREADS=1                # each eval is single-core (MLMG is memory-bandwidth bound)
 export HDF5_USE_FILE_LOCKING=FALSE
+# NB: do NOT set OPENPMD_DEFER_ITERATION_PARSING=1 -- buildfields.py reads chk.iterations[0].meshes
+# eagerly, which deferred parsing leaves empty (IndexError: Key 'B' does not exist).
 export PYTHONNOUSERSITE=1               # ~/.local lume/openpmd shadow the env otherwise
+export LINACSIM_RUNS_DIR=/tmp               # per-eval sandboxes under /tmp/linac_runs/<hash> on NODE-LOCAL
+                                           # /tmp, never /nfs: each eval writes hundreds of openPMD diag
+                                           # dumps; on shared NFS that saturates the server and the whole
+                                           # job stalls in disk-sleep
+export PYTHONPATH="$LINACSIM_BASE:${PYTHONPATH:-}"   # dask-sge worker jobs must import sim.optimize.evaluate
+                                           # (the controller adds it at runtime, but a bare worker does not)
 
 # ---- G4beamline + Geant4 11.0 data (converter stage) ----
 # g4bldata's GUI downloader can't run headless, so the dataset paths are set directly. Geant4 pins
