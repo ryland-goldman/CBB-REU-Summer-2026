@@ -99,8 +99,11 @@ def _load_bunch(drv, N, p):
     return z, u, w, z_center, v_beam, ke_mean, scale
 
 
-PROBE_LEN = 1.0            # integrate this far into the structure to fix the crest (TW gradient is
+PROBE_LEN = 0.6            # integrate this far into the structure to fix the crest (TW gradient is
                           # phase-uniform; a WarpX scan confirmed the crest at a 0.6 m probe)
+COARSE_STEP_DEG = 4.0     # wide 0..360 scan resolution; the fine scan refines the coarse argmax. For a
+                          # unimodal KE(phase) the argmax sample is one of the two bracketing the crest,
+                          # so it sits within ±COARSE_STEP_DEG of it -- the fine half-window matches that.
 
 
 def _mean_exit_ke(base_deg, z0, u0, w, z_center, v_beam, scale, omega, zmap, ez1, ez2, z_probe):
@@ -144,8 +147,8 @@ def _mean_exit_ke(base_deg, z0, u0, w, z_center, v_beam, scale, omega, zmap, ez1
 
 def find_crest(z0, u0, w, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2):
     """Crest base phase [deg, in [0,360)] and its bunch-averaged gain [keV] at the probe plane: a
-    2 deg coarse scan (light subsample), a 0.1 deg fine scan about the peak, then a parabolic
-    refine. The probe plane caps the integration short of the full structure for speed."""
+    COARSE_STEP_DEG coarse scan (light subsample), a 0.1 deg fine scan about the peak, then a
+    parabolic refine. The probe plane caps the integration short of the full structure for speed."""
     z_probe = min(zmap[-1], Z_STRUCT + PROBE_LEN)
     coarse_sub = slice(0, min(512, z0.size))                  # lighter bunch for the wide scan
 
@@ -153,9 +156,9 @@ def find_crest(z0, u0, w, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez
         return np.array([_mean_exit_ke(b, zz, uu, ww, z_center, v_beam, scale, omega,
                                        zmap, ez1, ez2, z_probe) for b in np.atleast_1d(phases)])
 
-    coarse = np.arange(0.0, 360.0, 2.0)
+    coarse = np.arange(0.0, 360.0, COARSE_STEP_DEG)
     c0 = coarse[int(np.argmax(ke_at(coarse, z0[coarse_sub], u0[coarse_sub], w[coarse_sub])))]
-    fine = c0 + np.arange(-3.0, 3.0 + 1e-9, 0.1)
+    fine = c0 + np.arange(-COARSE_STEP_DEG, COARSE_STEP_DEG + 1e-9, 0.1)
     g = ke_at(fine, z0, u0, w)
     i = int(np.argmax(g))
     if 0 < i < len(fine) - 1:                                 # parabolic vertex of the top 3

@@ -22,7 +22,7 @@ grid:
 
 solver:
   solver_type: ES_MLMG_LF              # space charge is a small perturbation
-  required_precision: 1.0e-4
+  required_precision: 2.0e-4
   maximum_iterations: 200
   warpx_self_fields_verbosity: 0
 

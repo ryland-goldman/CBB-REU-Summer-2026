@@ -5,7 +5,10 @@
 #$ -j y
 #$ -o logs/opt/sge/
 #$ -l mem_free=4G
-#$ -l h_rt=120:00:00
+#$ -l h_rt=47:50:00
+# dask-sge: the controller is LIGHT (1 slot) -- it runs the CNSGA loop + Dask scheduler and qsubs
+# `max_workers` (config/xopt.yaml) one-core worker jobs itself. (For executor: process on one node
+# instead, add `#$ -pe sge_pe N`.)
 #
 # Grid Engine launcher for the Xopt/CNSGA beam optimizer (sim/optimize.py).
 #
@@ -14,7 +17,8 @@
 # So you submit THIS once; the workers appear as separate `linac-opt`/dask jobs in `qstat`.
 #
 #   #$ -l mem_free  the controller is light (orchestration + the one-time field-map prebuild); 4G is plenty.
-#   #$ -l h_rt      whole-run walltime -- a full-chain population takes days; raise if needed.
+#   #$ -l h_rt      whole-run walltime -- CLASSE all.q/theory.q cap is 48:00:00 (h_rt), so request
+#                  just under it; the run must fit one window (or checkpoint-resume across submits).
 # The worker jobs' resources (cores=1, mem_free, walltime, queue, conda_env) come from the
 # `evaluator:` block of config/xopt.yaml -> sim/optimize.make_executor, NOT from this file.
 #
@@ -25,23 +29,15 @@
 # Submit from the repo root on a CLASSE node:
 #   mkdir -p logs/opt/sge && qsub launch_opt.sge
 
-# ---- site config: EDIT these two for your checkout ----
-BASE=/nfs/acc/temp/rjg343/Cornell2     # this repo on shared /nfs scratch (REPO_ROOT for the run)
-ENV=/nfs/acc/temp/rjg343/cbb           # scratch conda env (full sim stack + xopt + dask-jobqueue)
-# Keep ENV consistent with evaluator.conda_env in config/xopt.yaml so workers use the same env.
+# ---- site environment (ONE source of truth, shared with the dask workers) ----
+# cluster_env.sh activates the scratch conda env and sets OMP/HDF5/PYTHONNOUSERSITE + the g4bl PATH
+# and Geant4 data vars. Workers source the SAME file (see sim/optimize.make_executor). Edit paths there.
+# Do NOT export LINACSIM_OUT_DIR -- the controller runs at REPO_ROOT (prebuilds the shared fieldmaps/h5
+# there); each eval sets its own LINACSIM_OUT_DIR per subprocess (sim/optimize.evaluate).
+source /nfs/acc/temp/rjg343/Cornell2/cluster_env.sh
 
-# ---- environment (mirrors injphase/submit.sge: the controller must match the worker env) ----
-export OMP_NUM_THREADS=1               # each WarpX/Impact-T eval is single-core (MLMG is BW-bound)
-export HDF5_USE_FILE_LOCKING=FALSE
-export PYTHONNOUSERSITE=1              # ~/.local lume/openpmd shadow the env otherwise
-# Do NOT export LINACSIM_OUT_DIR here -- the controller runs at REPO_ROOT (prebuilds the shared
-# fieldmaps/h5 there); each eval sets its own LINACSIM_OUT_DIR per subprocess (sim/optimize.evaluate).
-
-source ~/miniforge3/etc/profile.d/conda.sh
-conda activate "$ENV"
-
-cd "$BASE" || { echo "repo not found at $BASE"; exit 1; }
+cd "$LINACSIM_BASE" || { echo "repo not found at $LINACSIM_BASE"; exit 1; }
 command -v g4bl >/dev/null || echo "WARNING: g4bl not on PATH -- the converter stage will fail"
 
-echo "host=$(hostname) env=$ENV repo=$BASE python=$(command -v python)"
+echo "host=$(hostname) repo=$LINACSIM_BASE python=$(command -v python)"
 exec python sim/optimize.py

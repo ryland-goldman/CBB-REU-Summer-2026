@@ -530,7 +530,7 @@ def main():
           f"P={power_mw:g} MW, frozen per-section scale+crest applied, SC off, quad doublets + "
           f"sec5/6 cavity-solenoids ON -> {outdir}/", flush=True)
 
-    # ── Full run, bar driven from fort.18 (col 1 = reference z [m]) ────────────────────────
+    # ── Full run, bar driven from fort.18 (col 2 = reference z [m]; col 1 is time [s]) ──────
     # build_impact(workdir=) ran configure() with use_temp_dir=False, so I.path == workdir and
     # fort.18 lands at <workdir>/fort.18 (I.path is authoritative; poll it not the config value).
     print(f"Running Impact-T ({n_sec} sections, Ntstep={cfg['deck']['ntstep']})...", flush=True)
@@ -545,7 +545,8 @@ def main():
     # n_out/n_in on the macro count (uniform per-macro weight) is the only honest transmission;
     # from charge AFTER the re-impose below it would force 1.0 and mask aperture loss.
     n_in = int(P_in.n_particle)
-    q_core = float(P_in["charge"])
+    q_core = float(core_info["q_core_C"])   # physical core charge captured at load; decoupled from
+                                            # P_in["charge"] (Impact-T owns the deck's weight handling)
     P_out = I.particles["final_particles"] if "final_particles" in I.particles else None
     if P_out is None or P_out.n_particle == 0:
         # Whole bunch lost: the positron beam scraped on the bore before the deck end (the sec5/6

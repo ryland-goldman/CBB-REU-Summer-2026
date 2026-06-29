@@ -25,10 +25,11 @@ lattice:
 beam:
   species: positrons             # upstream is the converter positron beam (q=+e); sign flips Bcharge
   min_ke_mev: 2.0                # positron captured-core energy cut [MeV] (soft converter spectrum)
-  np: 120000                     # macroparticles tracked in the final run. Richer core -> downsample to
+  np: 48000                      # macroparticles tracked in the final run. Richer core -> downsample to
                                  # this; sparser core -> smeared upsample to this if `upsample` (below).
-                                 # ~0.9% capture, so 120k injected -> ~1k survivors (enough for stats);
-                                 # lower it for a faster, coarser run.
+                                 # Single-core Impact-T cost scales ~linearly in np and DOMINATES a
+                                 # full-chain eval, so the CNSGA optimizer runs 48k (conservative: scalar
+                                 # objective moments converge well below 120k) to fit the 47h50m cap.
   upsample: true                 # smeared-split the converter core up to `np` (SC is off, so each macro
                                  # is independent; preserves survival fraction + moments, raises sampling
                                  # density). Plain duplication would NOT help -- coincident clones track
@@ -40,8 +41,8 @@ beam:
 
 # Impact-T deck knobs.
 deck:
-  ntstep: 200000                 # step cap (sized for the deck length at dt=2e-12; mean_z is asserted reached)
-  dt: 2.0e-12                    # time step [s]
+  ntstep: 200000                 # step cap (sized for the deck length at dt=3e-12; mean_z is asserted reached)
+  dt: 3.0e-12                    # time step [s]
   nxyz: 16                       # Impact-T SC mesh per axis (power of 2; inert while SC is off)
   xyrad_m: 0.02                  # transverse computational-domain half-width [m] (box wall, not pipe)
 
