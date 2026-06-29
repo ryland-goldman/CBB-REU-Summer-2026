@@ -97,6 +97,9 @@ def freeze_boundary(cfg):
     """The earliest pipeline stage any ACTIVE variable targets (= the first `--from` stage each eval
     runs); everything before it is frozen. None if a variable targets the very first stages
     (cathode/gun) -- then the chain runs from the top with nothing frozen."""
+    for n in cfg["vocs"]["variables"]:              # fail fast: a var whose config has no stage
+        if OVERRIDES[n][0] not in CONFIG_STAGE:      # mapping would otherwise KeyError opaquely
+            sys.exit(f"freeze_boundary: {OVERRIDES[n][0]} (var {n!r}) missing from CONFIG_STAGE")
     stages = {CONFIG_STAGE[OVERRIDES[n][0]] for n in cfg["vocs"]["variables"]}
     if not stages:
         return None
@@ -398,11 +401,15 @@ def prebuild_fieldmaps():
 def prefreeze_upstream(from_stage):
     """Run the frozen prefix (cathode..the stage before `from_stage`) ONCE at REPO_ROOT so every eval
     symlinks its dump instead of recomputing a parameter-independent prefix (scope=full freezes
-    cathode+gun, ~16 min/eval). Idempotent: a no-op once the seed dump exists (resume / prior run)."""
+    cathode+gun, ~16 min/eval). Idempotent: a no-op once a COMPLETED prefix exists (resume / prior
+    run). Gated on a `.prefreeze_complete` sentinel written only after the prerun returns 0 -- a dir
+    alone is NOT a completion marker: a prerun killed mid-write (OOM / walltime / Ctrl-C) leaves a
+    partial dump that every eval would then silently symlink as the frozen upstream beam."""
     if from_stage is None:
         return
     rel, to_stage = FREEZE_SEED[from_stage]
-    if os.path.isdir(os.path.join(REPO_ROOT, rel)):
+    sentinel = os.path.join(REPO_ROOT, rel, ".prefreeze_complete")
+    if os.path.exists(sentinel):
         print(f"frozen upstream prefix present ({rel}) -- skipping prerun", flush=True)
         return
     print(f"freezing upstream prefix (cathode..{to_stage}) once -> {rel} ...", flush=True)
@@ -412,6 +419,7 @@ def prefreeze_upstream(from_stage):
     env.setdefault("OMP_NUM_THREADS", "1")
     subprocess.run([sys.executable, os.path.join(REPO_ROOT, "sim/main.py"),
                     "--to", to_stage, "--no-plots"], cwd=REPO_ROOT, env=env, check=True)
+    open(sentinel, "w").close()                     # mark complete only after a clean exit
 
 
 def main():

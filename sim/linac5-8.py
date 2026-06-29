@@ -530,7 +530,7 @@ def main():
           f"P={power_mw:g} MW, frozen per-section scale+crest applied, SC off, quad doublets + "
           f"sec5/6 cavity-solenoids ON -> {outdir}/", flush=True)
 
-    # ── Full run, bar driven from fort.18 (col 1 = reference z [m]) ────────────────────────
+    # ── Full run, bar driven from fort.18 (col 2 = reference z [m]; col 1 is time [s]) ──────
     # build_impact(workdir=) ran configure() with use_temp_dir=False, so I.path == workdir and
     # fort.18 lands at <workdir>/fort.18 (I.path is authoritative; poll it not the config value).
     print(f"Running Impact-T ({n_sec} sections, Ntstep={cfg['deck']['ntstep']})...", flush=True)
