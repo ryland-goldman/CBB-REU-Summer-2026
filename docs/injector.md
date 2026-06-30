@@ -6,12 +6,26 @@ Third stage of the Cornell Linac chain:
 cathode  ->  gun  ->  injector (this)  ->  linac_sec1
 ```
 
-The injector is the full injector subsection modelled in **one self-consistent RZ
-space-charge run**: two 214 MHz prebuncher cavities (Preb 2 reversed) velocity-bunch the gun
-exit beam while six solenoid lenses focus it, handing a focused, collimated beam to the linac
-at the true structure entrance **z ~= 2.03 m**. Modelling every element in one drift is
-essential -- the bunching, two-cavity phasing, and transverse focusing are coupled through the
-self-field.
+The injector is the full injector subsection modelled in **one RZ run** (a single continuous
+drift): two 214 MHz prebuncher cavities (Preb 2 reversed) velocity-bunch the gun exit beam while
+six solenoid lenses focus it, handing a focused, collimated beam to the linac at the true
+structure entrance **z ~= 2.03 m**. Modelling every element in one drift is essential -- the
+bunching, two-cavity phasing, and transverse focusing share one continuous applied-field
+integration.
+
+> **Space charge is OFF here (`warpx_do_not_deposit: true`) -- a deliberate speed choice, not a
+> physics claim.** The relativistic `ES_MLMG_EMS` solver is configured (see *Self-field solver*
+> below) but, with no charge deposited, it is **inert**: this run propagates the beam through the
+> applied RF + solenoid fields only. At the ~150 keV gun-exit energy (gamma ~ 1.29) the 1/gamma^2
+> self-field suppression is only ~0.6 -- *not* negligible -- and the prebunchers raise the peak
+> current toward the handoff, so the omitted longitudinal debunching and transverse defocus are
+> largest exactly where the beam is measured. The bunching, transmission, and emittance handed to
+> linac sec1 are therefore mildly **over-optimistic**; account for that when tuning downstream. The
+> neighbouring same-energy stages (gun, linac sec1) keep SC **on**. Set
+> `warpx_do_not_deposit: false` for a self-consistent 150 keV run -- the EMS solver is ready -- but
+> expect a much slower run (the MLMG self-field solve then runs every step) and **re-tune the
+> operating point**, since the SC-off setpoints (e.g. the `rev = pi` waist landing at 2.03 m) were
+> fit without the self-field.
 
 ```
 Lens 0A  ->  Prebuncher 1  ->  Prebuncher 2 (reversed)  ->  Sol 0 / Lens 0E  ->  9.547 mm iris
@@ -174,8 +188,13 @@ handoff charge / transmission to `logs/diags/injector/main/injection_summary.jso
 
 ## Self-field solver (relativistic electromagnetostatic)
 
-The beam self-field uses WarpX's **electromagnetostatic** solver (`ES_MLMG_EMS`), not the plain
-lab-frame electrostatic Poisson solve. In addition to `div^2 phi = -rho/eps0` it solves the
+> **This solver is configured but inert at the default operating point** (`warpx_do_not_deposit:
+> true`, SC off -- see the caveat at the top). The description below applies when SC is enabled
+> (`warpx_do_not_deposit: false`); with SC off no charge is deposited and no self-field is solved,
+> so the run reduces to applied-field tracking.
+
+When enabled, the beam self-field uses WarpX's **electromagnetostatic** solver (`ES_MLMG_EMS`), not
+the plain lab-frame electrostatic Poisson solve. In addition to `div^2 phi = -rho/eps0` it solves the
 Coulomb-gauge vector potential from the beam current (`div^2 A = -mu0 j`, `B = curl A`), so the
 self magnetic field is included and the relativistic magnetic-pinch term `q*beta x B` partially
 cancels the radial space-charge repulsion: the net transverse self-force is `q E_r / gamma^2`

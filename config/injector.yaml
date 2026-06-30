@@ -46,7 +46,7 @@ species:
   - particle_type: electron
     name: electrons
     distribution-type: FromInitialParticles   # gun handoff beam via WarpX(initial_particles=...)
-    warpx_do_not_deposit: true                # space charge off
+    warpx_do_not_deposit: true                # SC OFF (deliberate speed choice): no charge is deposited, so the ES_MLMG_EMS solver above is configured but inert. At 150 keV (gamma~1.29) 1/gamma^2~0.6 is NOT negligible, so the bunching/peak-current/emittance handed to linac1 are mildly over-optimistic. Set false for a self-consistent run (much slower; re-tune the operating point). See docs/injector.md.
     layout: PseudoRandom
     n_macroparticles_per_cell: 1
 

@@ -22,6 +22,8 @@ import openpmd_api as io
 GDF_DIR = "fieldmaps/gdf"
 H5_DIR = "fieldmaps/h5"
 
+UNIFORM_TOL = 5e-5              # [m] max sample misplacement allowed under one uniform grid step
+
 # openPMD unit_dimension dicts (SI base-unit exponents).
 E_UNIT = {io.Unit_Dimension.M: 1.0, io.Unit_Dimension.L: 1.0,
           io.Unit_Dimension.T: -3.0, io.Unit_Dimension.I: -1.0}      # [V/m]
@@ -65,6 +67,26 @@ def pad_r(r, rmax, *arrs):
     r_new = np.concatenate([r, r[-1] + dr * np.arange(1, n_add + 1)])
     out = [np.vstack([a, np.zeros((n_add, a.shape[1]))]) for a in arrs]
     return (r_new, *out)
+
+
+def uniform_spacing(x, name, axis):
+    """Mean grid step of a near-uniform GDF axis, guarding against a non-uniform source.
+
+    GDF maps are sampled on a nominally uniform grid, but float export makes the per-interval
+    spacing wobble (the prebuncher z-axis worst-case ~1.6%). The thetaMode writer stores ONE
+    grid_spacing, placing sample i at x0 + i*dx, so the right step is the MEAN (both endpoints
+    pinned, ~5 um residual misplacement) -- NOT the first interval x[1]-x[0], whose outlier
+    value drifts the far end of the 305 mm prebuncher map by ~1.2 mm (+0.39% gap voltage).
+    Raise if even the mean cannot represent the grid (a genuinely non-uniform / graded mesh)."""
+    n = x.size
+    dx = (x[-1] - x[0]) / (n - 1)
+    misplace = float(np.abs(x - (x[0] + np.arange(n) * dx)).max())
+    if misplace > UNIFORM_TOL:
+        raise ValueError(
+            f"{name} {axis}-grid is non-uniform: max sample misplacement {misplace*1e6:.1f} um "
+            f"under the mean step {dx*1e6:.3f} um exceeds {UNIFORM_TOL*1e6:.0f} um -- the "
+            f"thetaMode writer needs a uniform grid (resample the source map)")
+    return float(dx)
 
 
 def write_thetamode_series(out_file, r0, z0, dr, dz, meshes):
@@ -117,7 +139,7 @@ def build_gun_field(gun_voltage):
     r, z, Er, Ez = to_grid(R, Z, Er, Ez)
     assert r[0] == 0.0 and z[0] == 0.0, (
         f"gun field map origin (r[0]={r[0]}, z[0]={z[0]}) must be (0, 0)")
-    dr, dz = float(r[1] - r[0]), float(z[1] - z[0])
+    dr, dz = uniform_spacing(r, "gun_E", "r"), uniform_spacing(z, "gun_E", "z")
     scale = -gun_voltage / GUN_MAP_VOLTAGE
     Er, Ez = scale * Er, scale * Ez
     Et = np.zeros_like(Er)
@@ -161,7 +183,7 @@ def _load_prebuncher_map():
 
 def _write_prebuncher(out_file, r, z, Er, Ez, Bphi, z_gap):
     """Write one prebuncher openPMD file (E + B), gap (native z=0) placed at lab z_gap."""
-    dr, dz = float(r[1] - r[0]), float(z[1] - z[0])
+    dr, dz = uniform_spacing(r, "prebuncher", "r"), uniform_spacing(z, "prebuncher", "z")
     assert abs(z[0] + z[-1]) < 1e-6, (
         f"prebuncher map z-extent must be symmetric about the gap (z spans "
         f"[{z[0]*1e3:.3f}, {z[-1]*1e3:.3f}] mm)")
@@ -180,7 +202,7 @@ def _build_solenoids():
         R, Z, Br, Bz = load_cols(SOL_GDF[name], ["R", "Z", "Br", "Bz"])
         r, z, Br, Bz = to_grid(R, Z, Br, Bz)
         r, Br, Bz = pad_r(r, INJ_RMAX, Br, Bz)
-        dr, dz = float(r[1] - r[0]), float(z[1] - z[0])
+        dr, dz = uniform_spacing(r, name, "r"), uniform_spacing(z, name, "z")
         ipk = int(np.argmax(np.abs(Bz[0])))
         offset = float(z[0])                        # native absolute placement
         zero = np.zeros_like(Br)
@@ -285,7 +307,8 @@ def _build_slac_rf(gdf, ez_name, er_name, h_name, out_file):
     R, Z, Er, Ez, Hphi = load_cols(gdf, ["R", "Z", er_name, ez_name, h_name])
     r, z, Er, Ez, Hphi = to_grid(R, Z, Er, Ez, Hphi)
     r, Er, Ez, Hphi = pad_r(r, RMAX, Er, Ez, Hphi)
-    dr, dz = float(r[1] - r[0]), float(z[1] - z[0])
+    dr, dz = uniform_spacing(r, os.path.basename(out_file), "r"), \
+        uniform_spacing(z, os.path.basename(out_file), "z")
     zero = np.zeros_like(Er)
     write_thetamode_series(out_file, 0.0, Z_STRUCT, dr, dz, [
         ("E", (("r", Er), ("t", zero), ("z", Ez)), E_UNIT),

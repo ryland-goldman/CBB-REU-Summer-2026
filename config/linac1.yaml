@@ -61,7 +61,7 @@ params:
   RF_NORM_MW: 0.001                    # field-map power normalisation (1 kW)
   CFL: 0.5                             # dt = CFL · Δz / v_inject
   MAX_PART: 50000                      # downsample the injected snapshot (reweighted)
-  RESAMPLE_N: 50000                      # >0 → resample beam to EXACTLY N macroparticles (up- or down-sample, reweighted); 0 → off (MAX_PART downsample)
+  RESAMPLE_N: 0                        # 0 → off (SC ON here: never upsample — duplicates inject a spurious self-field). Beam only downsamples via MAX_PART.
   MAX_STEPS: 0                         # 0 → auto-derive from transit; >0 → fixed
   N_DIAGS: 60
   TRANSIT_MARGIN: 1.0

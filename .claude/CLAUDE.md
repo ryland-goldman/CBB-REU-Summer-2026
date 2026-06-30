@@ -86,8 +86,11 @@ python sim/plot/linac1-4.py 2                   # a linac section's figures (fro
   relativistic linac sections 2–4 run with `warpx_do_not_deposit: true` (**SC off**): at γ≳45 the
   self-field is 1/γ²-negligible, so this is byte-identical physics for ~50–80× speedup. SC stays
   **on** where it matters — cathode (the Child–Langmuir limit it exists to show), gun (150 keV
-  magnetic pinch), and linac section 1 (150 keV capture). Set `warpx_do_not_deposit: false` for a
-  fully self-consistent linac run.
+  magnetic pinch), and linac section 1 (150 keV capture). The **injector** is the deliberate
+  exception among the low-energy stages: it sits at the same ~150 keV (γ≈1.29, 1/γ²≈0.6, *not*
+  negligible) but runs SC **off** as a speed choice, so its bunching/transmission/emittance are
+  mildly over-optimistic (the EMS solver is configured but inert) — see `docs/injector.md`. Set
+  `warpx_do_not_deposit: false` for a fully self-consistent linac (or injector) run.
 - **Threads:** keep `OMP_NUM_THREADS=1`. These grids are small and the MLMG solve is
   memory-bandwidth bound, so OpenMP threads contend and add overhead with no gain — raising it
   *slows* the small-grid stages (cathode/gun) via oversubscription. `prepare_env()` and
@@ -166,7 +169,9 @@ log `logs/pipeline/log_<date>.log`; the progress bar (stderr) stays on the termi
   id-tracking each particle at its **first appearance in the field-free pad** past the field map
   (sampling an in-field particle inflates ε_n,x ~8×), and the run stops while the beam is in the pad
   (draining the domain aborts MLMG).
-- **Injector** is RZ with SC off; solenoids at **native absolute machine-z** (not GUI-argmax-aligned —
+- **Injector** is RZ with SC off (a deliberate speed choice at 150 keV — the EMS solver is
+  configured but inert, so the bunching/emittance are mildly over-optimistic; see docs);
+  solenoids at **native absolute machine-z** (not GUI-argmax-aligned —
   that mis-places the flat-top SOL_0 by +1.08 m); reversed Preb-2 ≡ `PREB2_REV_PHASE=π` in absolute
   phase; B-only solenoid maps must be listed **before** the E-loading RF maps (picmi disables the
   global E init-style for any `load_E:false` field); the 9.547 mm collimator is a **multi-plane id

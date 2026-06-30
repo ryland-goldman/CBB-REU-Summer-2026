@@ -57,16 +57,20 @@ DESCENT_PASSES = 2         # coordinate-descent sweeps over (off1, off2)
 
 def _load_bunch(p):
     """Gun exit beam as sim/injector.py injects it, subsampled for the scan. Returns (z [m],
-    u = |gamma*beta| per particle, w, z_centroid [m], v_beam [m/s], ke_mean [keV])."""
+    uz = longitudinal gamma*beta per particle, uperp2 = ux^2+uy^2 (frozen transverse gamma*beta^2),
+    w, z_centroid [m], v_beam [m/s], ke_mean [keV]). uz and uperp are carried separately so the Ez
+    kick acts only on uz while gamma keeps the transverse momentum -- matching the uz/gamma v_beam in
+    helpers.loadparticles.beam_kinematics that converts sigma_z to sigma_t."""
     bunch, v_beam, ke_mean, z_centroid = drv.load_gun_bunch(
         p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
     z, w = np.asarray(bunch["z"], float), np.asarray(bunch["w"], float)
-    u = np.sqrt(bunch["ux"] ** 2 + bunch["uy"] ** 2 + bunch["uz"] ** 2)   # |gamma*beta|
+    uz = np.asarray(bunch["uz"], float)                                   # longitudinal gamma*beta
+    uperp2 = np.asarray(bunch["ux"], float) ** 2 + np.asarray(bunch["uy"], float) ** 2
     if z.size > SUBSAMPLE:                                   # weighted resample -> equal weight
         rng = np.random.default_rng(p["RNG_SEED"])
         sel = rng.choice(z.size, SUBSAMPLE, replace=False, p=w / w.sum())
-        z, u, w = z[sel], u[sel], np.ones(SUBSAMPLE)
-    return z, u, w, z_centroid, v_beam, ke_mean
+        z, uz, uperp2, w = z[sel], uz[sel], uperp2[sel], np.ones(SUBSAMPLE)
+    return z, uz, uperp2, w, z_centroid, v_beam, ke_mean
 
 
 def _cavity_phases(p, v_beam, ke_mean, z_centroid, off1, off2, omega):
@@ -88,17 +92,19 @@ def _cavity_phases(p, v_beam, ke_mean, z_centroid, off1, off2, omega):
     return scale1, phi1, scale2, phi2
 
 
-def _sigma_t_ps(z0, u0, w, scale1, phi1, scale2, phi2, ez_axis, zmap1, zmap2, omega,
+def _sigma_t_ps(z0, uz0, uperp2, w, scale1, phi1, scale2, phi2, ez_axis, zmap1, zmap2, omega,
                 preb1_on, preb2_on, v_beam):
     """Weighted-RMS arrival-time spread [ps] at the Z_HANDOFF plane for one (phi1, phi2) pair.
 
-    RK4-integrates the WHOLE bunch (dz/dt = c*u/gamma, du/dt = -(e/m_e c) Ez) through both on-axis
+    RK4-integrates the WHOLE bunch (dz/dt = c*uz/gamma, duz/dt = -(e/m_e c) Ez) through both on-axis
     prebuncher gaps until the centroid reaches Z_HANDOFF, then returns sigma_z/v_beam at that
-    snapshot. Ez = scale1 Ez_map(z-gap1) cos(wt+phi1) + scale2 Ez_map(z-gap2) cos(wt+phi2); the field
-    is exactly zero outside each map (np.interp left/right=0) so the bunch coasts between cavities and
-    after the second gap. Bphi vanishes on axis, so Ez is the only longitudinal field."""
+    snapshot. The longitudinal Ez kicks only uz; gamma = sqrt(1 + uz^2 + uperp2) carries the frozen
+    transverse momentum, so v_z = c*uz/gamma matches the uz/gamma convention of beam_kinematics.
+    Ez = scale1 Ez_map(z-gap1) cos(wt+phi1) + scale2 Ez_map(z-gap2) cos(wt+phi2); the field is exactly
+    zero outside each map (np.interp left/right=0) so the bunch coasts between cavities and after the
+    second gap. Bphi vanishes on axis, so Ez is the only longitudinal field."""
     k = q_e / (m_e * c)
-    z, u = z0.copy(), u0.copy()
+    z, uz = z0.copy(), uz0.copy()
     dt = (2.0 * np.pi / omega) / 100.0                        # resolve the RF cycle
     n_max = int(1.6 * (Z_HANDOFF - z.mean()) / v_beam / dt) + 1
 
@@ -110,18 +116,18 @@ def _sigma_t_ps(z0, u0, w, scale1, phi1, scale2, phi2, ez_axis, zmap1, zmap2, om
             e += scale2 * np.interp(zz, zmap2, ez_axis, left=0.0, right=0.0) * np.cos(omega * t + phi2)
         return e
 
-    def dstate(zz, uu, t):
-        g = np.sqrt(1.0 + uu * uu)
-        return c * uu / g, -k * ez(zz, t)
+    def dstate(zz, uuz, t):
+        g = np.sqrt(1.0 + uuz * uuz + uperp2)                 # gamma keeps the transverse momentum
+        return c * uuz / g, -k * ez(zz, t)                    # Ez kicks only the longitudinal uz
 
     t = 0.0
     for _ in range(n_max):
-        dz1, du1 = dstate(z, u, t)
-        dz2, du2 = dstate(z + 0.5 * dt * dz1, u + 0.5 * dt * du1, t + 0.5 * dt)
-        dz3, du3 = dstate(z + 0.5 * dt * dz2, u + 0.5 * dt * du2, t + 0.5 * dt)
-        dz4, du4 = dstate(z + dt * dz3, u + dt * du3, t + dt)
+        dz1, du1 = dstate(z, uz, t)
+        dz2, du2 = dstate(z + 0.5 * dt * dz1, uz + 0.5 * dt * du1, t + 0.5 * dt)
+        dz3, du3 = dstate(z + 0.5 * dt * dz2, uz + 0.5 * dt * du2, t + 0.5 * dt)
+        dz4, du4 = dstate(z + dt * dz3, uz + dt * du3, t + dt)
         z = z + (dt / 6.0) * (dz1 + 2 * dz2 + 2 * dz3 + dz4)
-        u = u + (dt / 6.0) * (du1 + 2 * du2 + 2 * du3 + du4)
+        uz = uz + (dt / 6.0) * (du1 + 2 * du2 + 2 * du3 + du4)
         t += dt
         if np.average(z, weights=w) >= Z_HANDOFF:
             break
@@ -185,7 +191,7 @@ def main():
           f"{Z_GAP_CENTER_2*1e3:.0f} mm; handoff plane z = {Z_HANDOFF*1e3:.0f} mm\n")
 
     try:
-        z0, u0, w, z_centroid, v_beam, ke_mean = _load_bunch(p)
+        z0, uz0, uperp2, w, z_centroid, v_beam, ke_mean = _load_bunch(p)
     except Exception as e:
         sys.exit(f"cannot read the gun exit beam ({drv.GUN_DIAG}) -- run sim/gun.py first: {e}")
 
@@ -195,7 +201,7 @@ def main():
 
     def sigma_t(off1, off2):
         s1, ph1, s2, ph2 = _cavity_phases(p, v_beam, ke_mean, z_centroid, off1, off2, omega)
-        return _sigma_t_ps(z0, u0, w, s1, ph1, s2, ph2, ez_axis, zmap1, zmap2, omega,
+        return _sigma_t_ps(z0, uz0, uperp2, w, s1, ph1, s2, ph2, ez_axis, zmap1, zmap2, omega,
                            preb1_on, preb2_on, v_beam)
 
     off1 = float(p["PREB1_PHI_OFF"])

@@ -197,25 +197,29 @@ def _section_subelements(cfg, index, zedge, scale, base_phase_deg, name_prefix, 
     `scale` is the entrance/exit field scale S; the body lines get S/sin(beta0 d). The inter-line
     phase pattern (+0/+30/+90/+0) is added to `base_phase_deg`. The entrance/exit coupler cells keep
     the template short length; the body carries (L - l_entrance - l_exit). `bore_on` gates the solrf
-    `radius` to the real ENTRANCE bore (else 0 => no scrape).
+    `radius` to the real tapered bore (else 0 => no scrape): the bore narrows linearly from the
+    entrance to the smaller exit radius, so each cell scrapes at the bore at its own z (entrance ->
+    r_in, exit -> r_exit, body cells at their span midpoint) -- the smaller exit cell is the binding
+    aperture.
     """
     sec = cfg["sections"][index]
     L = sec["length_m"]
     l_entrance = cfg["rfdata"]["l_entrance"]
     l_exit = cfg["rfdata"]["l_exit"]
     inv_sin = 1.0 / math.sin(_beta0_d(cfg))
-    r_in = section_bore_radii(sec)[0] if bore_on else 0.0
+    r_in, r_exit = section_bore_radii(sec)
     L_body = L - l_entrance - l_exit
     if L_body <= 0:
         raise ValueError(f"section {index} length {L} m too short for the coupler cells")
+    body_mid_r = r_in + (r_exit - r_in) * (l_entrance + 0.5 * L_body) / L   # linear taper at body midspan
     geom = (
-        ("entrance", zedge,                       l_entrance, scale),
-        ("body_1",   zedge + l_entrance,          L_body,     scale * inv_sin),
-        ("body_2",   zedge + l_entrance,          L_body,     scale * inv_sin),
-        ("exit",     zedge + l_entrance + L_body, l_exit,     scale),
+        ("entrance", zedge,                       l_entrance, scale,           r_in),
+        ("body_1",   zedge + l_entrance,          L_body,     scale * inv_sin, body_mid_r),
+        ("body_2",   zedge + l_entrance,          L_body,     scale * inv_sin, body_mid_r),
+        ("exit",     zedge + l_entrance + L_body, l_exit,     scale,           r_exit),
     )
     eles = []
-    for line, ze, length, sc in geom:
+    for line, ze, length, sc, radius in geom:
         eles.append({
             "type": "solrf",
             "name": f"{name_prefix}_{line}",
@@ -225,7 +229,7 @@ def _section_subelements(cfg, index, zedge, scale, base_phase_deg, name_prefix, 
             "rf_frequency": cfg["rf"]["rf_freq_hz"],
             "theta0_deg": base_phase_deg + LINE_PHASE_OFFSET[line],
             "filename": f"rfdata{FILE_ID[line]}",
-            "radius": r_in,
+            "radius": radius if bore_on else 0.0,
             "solenoid_field_scale": 0.0,
         })
     return eles

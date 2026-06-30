@@ -219,10 +219,15 @@ def main():
           f"(release over {p['PULSE_WIDTH']*1e9:.1f} ns + transit)", flush=True)
 
     # Fresh diags: the h5 backend appends one file per dump, so stale files would corrupt plots.
+    # HANDOFF_DIR too — build_exit_handoff() can early-return without rewriting it, and the injector
+    # consumes any handoff/ unconditionally, so a stale one would silently feed mismatched physics.
+    # Removing it forces the injector to fall back to particles/ when this run produces no handoff.
     if os.path.isdir(os.path.join(DIAG_DIR, "fields")):
         shutil.rmtree(os.path.join(DIAG_DIR, "fields"))
     if os.path.isdir(os.path.join(DIAG_DIR, "particles")):
         shutil.rmtree(os.path.join(DIAG_DIR, "particles"))
+    if os.path.isdir(HANDOFF_DIR):
+        shutil.rmtree(HANDOFF_DIR)
 
     # Seed only the earliest macroparticle (PICMI needs a non-empty initial distribution);
     # inject the rest over the pulse via the callback below.

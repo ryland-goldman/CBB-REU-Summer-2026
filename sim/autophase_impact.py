@@ -238,7 +238,10 @@ def _verify_impact(drv, cfg, found, last_idx):
         I, _, _ = drv.build_impact(cfg_noap, workdir=workdir)
         for i, sec in enumerate(cfg_noap["sections"]):
             gname = drv._ensure_section_group(I, cfg_noap, i)
-            drv._set_section_phase(I, cfg_noap, i, found[i] + (off if i == last_idx else 0.0))
+            # Upstream sections at the phase the driver applies (crest + optimizer offset); the section
+            # under test sweeps about its bare crest (off), confirming crest_phase_deg is the KE peak.
+            applied = found[i] + (off if i == last_idx else float(sec.get("crest_offset_deg", 0.0)))
+            drv._set_section_phase(I, cfg_noap, i, applied)
             drv._set_group_scale(I, gname, sec["field_scale"])
         I.initial_particles = P_in
         I.configure()
@@ -297,7 +300,12 @@ def main():
     # Persistent bunch state (z, u, t) advances section by section: each section's crest is found in
     # the field of all EARLIER sections (pinned to their found/frozen crest), entering with the right
     # energy and absolute arrival time -- the latter is what the absolute theta0 crest depends on.
+    # Upstream sections advance at the phase the driver APPLIES, crest_phase_deg + crest_offset_deg
+    # (sim/linac5-8.py), so nonzero optimizer offsets shift the arrival time exactly as on the deck;
+    # the scan for the section being phased uses the bare base phase (autophase owns crest_phase_deg,
+    # the offset is the optimizer's deliberate detune added on top).
     found = [float(s["crest_phase_deg"]) for s in cfg["sections"]]
+    offsets = [float(s.get("crest_offset_deg", 0.0)) for s in cfg["sections"]]
     zc, uc, tc = z, u, 0.0
     for i in range(max(indices) + 1):
         sec = cfg["sections"][i]
@@ -319,8 +327,10 @@ def main():
             print(f"  crest crest_phase_deg = {crest:.4f}°  (was {old:.4f}°, Δ {crest - old:+.4f}°)")
             print(f"  model ⟨KE⟩ {ke_out:.3f} MeV (relative; ~1.7× Impact-T magnitude, crest-only)\n",
                   flush=True)
-        # Advance the persistent state through this section at its (found or frozen) crest.
-        zc, uc, tc = _push(zc, uc, tc, sf["lines"], math.radians(found[i]), z_stop, omega, kq, dt)
+        # Advance the persistent state through this section at the phase the driver applies
+        # (found/frozen crest + optimizer offset), so the arrival time entering the next section matches.
+        zc, uc, tc = _push(zc, uc, tc, sf["lines"], math.radians(found[i] + offsets[i]),
+                           z_stop, omega, kq, dt)
 
     print(f"Final model ⟨KE⟩ after section {max(indices) + first}: {_mean_ke_mev(uc, w):.3f} MeV "
           f"(relative model energy; not the stage energy)", flush=True)
