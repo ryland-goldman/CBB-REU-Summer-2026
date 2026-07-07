@@ -129,28 +129,47 @@ converter positron-beam charge at the handoff (NOT the post-cut core), so within
 (`q_out / q_injected`) counts both the dropped tail and in-run loss. The tracked core charge is
 recorded separately (`q_core_injected_C`).
 
-## Space charge, quads & cavity-solenoids
+## Space charge, quads & capture solenoids
 
 - **SC OFF** (`space_charge: false` => `Bcurr = 0`): the headline. Transverse SC is negligible at
   >25 MeV (`~ 1/gamma^2`, gamma > 49 at entry).
-- **Capture-optics focusing ON (Fromowitz `capture_optics_specs.md`).** The post-target capture
-  optics are the thesis's whole point, so they are modelled:
-  - **Cavity-solenoids on sections 5 & 6** (`solenoid_b_tesla`, 1.3 T peak). Sections 7 & 8 have
-    none (cavity 7 is "the first section without a solenoid"). Each is a **solenoid-only `solrf`**
-    (`rf_field_scale = 0`, static `solenoid_field_scale` Bz) **overlapping** the cavity over its full
-    length -- so it adds focusing without advancing the deck z (the crest geometry is unchanged).
-    The on-axis Bz is the finite-coil profile of a thin shell at mean radius 13.04 cm (inner 8.93 /
-    outer 17.15 cm), Fourier-decomposed for Impact-T's static type-105 paraxial expansion; it
-    reproduces the thesis fringe (~1/6 of peak 12 cm past the coil end). The thesis gives the
-    cavity-solenoid geometry only, not its field; 1.3 T is matched to the converter capture solenoid.
-  - **Quad doublets between sections** (`quad_k1`, machine k1 from Fig 6.32 -> gradient
-    `k1 x 0.534 T/m`, Table 6.3 at 160 MeV). Each inter-section spacing is `gap/2` drift, a
-    **real-length** `+grad / -grad` doublet (the thesis QH/QV per section) over the tabulated quad
-    length `quad_in`, `gap/2` drift, `gap = DRIFT_M` (0.4 m). Section 5's k1 ~ 0 (the solenoid
-    focuses there, so the quad is left off); 6/7/8 carry 5.5 / 8.0 / 2.4 m^-2 (8's trailing quad is
-    the last and is not placed). The doublet keeps the **real total length** so the cumulative path
-    length -- and thus the bunch arrival time at sections 6-8 -- matches the deck the ABSOLUTE crest
-    phases are calibrated on (a shorter deck would throw sections 6-8 off-crest).
+- **Capture-optics focusing ON -- the real CESR optics.** Both the layout and the strengths come
+  from the CLASSE BMAD deck (`section_5_8_layout.bmad`, kd324's 2021 linacsim working copy at
+  `../Cornell/reference/classe-docs/nfs_acc_user_kd324_documents_mycesr_linacsim/BMAD/`) -- Dan Fromowitz's
+  dissertation lattice updated to the machine operating point:
+  - **Capture solenoids on sections 5 & 6** (`solenoid_b_tesla`, 0.243 T flat-top). Sections 7 & 8
+    have none (cavity 7 is the first section without a solenoid). The deck superimposes three
+    coils per section (the `pos_sol_A/B/C.bmad` rotationally-symmetric r-z field grids at their
+    264 A supply setpoint); the extracted on-axis Bz is a **+0.2429 T flat-top over ~5.04 m**
+    falling to ~27-33% of peak at the section flanges, plus end-trim coils (0.054 / 0.070 T) -- the C trim coil sits at 5.18-5.27 m from the cavity
+    start, i.e. **in the exit line**, and the fringe decays across the inter-section gap (0.117 T
+    at the cavity start, 0.187 T at the 5.15 m active exit, ~0.007 T at the next cavity). That
+    measured profile is committed as `fieldmaps/rfdata/pos_sol_onaxis_264A.txt` and used
+    directly: each solenoid is a **solenoid-only `solrf`** (`rf_field_scale = 0`, static
+    `solenoid_field_scale` Bz) **overlapping the cavity AND its exit line** (`L = cavity + gap`,
+    not advancing the deck z, so the crest geometry is unchanged). The element windows tile, and
+    each window sums every string's profile (the neighbour's backward fringe included), so
+    nothing is double-counted. Fourier-decomposed (n=120) for Impact-T's static type-105
+    paraxial expansion; the sec5 window's periodic-wrap ends nearly match (0.117 / 0.124 T),
+    while the sec6 window wraps with a ~0.12 T mismatch whose Gibbs ringing stays within ~5 cm
+    of the window ends. `solenoid_b_tesla` scales the profile normalised to the 264 A flat-top.
+  - **Real exit-optics lines between sections** (config `exit_optics`): the deck's drift/quad line
+    after each cavity, element lengths and order verbatim, with gradients from the deck's
+    calibrated CU overlay (`grad = polarity * CU * (T/m per A) * (A per CU)`) at the machine
+    setpoint. Section 5's Q5 doublet is ~0 (7 / 21 CU -- the solenoid focuses there); sections
+    6 and 7 end in **symmetric QH-QV-QH triplets** (-3.86/+3.71/-3.86 and -4.74/+4.62/-4.74 T/m);
+    section 8's trailing Q8 doublet (-1.34/+1.15 T/m) **is placed** and ends the modelled line
+    (the positron snout continues from there). A per-section `quad_scale` (optimizer knob, 1.0 =
+    machine setpoint) multiplies that section's gradients. The exit lines carry the real total
+    length, so the cumulative path length -- and thus the bunch arrival time at sections 6-8 --
+    matches the deck the ABSOLUTE crest phases are calibrated on (a changed spacing throws
+    sections 6-8 off-crest: re-run `sim/autophase_impact.py` after any geometry edit). The
+    deck's inter-section pipe radius is recorded per gap (`pipe_radius_m`, 20 / 25.4 mm) and set
+    as the element radius -- Impact-T honours it on quads but not on drifts, and the 20 mm
+    `xyrad_m` computational box wall remains the binding gap aperture. The drift lengths are the
+    deck's flange-frame values (the BMAD sections are flange-to-flange, slightly longer than the
+    active lengths modelled here); the 0.129 m D_CONV drift ahead of section 5 is owned by the
+    converter stage, not this deck.
 - **Transmission folds the real capture acceptance.** The beam scrapes the real tapered bore
   (`bore_aperture_on`, the solrf `radius`); the sec5/6 solenoids + quads collect what the bore
   accepts. Per the thesis the capture is intrinsically inefficient (a few %), so transmission stays
@@ -168,11 +187,15 @@ frozen calibration table, and `stat_vs_z` (`z_m`, `ke_mev`, `sigma_ke_mev`, `sig
 
 ## Figures (`sim/plot/linac5-8.py` -> `logs/plots/linac5-8/`)
 
-- `energy_gain` -- cumulative `<KE>` +/- sigma_KE vs z.
+- `energy_spectrum` -- exit KE spectrum.
+- `evolution_vs_z` -- mean KE, norm. emittance eps_n,x, sigma_x, and surviving charge vs z.
 - `energy_spread` -- absolute sigma_KE and relative sigma_KE/`<KE>` vs z.
-- `emittance` -- normalized emittance eps_n,x/eps_n,y vs z.
-- `section_gains` -- per-section achieved ΔE (from the vs-z KE curve) vs the frozen target ΔE.
-- `fodo_optics` -- sigma_x / sigma_y vs z under the sec5/6 solenoids + quad doublets.
+- `phase_space_z_KE` -- exit longitudinal phase space (z - <z> vs KE).
+- `transverse_r_pr` -- exit transverse phase space (r, p_r).
+- `section_gains` -- per-section achieved dE (from the vs-z KE curve) vs the frozen target dE. The
+  section-5 bar reads low by construction: dKE is differenced against the whole injected core's
+  mean while capture scraping removes the low-energy tail inside section 5 -- a capture artifact,
+  not an off-crest or field-scale deficiency (sections 6-8 land on target).
 
 ## Gotchas (Impact-T / lume-impact)
 
@@ -225,7 +248,7 @@ follow from the positron species.
   longitudinal model — the analog of the WarpX `sim/autophase.py`. It reconstructs each TW section's
   on-axis Ez from the rfdata4-7 Fourier shapes (matching `impact.fieldmaps.ele_field` to float noise:
   the 4-line +0/+30/+90/+0 superposition, the 1/sin(β₀d) body scale, the absolute `cos(2πft + θ0)`
-  phase), places the sections at the real deck z (sections + real-length zero-K1 quad + drift, so the
+  phase), places the sections at the real deck z (sections + the real exit-optics line lengths, so the
   cumulative arrival time the absolute θ0 depends on is correct), pencil-ises the positron core
   (momentum onto +z, on-axis — the bare ~600 mrad divergence would otherwise scrape before any
   section ends), and RK4-integrates the whole bunch through a phase scan (coarse → fine → parabolic),
@@ -243,7 +266,7 @@ follow from the positron species.
 
 - **Standalone runs.** If you invoke `sim/linac5-8.py` alone on a changed upstream beam, run
   `sim/autophase_impact.py` first — otherwise the shipped crest seeds may be off-crest (decelerating
-  in places). The sec5/6 cavity-solenoids + quad doublets supply the post-target capture optics, but
-  the capture stays intrinsically low-efficiency (a few %, per the thesis), so absolute transmission
-  is small; the robust positron deliverable is the **longitudinal** physics (per-section delta-E,
-  exit `<KE>`).
+  in places). The sec5/6 capture solenoids + exit-line quads supply the post-target capture optics,
+  but the capture stays intrinsically low-efficiency (a few %, per the thesis), so absolute
+  transmission is small; the robust positron deliverable is the **longitudinal** physics
+  (per-section delta-E, exit `<KE>`).

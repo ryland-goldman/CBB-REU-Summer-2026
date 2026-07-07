@@ -32,10 +32,10 @@ vocs:
     l5_phase_off_1:   [-30, 30]
     l5_phase_off_2:   [-30, 30]
     l5_phase_off_3:   [-30, 30]
-    l5_quad_k1_1:     [3.0, 8.0]       # sections[1].quad_k1  (sec5~0 solenoid-focused; sec8 unplaced)
-    l5_quad_k1_2:     [5.0, 11.0]      # sections[2].quad_k1
-    l5_sol_b_5:       [0.8, 1.6]       # sections[0].solenoid_b_tesla (capture)
-    l5_sol_b_6:       [0.8, 1.6]       # sections[1].solenoid_b_tesla
+    l5_quad_scale_1:  [0.2, 2.5]       # sections[1].quad_scale (x the sec6 CESR exit-triplet gradients)
+    l5_quad_scale_2:  [0.2, 2.5]       # sections[2].quad_scale (x the sec7 CESR exit-triplet gradients)
+    l5_sol_b_5:       [0.05, 0.6]      # sections[0].solenoid_b_tesla (264 A machine flat-top = 0.243 T)
+    l5_sol_b_6:       [0.05, 0.6]      # sections[1].solenoid_b_tesla
     # --- converter (positron yield + emittance into linac5-8) ---
     conv_target_len_mm: [4.0, 9.0]     # converter geometry.target_length_mm
     conv_sol_b_tesla:   [0.8, 1.6]     # converter solenoid.b_tesla

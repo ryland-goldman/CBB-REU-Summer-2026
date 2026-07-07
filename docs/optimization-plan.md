@@ -116,10 +116,10 @@ vocs:
     l5_phase_off_1:   [-30, 30]
     l5_phase_off_2:   [-30, 30]
     l5_phase_off_3:   [-30, 30]
-    l5_quad_k1_1:     [3.0, 8.0]       # sections[1].quad_k1  (sec5≈0 solenoid-focused; sec8 unplaced)
-    l5_quad_k1_2:     [5.0, 11.0]      # sections[2].quad_k1
-    l5_sol_b_5:       [0.8, 1.6]       # sections[0].solenoid_b_tesla (capture)
-    l5_sol_b_6:       [0.8, 1.6]       # sections[1].solenoid_b_tesla
+    l5_quad_scale_1:  [0.2, 2.5]       # sections[1].quad_scale (× the sec6 CESR exit-triplet gradients)
+    l5_quad_scale_2:  [0.2, 2.5]       # sections[2].quad_scale (× the sec7 CESR exit-triplet gradients)
+    l5_sol_b_5:       [0.05, 0.6]      # sections[0].solenoid_b_tesla (264 A machine flat-top = 0.243 T)
+    l5_sol_b_6:       [0.05, 0.6]      # sections[1].solenoid_b_tesla
     # --- converter (positron yield + emittance into linac5-8) ---
     conv_target_len_mm: [4.0, 9.0]     # converter geometry.target_length_mm
     conv_sol_b_tesla:   [0.8, 1.6]     # converter solenoid.b_tesla
@@ -208,7 +208,7 @@ same pattern autophase already uses to write crests). Concretely:
 |---|---|
 | `l5_field_scale_{i}` | `config/linac5-8.yaml` · `sections[i].field_scale` |
 | `l5_phase_off_{i}`   | `config/linac5-8.yaml` · `sections[i].crest_offset_deg` *(NEW key; driver adds it to the autophased `crest_phase_deg`. Do NOT write `crest_phase_deg` — autophase overwrites it. See note.)* |
-| `l5_quad_k1_{i}`     | `config/linac5-8.yaml` · `sections[i].quad_k1` |
+| `l5_quad_scale_{i}`  | `config/linac5-8.yaml` · `sections[i].quad_scale` |
 | `l5_sol_b_{5,6}`     | `config/linac5-8.yaml` · `sections[0|1].solenoid_b_tesla` |
 | `conv_target_len_mm` | `config/converter.yaml` · `geometry.target_length_mm` |
 | `conv_sol_b_tesla`   | `config/converter.yaml` · `solenoid.b_tesla` |
@@ -285,7 +285,7 @@ dump) therefore needs two pieces, both owned by this plan:
 
 | stage | file | key(s) | role |
 |---|---|---|---|
-| linac5-8 | `config/linac5-8.yaml` | `sections[i].{field_scale, crest_phase_deg, quad_k1, solenoid_b_tesla}`, `rf.phase_deg` | final accel + capture optics |
+| linac5-8 | `config/linac5-8.yaml` | `sections[i].{field_scale, crest_phase_deg, quad_scale, solenoid_b_tesla}`, `rf.phase_deg` | final accel + capture optics |
 | converter | `config/converter.yaml` | `geometry.target_length_mm/target_radius_mm`, `solenoid.b_tesla`, `solenoid.exit_drift_mm` | e⁺ yield / emittance / size |
 | linac1 | `config/linac1.yaml` | `params.POWER_MW`, `params.PHASE_DEG` | capture into the relativistic chain |
 | linac2-4 | `config/linac{2,3,4}.yaml` | `params.FIELD_SCALE`, `params.PHASE_DEG` (detune-from-crest) | back-half energy/phase |

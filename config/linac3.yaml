@@ -57,7 +57,7 @@ params:
   # FROZEN RF setpoints — derived ONCE from the old linac_sec1→sec2 chain (the runtime
   # crest-finding / ΔE-target field-scale loop is dropped). CREST_PHASE_DEG is the bunch-averaged
   # relativistic crest base phase; FIELD_SCALE is the field-map amplitude scale that hit DE_TARGET_MEV.
-  CREST_PHASE_DEG: 164.7835            # autophased by sim/main.py; standalone seed [deg]
+  CREST_PHASE_DEG: 178.1119            # autophased by sim/main.py; standalone seed [deg]
   FIELD_SCALE: 1.421000e+02            # re-fit to DE_TARGET 33 MeV (ΔE ∝ scale, measured on the chain)
   DE_TARGET_MEV: 33.0                  # Fromowitz ACC_3 design energy gain [MeV]; field scale fit to it
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)

@@ -72,7 +72,7 @@ progress bars stay on the terminal.
 | **Injector** | `sim/injector.py` · `config/injector.yaml` | The LinacSim injector in one RZ space-charge run: two 214 MHz prebunchers (velocity bunching) + six solenoid lenses (focusing) + the 9.547 mm iris, handing off near z ≈ 2.03 m. |
 | **Linac 1–4** | `sim/linac1-4.py` · `config/linac{1,2,3,4}.yaml` | Four SLAC-design 3 m, 2π/3 traveling-wave sections (RZ, WarpX) reusing the SLAC field maps. Section 1 captures the injector beam through the iris; sections 2–4 accelerate the captured core. Section 4's exit is the 4→5 boundary. |
 | **Converter** | `sim/converter.py` · `config/converter.yaml` | e⁺/e⁻ converter target (G4beamline/Geant4): drives the section-4 exit electrons into a 6.35 mm tungsten radiator (brems → pair production) and hands the resulting positron beam, with a capture solenoid, to the Impact-T linac. |
-| **Linac 5–8** | `sim/linac5-8.py` · `config/linac5-8.yaml` | Four S-band traveling-wave sections (CEA 4/5 + CU 3/4) in one Impact-T deck, using the generic `rfdata4–7` field shape, accelerating the converter positrons. Space charge off; the Fromowitz capture optics (sec 5/6 cavity-solenoids + inter-section quad doublets) are modelled. |
+| **Linac 5–8** | `sim/linac5-8.py` · `config/linac5-8.yaml` | Four S-band traveling-wave sections (CEA 4/5 + CU 3/4) in one Impact-T deck, using the generic `rfdata4–7` field shape, accelerating the converter positrons. Space charge off; the real CESR capture optics are modelled (sec 5/6 264 A capture solenoids, 0.243 T flat-top, + the inter-section drift/quad lines from the CLASSE BMAD deck). |
 
 Each stage's physics, field model, configuration knobs, and figures are documented in
 [`docs/`](docs/).

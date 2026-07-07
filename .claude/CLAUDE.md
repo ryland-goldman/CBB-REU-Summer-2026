@@ -81,7 +81,7 @@ python sim/plot/linac1-4.py 2                   # a linac section's figures (fro
   sim/linac1-4.py 2`) uses the YAML value as-is, so re-run the matching autophase first if the
   upstream beam changed. **`FIELD_SCALE` is NOT autophased** — re-fit it to `DE_TARGET_MEV` by hand
   when retuning. The Impact-T per-section crest is *absolute* (`theta0_deg`), valid only for the deck
-  geometry it was derived on — keep the real-length zero-K1 inter-section quads unchanged.
+  geometry it was derived on — keep the real inter-section exit-optics geometry (`exit_optics`) unchanged.
 - **Space charge / speed.** The self-field MLMG Poisson solve dominates WarpX runtime. The
   relativistic linac sections 2–4 run with `warpx_do_not_deposit: true` (**SC off**): at γ≳45 the
   self-field is 1/γ²-negligible, so this is byte-identical physics for ~50–80× speedup. SC stays
@@ -191,9 +191,13 @@ log `logs/pipeline/log_<date>.log`; the progress bar (stderr) stays on the termi
   per-section crests for the positron beam each run (`sim/autophase_impact.py`, a numerical 1D model —
   finds the crest correctly; its reported `⟨KE⟩` is ~1.7× Impact-T's gain, an `ele_field`-vs-Fortran
   amplitude offset that does not move the crest);
-  SC off, but the **Fromowitz capture optics are modelled**: cavity-solenoids on sec 5/6 (0.65 T,
-  solenoid-only `solrf` overlapping the cavity) + inter-section quad **doublets** (`quad_k1`×0.534
-  T/m, Fig 6.32); transmission measured from the **macro count before** re-imposing charge;
+  SC off, but the **real CESR capture optics are modelled** (CLASSE BMAD deck
+  `section_5_8_layout.bmad`, 2021 linacsim copy): capture solenoids on sec 5/6 (0.243 T flat-top —
+  the measured `pos_sol_A/B/C` on-axis profile at 264 A, committed as
+  `fieldmaps/rfdata/pos_sol_onaxis_264A.txt`; solenoid-only `solrf` overlapping the cavity AND
+  its exit line) + the
+  real inter-section drift/quad **exit lines** (`exit_optics`, calibrated CU-overlay gradients;
+  sec 6/7 end in QH-QV-QH triplets, sec 8's trailing Q8 doublet is placed); transmission measured from the **macro count before** re-imposing charge;
   `ParticleGroup.species` is `"electron"` (singular) but openPMD readers key `"electrons"` (plural);
   `ParticleGroup.write()` emits a viewer-incompatible openPMD — the handoff uses
   `loadparticles.write_openpmd_particles`.

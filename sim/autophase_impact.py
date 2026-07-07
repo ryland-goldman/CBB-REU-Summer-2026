@@ -7,14 +7,15 @@ q=+e crest ~180 deg from electrons, lower injection energy shifts it) and the de
 must be re-found on the real deck with the positron core injected.
 
 NUMERICAL model -- no Impact-T is launched (the analog of sim/autophase.py for the WarpX sections).
-The Impact-T crest scan is already a pure 1D longitudinal problem (pencil-ised core, SC off, quads
-K1=0), so a longitudinal RK4 integration through the exact on-axis Ez loses no physics and replaces
-the old minutes-to-tens-of-minutes Impact-T scan with ~30 s of pure numpy.
+The Impact-T crest scan is already a pure 1D longitudinal problem (pencil-ised on-axis core, SC
+off; the exit-line quads have zero field on axis), so a longitudinal RK4 integration through the
+exact on-axis Ez loses no physics and replaces the old minutes-to-tens-of-minutes Impact-T scan
+with ~30 s of pure numpy.
 
 Method: reconstruct each TW section's on-axis Ez from the vendored rfdata4-7 Fourier shapes as
 Impact-T does (matches lume-impact's `impact.fieldmaps.ele_field` to float noise: the 4-line
 +0/+30/+90/+0 superposition, the 1/sin(beta0 d) body scale, the absolute phase cos(2 pi f t +
-theta0)). Place the sections at the real deck z (sections + real-length zero-K1 quad + drift spacing)
+theta0)). Place the sections at the real deck z (sections + the real exit-optics drift/quad lines)
 so the cumulative arrival time -- which the ABSOLUTE theta0 crest depends on -- matches the deck.
 Pencil-ise the converter positron core (momentum onto +z, on-axis) and RK4-integrate the WHOLE bunch
 through a base-phase scan; the crest maximises bunch-averaged exit KE (coarse -> fine -> parabolic, as
@@ -85,8 +86,8 @@ def _build_section_fields(drv, cfg):
     """One entry per TW section: its (z_entry, z_exit) in deck z and the 4 precomputed field lines
     (entrance/body_1/body_2/exit). Each line carries a dense on-axis shape array (rf_field_scale *
     Fourier(z)) over [zedge, zedge+L] and its fixed inter-line phase offset; the time factor
-    cos(omega t + base + offset) is applied per RK4 step. Section placement (sections + gap/2 +
-    real-length quad + gap/2) mirrors linac5-8.build_impact so the absolute arrival time matches."""
+    cos(omega t + base + offset) is applied per RK4 step. Section placement (sections + the real
+    exit-optics line lengths) mirrors linac5-8.build_impact so the absolute arrival time matches."""
     from impact.fieldmaps import read_fieldmap_rfdata, solrf_field_from_data
 
     fields = {f: solrf_field_from_data(
@@ -96,7 +97,6 @@ def _build_section_fields(drv, cfg):
     l_entrance = cfg["rfdata"]["l_entrance"]
     l_exit = cfg["rfdata"]["l_exit"]
     inv_sin = 1.0 / math.sin(drv._beta0_d(cfg))
-    gap = cfg["lattice"]["drift_m"]
     sections = cfg["sections"]
     n_sec = len(sections)
 
@@ -121,8 +121,8 @@ def _build_section_fields(drv, cfg):
         ]
         z += L
         out.append(dict(z_entry=z_entry, z_exit=z, lines=lines))
-        if i < n_sec - 1:                                    # gap/2 + real-length zero-K1 quad + gap/2
-            z += gap + drv.section_quad_length_m(sec)
+        if i < n_sec - 1:                                    # the real exit-optics line (drifts + quads)
+            z += drv.section_gap_length_m(cfg, i)
     return out
 
 
@@ -227,6 +227,8 @@ def _verify_impact(drv, cfg, found, last_idx):
                                                  np.zeros(n), pmag)
     cfg_noap = copy.deepcopy(cfg)
     cfg_noap["lattice"]["bore_aperture_on"] = False          # no scrape: isolate the longitudinal physics
+    for gap in cfg_noap["exit_optics"].values():             # ditto the inter-section pipe scrape
+        gap["pipe_radius_m"] = 0.0
 
     print(f"\n── --verify: Impact-T crest check, section {last_idx + cfg['lattice']['first_section']} "
           f"at crest +- {VERIFY_DELTA_DEG:g}° (pencil core, aperture off) ──────")

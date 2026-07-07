@@ -54,8 +54,8 @@ OVERRIDES = {
     "l5_phase_off_1":     ("config/linac5-8.yaml", ("section", 1, "crest_offset_deg")),
     "l5_phase_off_2":     ("config/linac5-8.yaml", ("section", 2, "crest_offset_deg")),
     "l5_phase_off_3":     ("config/linac5-8.yaml", ("section", 3, "crest_offset_deg")),
-    "l5_quad_k1_1":       ("config/linac5-8.yaml", ("section", 1, "quad_k1")),
-    "l5_quad_k1_2":       ("config/linac5-8.yaml", ("section", 2, "quad_k1")),
+    "l5_quad_scale_1":    ("config/linac5-8.yaml", ("section", 1, "quad_scale")),
+    "l5_quad_scale_2":    ("config/linac5-8.yaml", ("section", 2, "quad_scale")),
     "l5_sol_b_5":         ("config/linac5-8.yaml", ("section", 0, "solenoid_b_tesla")),
     "l5_sol_b_6":         ("config/linac5-8.yaml", ("section", 1, "solenoid_b_tesla")),
     "conv_target_len_mm": ("config/converter.yaml", ("block", "target_length_mm")),
@@ -169,7 +169,7 @@ def _set_section_key(text, idx, key, value):
     lines = text.splitlines(keepends=True)
     sec_i = -1
     for li, line in enumerate(lines):
-        if not re.match(r"^\s*- \{", line):
+        if not re.match(r"^\s*- \{name:", line):     # section dicts only, NOT exit_optics elements
             continue
         sec_i += 1
         if sec_i != idx:

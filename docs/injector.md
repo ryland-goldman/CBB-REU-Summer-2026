@@ -127,6 +127,14 @@ operating point (a 0-A lens is skipped) but real magnets, `config`-overridable f
 studies. Each lens is a separate per-Ampere B-only openPMD map; the 1-A maps scale linearly with
 current.
 
+The shipped currents are the LinacSim `gpt_master.in` GUI defaults. The **machine run setpoint**
+(`injector.mr`, kd324's 2021 linacsim copy at `../Cornell/reference/classe-docs/nfs_acc_user_kd324_documents_mycesr_linacsim/GPT/input/`) differs: its
+`currentlens*` values are CESR computer units (real amps = CU x PSU-limit/1024 -- the
+`sim_current` conversion `gpt_master.in` applies), giving 0A=5.5, 0B=0.4, 0C=1.2, 0D=0, 0E=11.6,
+**SOL_0=93.3 A** -- close to the defaults on 0A/0E but 2.3x hotter on SOL_0, with 0B/0C weakly
+on (and section 1 at 11 MW vs the configured 19 MW). Kept as reference, not adopted: retuning
+the injector operating point invalidates every downstream frozen setpoint.
+
 - **Placement is NATIVE absolute machine-z**, matching `gpt_master.in`, which installs every
   solenoid with `Map2D_B("wcs", "z", 0.0, ...)` -- the GDF's stored Z column *is* absolute
   machine z, so `grid_global_offset` is simply the native origin `z[0]`. **Do NOT align

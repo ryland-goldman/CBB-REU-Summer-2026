@@ -197,8 +197,8 @@ def main():
     fig = px.evolution_vs_z(
         z, ke, enx * 1e6, sx * 1e3, charge_pc=charge, ke_unit="MeV",
         title=f"linac5-8 beam evolution (sections 5-8, on-crest, {power_mw:g} MW)",
-        notes={"emit": "quad doublets + sec5/6 cavity-solenoids ON: norm. emittance vs z",
-               "sigma": "transverse size under the sec5/6 solenoids + inter-section quad doublets",
+        notes={"emit": "CESR exit-line quads + sec5/6 capture solenoids ON: norm. emittance vs z",
+               "sigma": "transverse size under the sec5/6 solenoids + inter-section quad lines",
                "charge": "surviving core charge (macro count x q/macro); bore aperture loss"})
     fig.savefig(os.path.join(RESULTS, "evolution_vs_z.png"), dpi=130)
     plt.close(fig)

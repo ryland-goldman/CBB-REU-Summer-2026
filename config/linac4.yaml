@@ -58,7 +58,7 @@ params:
   # this stage); the value here is the seed used when running the stage standalone. FIELD_SCALE is
   # NOT autophased -- re-fit it to DE_TARGET_MEV (the old per-section ΔE-target loop) when retuning
   # the section-4 (CU 5) operating point; the shipped value is copied from section 3.
-  CREST_PHASE_DEG: 178.1528            # autophased by sim/main.py; standalone seed
+  CREST_PHASE_DEG: 186.0548            # autophased by sim/main.py; standalone seed
   FIELD_SCALE: 2.081400e+02            # re-fit to DE_TARGET 51 MeV (ΔE ∝ scale, measured on the chain)
   DE_TARGET_MEV: 51.0                  # Fromowitz ACC_4 design energy gain [MeV] (5.248 m / 149 cells)
   PHASE_DEG: 0.0                       # RF phase DETUNE [deg] from the frozen crest (0 = on-crest)
