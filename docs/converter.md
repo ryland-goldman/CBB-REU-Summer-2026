@@ -74,30 +74,34 @@ acceptance; this stage fixes the geometry and reports the yield it gives rather 
 The positrons leaving the back face are **high-divergence** — a converter sprays them over a large
 solid angle — so a real e+ source immerses the target exit in a strong axial magnetic field to
 re-collect them into the downstream acceptance (the **capture optic**: a short capture solenoid, or
-an adiabatic matching device). This stage models it as a **real current coil** at the Fromowitz
-operating point — **1.3 T peak over a short ~46 mm coil** (6 turns × 2 rows at 7.75 mm spacing,
-~13 mm bore), starting at the target front face so the field surrounds the radiator and the drift to
-the sampling plane. (The thesis quotes a 1.3 T infinite-solenoid value; the short coil reaches it at
-the ~8 kA upgrade current, which is the operating point modelled here.)
+an adiabatic matching device). This stage tracks the **real CONV_HV converter solenoid from the
+CLASSE BMAD deck** (`section_5_8_layout.bmad`): its `con_sol.bmad` rotationally-symmetric r-z field
+grid is extracted (Br + Bz, 200 × 200 mm at 1 mm, normalized to on-axis peak 1) and committed as
+`fieldmaps/g4bl/con_sol_fieldmap.txt`, then loaded as a g4bl **`fieldmap`** — so the tracked field
+including the **end fringe** (the radial `B_r` whose cross-product with the azimuthal velocity is
+the inward focusing kick; a hard-edge uniform-`B_z` would have *no* lens action) is the deck's
+measured map, not an idealised coil.
 
-It is realised in the g4bl deck as a `coil` + `solenoid`, so g4bl computes the **full Maxwellian
-field**, including the **end fringe** — the radial `B_r = -(r/2)·∂B_z/∂z` where the field ramps down
-at each coil end. That fringe is what gives a solenoid its lens action: `B_r` crossed with the
-azimuthal velocity is the inward focusing kick. (A hard-edge uniform-`B_z` element would have *no*
-`B_r` and so no fringe focusing at all — it would bound the beam *radius* but leave the divergence
-untouched.) The conductor **current density is auto-solved** (`coil_current_density`, the exact
-thick-solenoid centre formula, matched to g4bl's coil to < 1e-5) so the **central (peak)** field
-equals `b_tesla`; the field sags to ~half at each coil end and fringes out beyond. The peak field,
-length, coil bore/winding radii, upstream start, and the post-coil drift are all set in
-`config/converter.yaml`; `enabled: false` reverts to the field-free run.
+Placement follows the deck: the map's local origin is the **target back face** (the BMAD `D_CONV`
+start, where the `CONV_HV` element is centred), so the field covers the target, **peaks right at
+its back face**, and dies out by ~121 mm downstream. `b_tesla` sets the on-axis peak: the default
+**0.7022 T** is the grid at the deck's 3300 A setpoint (the deck ships the element at scale 1 —
+i.e. off — with `!3300` commented as the operating value; Fromowitz's 1.3 T infinite-solenoid
+upgrade number is the natural alternative for this knob). `b_tesla` also drives the
+**section-5/6 capture solenoids** downstream: linac5-8's `solenoid_tracking` scales their fields
+by `b_tesla / conv_b_ref`, so this one knob scans the whole capture line (see
+`docs/linac5-8.md`). `enabled: false` reverts to the
+field-free run. Note the fieldmap is a pure field — unlike the previous Cu-coil model there is no
+conductor material to absorb halo.
 
-The sampling plane sits `exit_drift_mm` **past the coil exit**, in field-free space, so the exit
-fringe has fully acted before the handoff. There is an inherent **divergence-vs-size trade**: the
-fringe converts the positrons' large divergence into a more parallel beam (emittance is conserved,
-not reduced), so as the now-parallel beam drifts past the coil it grows in radius. A longer
-`exit_drift_mm` gives a more field-free handoff but a larger beam. The coil bounds the captured
-phase space and supplies the fringe focusing; it does **not** reduce the emittance, so it makes no
-claim to an absolute capture efficiency.
+The sampling plane sits `exit_drift_mm` **past the target back face**; the default 129 mm is the
+BMAD `D_CONV` length, so the handoff plane is the **section-5 entrance flange**, just past the map
+end (120.9 mm) and hence field-free with the fringe focusing fully applied (`sim/converter.py`
+rejects an `exit_drift_mm` inside the map span). There is an inherent **divergence-vs-size
+trade**: the fringe converts the positrons' large divergence into a more parallel beam (emittance
+is conserved, not reduced), so the now-parallel beam grows in radius over the drift. The solenoid
+bounds the captured phase space and supplies the fringe focusing; it does **not** reduce the
+emittance, so it makes no claim to an absolute capture efficiency.
 
 ---
 
@@ -211,9 +215,14 @@ documented here; the *values* are run output and are not quoted.)
   broad spectrum a converter produces).
 - **e+/e-/gamma yield bars** — the per-species output counts (or per-incident-electron yields): how
   much of each the shower produced.
-- **positron transverse divergence / r-p_r** — the e+ angular phase space (a converter beam is
-  high-divergence; this is what a capture optic would have to accept).
-- **longitudinal z-KE** — the positron longitudinal phase space leaving the target.
+- **positron transverse divergence / r-p_r** (`positron_divergence` / `positron_radial_divergence`)
+  — the e+ angular phase space, visualizing the wide-angle capture challenge: positrons leave the
+  target with a broad transverse-momentum spread (a converter beam is high-divergence; this is what
+  a capture optic would have to accept). `positron_radial_divergence` clips its x-axis at the 99th
+  percentile, or the wide-angle tail dominates the plotted range and hides the bulk distribution.
+- **longitudinal z-KE** (`z_ke.png`) — the positron longitudinal phase space leaving the target,
+  rendered as a **hexbin** rather than a scatter: converter positrons span a wide kinetic-energy
+  range, and density binning stays legible where a raw scatter would not.
 
 ---
 
@@ -238,12 +247,12 @@ documented here; the *values* are run output and are not quoted.)
     `sim/linac5-8.py` to re-derive them. (See the "Positron mode" section of `docs/linac5-8.md`.)
   - **Capture optic.** A real positron source places a **capture optic** (a short capture solenoid /
     adiabatic matching device) right at the target exit to collect the divergent positrons into
-    the linac acceptance. This stage models it as a **real current-coil capture solenoid** (the
-    `solenoid:` block — Fromowitz 1.3 T peak over a short ~46 mm coil, starting at the target front
-    face) that focuses the positrons before the sampling plane; set `enabled: false` to recover the
-    bare field-free run. It is a short-coil idealisation, not a tapered AMD, so the accepted
-    transmission/yield through linac5-8 are still qualitative — the deliverable is the converter
-    physics (spectrum, yield,
-    divergence), not an absolute accepted-positron number.
+    the linac acceptance. This stage tracks the **real CONV_HV solenoid fieldmap from the CLASSE
+    BMAD deck** (the `solenoid:` block — con_sol grid, 0.7022 T on-axis peak at the target back
+    face at the deck's 3300 A setpoint) that focuses the positrons before the sampling plane; set
+    `enabled: false` to recover the bare field-free run. It is a single short solenoid, not a
+    tapered AMD, so the accepted transmission/yield through linac5-8 are still qualitative — the
+    deliverable is the converter physics (spectrum, yield, divergence), not an absolute
+    accepted-positron number.
 - **g4bl is an external binary.** G4beamline 3.08 is invoked as a separate process (`g4bl`), not a
   pip/conda dependency — it must be installed and on `PATH` independently of the `CBB` environment.

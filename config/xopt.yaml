@@ -34,12 +34,13 @@ vocs:
     l5_phase_off_3:   [-30, 30]
     l5_quad_scale_1:  [0.2, 2.5]       # sections[1].quad_scale (x the sec6 CESR exit-triplet gradients)
     l5_quad_scale_2:  [0.2, 2.5]       # sections[2].quad_scale (x the sec7 CESR exit-triplet gradients)
+    # applied sec-5/6 field = this x (conv_sol_b_tesla/0.7022) via solenoid_tracking — range bounds the pre-scale value
     l5_sol_b_5:       [0.05, 0.6]      # sections[0].solenoid_b_tesla (264 A machine flat-top = 0.243 T)
     l5_sol_b_6:       [0.05, 0.6]      # sections[1].solenoid_b_tesla
     # --- converter (positron yield + emittance into linac5-8) ---
     conv_target_len_mm: [4.0, 9.0]     # converter geometry.target_length_mm
-    conv_sol_b_tesla:   [0.8, 1.6]     # converter solenoid.b_tesla
-    conv_exit_drift_mm: [50, 150]      # converter solenoid.exit_drift_mm
+    conv_sol_b_tesla:   [0.35, 1.4]    # converter solenoid.b_tesla (con_sol peak; 0.7022 = 3300 A)
+    conv_exit_drift_mm: [125, 250]     # converter solenoid.exit_drift_mm (back face -> plane; >121 = past the map)
     # --- capture (linac1) -- auto-dropped unless scope=full (upstream of --from converter) ---
     l1_power_mw:  [14, 24]             # linac1 POWER_MW
     l1_phase_off: [-30, 30]            # crest OFFSET [deg] on linac1 sec-1 (added to autophased PHASE_DEG)

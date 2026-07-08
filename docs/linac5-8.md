@@ -153,6 +153,13 @@ recorded separately (`q_core_injected_C`).
     paraxial expansion; the sec5 window's periodic-wrap ends nearly match (0.117 / 0.124 T),
     while the sec6 window wraps with a ~0.12 T mismatch whose Gibbs ringing stays within ~5 cm
     of the window ends. `solenoid_b_tesla` scales the profile normalised to the 264 A flat-top.
+    The sections' values **track the converter capture field** (config `solenoid_tracking`): each
+    `solenoid_b_tesla` is its value at the converter reference field `conv_b_ref` (the CONV_HV
+    3300 A setpoint the 264 A string is paired with), and the driver multiplies it by
+    `converter solenoid.b_tesla / conv_b_ref` — so retuning or scanning the converter capture
+    field scales the whole capture line together (converter block absent or disabled → ratio 1).
+    The applied fields are recorded in the summary (`sec56_solenoid_b_tesla`,
+    `conv_field_ratio`).
   - **Real exit-optics lines between sections** (config `exit_optics`): the deck's drift/quad line
     after each cavity, element lengths and order verbatim, with gradients from the deck's
     calibrated CU overlay (`grad = polarity * CU * (T/m per A) * (A per CU)`) at the machine
@@ -174,7 +181,13 @@ recorded separately (`q_core_injected_C`).
   (`bore_aperture_on`, the solrf `radius`); the sec5/6 solenoids + quads collect what the bore
   accepts. Per the thesis the capture is intrinsically inefficient (a few %), so transmission stays
   low. It is measured from the **macroparticle count** (`n_out / n_in`) BEFORE the openPMD charge
-  re-imposition, so it can never be masked to 1.0.
+  re-imposition, so it can never be masked to 1.0. The taper is per sub-element, not per section:
+  `_section_subelements` (`sim/linac5-8.py`) narrows the bore radius linearly from the section's
+  entrance radius to its (smaller) exit radius (config `bore_in` diameters, converted to radii), and
+  samples each of the 4 solrf sub-elements (entrance/body_1/body_2/exit) at its own z along that
+  taper -- entrance at `r_in`, exit at `r_exit`, the two body cells at the taper's midspan -- so the
+  exit sub-element (the smallest radius) is the binding aperture within a section, not just the
+  overall `xyrad_m` computational-box wall.
 
 ## Output
 
@@ -196,6 +209,13 @@ frozen calibration table, and `stat_vs_z` (`z_m`, `ke_mev`, `sigma_ke_mev`, `sig
   section-5 bar reads low by construction: dKE is differenced against the whole injected core's
   mean while capture scraping removes the low-energy tail inside section 5 -- a capture artifact,
   not an off-crest or field-scale deficiency (sections 6-8 land on target).
+
+The `evolution_vs_z`/`energy_spread` curves are read from the summary's `stat_vs_z` table (`I.stat`)
+when present; a sparser particle-slice fallback (from the openPMD dumps) covers legacy summaries that
+predate that table, including one that predates the surviving-charge column. `section_gains` attributes
+per-section achieved dE from the vs-z KE curve using the calibration table's `z_entry_m`/`z_exit_m`
+(the real deck geometry `sim/linac5-8.py` writes); a legacy summary lacking those falls back to an
+even split of the z-grid, which coarsely mis-attributes gain across the inter-section drifts.
 
 ## Gotchas (Impact-T / lume-impact)
 
@@ -261,8 +281,8 @@ follow from the positron species.
   offset between `ele_field` and the Fortran Impact-T field. A constant field-scale offset does not
   move the argmax over phase, so the crest is unaffected; the stage energy is what `sim/linac5-8.py`
   reports, not this model number. `sim/autophase_impact.py --verify` confirms the crest directly with
-  a tight Impact-T phase scan (crest ± δ on the last phased section), which is immune to the amplitude
-  offset.
+  a tight 3-point Impact-T phase scan (crest and crest ± `VERIFY_DELTA_DEG`) with the aperture/pipe
+  scrape disabled, which is immune to the amplitude offset.
 
 - **Standalone runs.** If you invoke `sim/linac5-8.py` alone on a changed upstream beam, run
   `sim/autophase_impact.py` first — otherwise the shipped crest seeds may be off-crest (decelerating

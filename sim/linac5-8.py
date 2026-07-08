@@ -1,20 +1,10 @@
 """
-Cornell Linac sections 5-8 (Impact-T). main(): handoff IN (the positron core from the e+/e-
-converter, which sits after the WarpX section 4) -> build the chained 4-section traveling-wave
-Impact-T deck from the vendored rfdata4-7 field shapes -> apply the FROZEN per-section field scale
-+ crest phase -> I.run() (space charge OFF; the real CESR inter-section quad lines + sec5/6
-capture solenoids ON) -> openPMD handoff OUT + injection_summary.json.
+Cornell Linac sections 5-8 (Impact-T): converter positron handoff in -> chained 4-section
+traveling-wave Impact-T deck (frozen field_scale + crest_phase_deg from config/linac5-8.yaml) ->
+openPMD handoff out + injection_summary.json.
 
-Four S-band (2856 MHz) TW sections (CEA 4/5 + CU 3/4) chained into ONE Impact-T deck and
-integrated as one time-ordered beam. Sections 5-8 have no field maps; the vendored S-band TW shape
-(rfdata4-7) is reused verbatim and all per-section physics lives in the per-section field scale.
-
-CALIBRATION IS FROZEN. The old stage ran a per-section brentq scale-fit + crest-phase scan + §5
-validation gates each run; here the field_scale + crest_phase_deg are hardcoded in
-config/linac5-8.yaml (derived once) and applied directly. See docs/linac5-8.md.
-
-Run as `python sim/linac5-8.py` (hyphenated name is not importable). sim/plot/linac5-8.py makes
-the figures. Do NOT call build/run from import -- main() does everything.
+Run as `python sim/linac5-8.py` (hyphenated name is not importable); main() does everything, do
+not call build/run pieces from import. See docs/linac5-8.md.
 """
 
 import os
@@ -40,24 +30,18 @@ from sim.helpers.metrics import beam_quality
 from sim.helpers.tqdmwrapper import impact_progress
 
 CONFIG = "config/linac5-8.yaml"
-MC2_MEV = MC2_EV / 1e6                  # electron rest energy [MeV]
+MC2_MEV = MC2_EV / 1e6
 
-# 4-line TW phase offsets [deg] relative to the section base phase (SLAC-PUB-2295 two-SW
-# decomposition): entrance +0, body_1 +30, body_2 +90, exit +0.
 LINE_PHASE_OFFSET = {"entrance": 0.0, "body_1": 30.0, "body_2": 90.0, "exit": 0.0}
-FILE_ID = {"entrance": 4, "body_1": 5, "body_2": 6, "exit": 7}   # rfdata file per line
+FILE_ID = {"entrance": 4, "body_1": 5, "body_2": 6, "exit": 7}
 RFDATA_FILES = ("rfdata4", "rfdata5", "rfdata6", "rfdata7")
-IN_TO_M = 0.0254                        # inch -> metre
+IN_TO_M = 0.0254
 
-# Capture-solenoid model: the MEASURED on-axis Bz of the CLASSE pos_sol_A/B/C string at 264 A
-# (the committed extraction rfdata.pos_sol_profile; flat-top +0.2429 T, falling to ~30% of peak
-# at the section flanges), spanning each cavity PLUS its exit line so
-# the real fringe keeps focusing across the inter-section gap (the C trim coil sits at
-# 5.18-5.27 m from the cavity start -- IN the exit line, which a cavity-only span would cut off).
-SOL_N_FOURIER = 120                     # Fourier terms: the sec6 window wraps with a ~0.12 T end
-                                        # mismatch (0.124 T at its entrance vs ~0 at the sec7 end);
-                                        # 120 terms localise the Gibbs ringing to ~5 cm at the ends
-SOL_FILE_ID = 50                        # capture-solenoid fieldmap file IDs: SOL_FILE_ID + section index
+# Solenoid window spans each cavity PLUS its exit line so the real fringe (incl. the C trim
+# coil, which sits in the exit line) keeps focusing across the inter-section gap.
+SOL_N_FOURIER = 120                     # localises the sec6 window's ~0.12 T wrap-mismatch Gibbs
+                                        # ringing to ~5 cm at the ends
+SOL_FILE_ID = 50
 
 
 # ── Config helpers ───────────────────────────────────────────────────────────────
@@ -91,9 +75,9 @@ def section_bore_radii(sec):
 
 
 def section_exit_line(cfg, index):
-    """The real drift/quad line after section `index`'s cavity (config exit_optics, from the
-    CLASSE BMAD deck): a list of ("drift"|"quad", L_m, gradient_T_per_m) with the section's
-    quad_scale applied, plus the inter-section pipe scrape radius [m]."""
+    """The real drift/quad line after section `index`'s cavity (config exit_optics): a list of
+    ("drift"|"quad", L_m, gradient_T_per_m) with the section's quad_scale applied, plus the
+    inter-section pipe scrape radius [m]."""
     gap = cfg["exit_optics"][f"sec{index + cfg['lattice']['first_section']}"]
     scale = float(cfg["sections"][index].get("quad_scale", 1.0))
     line = []
@@ -112,13 +96,28 @@ def section_gap_length_m(cfg, index):
     return sum(L for _t, L, _g in line)
 
 
+def conv_field_ratio(cfg):
+    """Sec-5/6 solenoid tracking of the converter capture field (config solenoid_tracking):
+    converter solenoid.b_tesla / conv_b_ref; 1.0 when untracked or the converter solenoid is off."""
+    trk = cfg.get("solenoid_tracking")
+    if not trk:
+        return 1.0
+    try:
+        with open(trk["converter_config"]) as fh:
+            sol = (yaml.safe_load(fh) or {}).get("solenoid", {})
+    except OSError:
+        return 1.0
+    if not sol.get("enabled", False):
+        return 1.0
+    return float(sol.get("b_tesla", trk["conv_b_ref"])) / float(trk["conv_b_ref"])
+
+
 _SOL_TABLE = None
 
 
 def _sol_profile_table(cfg):
-    """(z, Bz) of ONE section-5/6 capture-solenoid string at 264 A: the committed extraction of
-    the CLASSE pos_sol_A/B/C grids (rfdata.pos_sol_profile; see the file header). z is relative
-    to the CAVITY start and spans [-1.5, 6.5] m (backward fringe .. forward tail). Cached."""
+    """(z, Bz) of ONE section-5/6 capture-solenoid string at 264 A. z is relative to the cavity
+    start and spans [-1.5, 6.5] m (backward fringe .. forward tail). Cached."""
     global _SOL_TABLE
     if _SOL_TABLE is None:
         dat = np.loadtxt(cfg["rfdata"]["pos_sol_profile"])
@@ -127,17 +126,10 @@ def _sol_profile_table(cfg):
 
 
 def _solenoid_fieldmap(cfg, window_L, string_offsets, file_id):
-    """Build a solrf rfdata fieldmap (Ez block = 0, Bz block = the measured pos_sol string
-    profile, normalised to the 264 A flat-top peak) for a capture-solenoid element spanning one
-    cavity PLUS its exit line. Returns (filename, fieldmap_dict).
-
-    The on-axis Bz over the window is the SUM of every solenoid string's committed profile
-    (`string_offsets` = each string's cavity start relative to this element's zedge) -- so the
-    neighbouring string's backward fringe into this element's gap is included, and nothing is
-    double-counted because the windows tile. The sec5 window's wrap ends nearly match
-    (0.117 / 0.124 T); the sec6 window wraps with a ~0.12 T mismatch whose Gibbs ringing
-    SOL_N_FOURIER localises to ~5 cm at the ends. The element's `solenoid_field_scale` sets the
-    FLAT-TOP Bz [T]; Impact-T type-105 expands the map paraxially as a STATIC field
+    """Build a solrf rfdata fieldmap (Ez=0, Bz = the measured pos_sol string profile summed over
+    `string_offsets`, normalised to the flat-top) for a capture-solenoid element spanning one
+    cavity PLUS its exit line. Returns (filename, fieldmap_dict). `solenoid_field_scale` sets the
+    flat-top Bz [T]; Impact-T type-105 expands the map paraxially as a STATIC field
     (Bz = B0 - B''0 r^2/4)."""
     from beamphysics.interfaces.impact import create_fourier_coefficients
     zt, bt = _sol_profile_table(cfg)
@@ -174,10 +166,10 @@ def section_group_name(cfg, index):
     return f"sec{index + cfg['lattice']['first_section']}_scale"
 
 
-# ── Frozen-calibration APPLY helpers (ported from the old calibration.py apply path; the
-# search/validation is dropped). The rf_field_scale ControlGroup is absolute=True with factors
-# [1, 1/sin(beta0 d), 1/sin(beta0 d), 1], so its value S sets entrance/exit=S, body=S/sin(beta0 d),
-# preserving the template body ratio. theta0_deg is ABSOLUTE per solrf sub-element. ──────────────
+# ── Frozen-calibration APPLY helpers. The rf_field_scale ControlGroup is absolute=True with
+# factors [1, 1/sin(beta0 d), 1/sin(beta0 d), 1], so its value S sets entrance/exit=S,
+# body=S/sin(beta0 d), preserving the template body ratio. theta0_deg is ABSOLUTE per solrf
+# sub-element. ─────────────────────────────────────────────────────────────────────────────────
 def _ensure_section_group(I, cfg, index):
     """Create (idempotently) the rf_field_scale ControlGroup over a section's 4 solrf cells.
 
@@ -216,15 +208,10 @@ def _set_section_phase(I, cfg, index, phase_deg):
 
 # ── Deck assembly (SC-free; real CESR exit-line optics + sec5/6 capture solenoids) ──────────────
 def _section_subelements(cfg, index, zedge, scale, base_phase_deg, name_prefix, bore_on):
-    """The 4 `solrf` sub-element dicts for one TW section, placed at `zedge`.
-
-    `scale` is the entrance/exit field scale S; the body lines get S/sin(beta0 d). The inter-line
-    phase pattern (+0/+30/+90/+0) is added to `base_phase_deg`. The entrance/exit coupler cells keep
-    the template short length; the body carries (L - l_entrance - l_exit). `bore_on` gates the solrf
-    `radius` to the real tapered bore (else 0 => no scrape): the bore narrows linearly from the
-    entrance to the smaller exit radius, so each cell scrapes at the bore at its own z (entrance ->
-    r_in, exit -> r_exit, body cells at their span midpoint) -- the smaller exit cell is the binding
-    aperture.
+    """The 4 `solrf` sub-element dicts for one TW section, placed at `zedge`. `scale` is the
+    entrance/exit field scale S; the body lines get S/sin(beta0 d). `bore_on` gates the solrf
+    `radius` to the real tapered bore (else 0 => no scrape): each cell scrapes at its own z along
+    the linear taper, so the exit cell (smallest radius) is the binding aperture.
     """
     sec = cfg["sections"][index]
     L = sec["length_m"]
@@ -275,20 +262,12 @@ def _load_vendored_fieldmaps(cfg):
 
 
 def build_impact(cfg, workdir=None):
-    """Assemble the chained 4-section Impact-T deck (real CESR exit-line optics + sec5/6 capture
-    solenoids, SC OFF) from the vendored rfdata4-7 shapes and return (configured `Impact`,
-    total_lattice_length_m, section_bounds), where section_bounds is the (z_entry, z_exit) [m] of
-    each TW section in deck z (real geometry, used by the section_gains figure).
-
-    Each section is placed at increasing `zedge`, followed by its real exit line (config
-    exit_optics: drifts + calibrated quads, incl. the trailing Q8 doublet after section 8). The
-    per-section field scale starts at the frozen `field_scale`; the run also applies it via the
-    rf_field_scale ControlGroup so the body ratio is exact (see main()).
+    """Assemble the chained 4-section Impact-T deck (SC OFF) from the vendored rfdata4-7 shapes.
+    Returns (configured `Impact`, total_lattice_length_m, section_bounds), where section_bounds is
+    the (z_entry, z_exit) [m] of each TW section in deck z, used by the section_gains figure.
 
     `workdir` (with use_temp_dir=False) runs Impact-T IN PLACE there, so fort.18 lands at a known
-    <workdir>/fort.18 the progress bar can poll (the default temp dir is non-deterministic). No
-    write_beam slice dumps -- per-section vs-z evolution comes from I.stat(...). The final beam is
-    I.particles["final_particles"] for the handoff OUT.
+    <workdir>/fort.18 the progress bar can poll (the default temp dir is non-deterministic).
     """
     from impact import Impact
 
@@ -311,6 +290,7 @@ def build_impact(cfg, workdir=None):
         z_entries.append(zz)
         zz += sec["length_m"] + section_gap_length_m(cfg, i)
     sol_idx = [j for j, s in enumerate(sections) if float(s.get("solenoid_b_tesla", 0.0)) > 0.0]
+    conv_ratio = conv_field_ratio(cfg)
 
     lattice = []
     section_bounds = []                                  # (z_entry, z_exit) [m] per TW section
@@ -319,13 +299,10 @@ def build_impact(cfg, workdir=None):
         prefix = f"sec{i + first}"                       # sec5 .. sec8
         z_entry = z
         lattice += _section_subelements(cfg, i, z, sec["field_scale"], base_phase, prefix, bore_on)
-        # Capture-solenoid (sec 5/6 only): a solenoid-only solrf (rf_field_scale 0, static Bz)
-        # OVERLAPPING the cavity AND its exit line over [z_entry, z_entry+L+gap] -- the measured
-        # pos_sol string field (incl. the C trim coil and the fringe over the inter-section gap,
-        # plus the next string's backward fringe; the windows tile so nothing double-counts).
-        # solenoid_field_scale = flat-top Bz [T]; the map is normalised to the 264 A flat-top.
-        # It does not advance z (overlaps the RF/exit line), so the crest geometry is unchanged.
-        b_sol = float(sec.get("solenoid_b_tesla", 0.0))
+        # Capture-solenoid (sec 5/6 only): solenoid-only solrf (rf_field_scale 0, static Bz)
+        # overlapping the cavity AND its exit line. Does not advance z, so the crest geometry is
+        # unchanged.
+        b_sol = float(sec.get("solenoid_b_tesla", 0.0)) * conv_ratio
         if b_sol > 0.0:
             window_L = sec["length_m"] + section_gap_length_m(cfg, i)
             offsets = [z_entries[j] - z_entry for j in sol_idx]
@@ -340,16 +317,10 @@ def build_impact(cfg, workdir=None):
             })
         z += sec["length_m"]
         section_bounds.append((z_entry, z))
-        # Exit line: the REAL inter-section optics (CLASSE BMAD deck, config exit_optics) --
-        # drifts + quads at their machine lengths, order, and calibrated CU-overlay gradients
-        # (x this section's quad_scale). Placed after EVERY section: sections 6/7 end in QH-QV-QH
-        # triplets, section 8's trailing Q8 doublet ends the modelled line (the positron snout
-        # continues from there). The layout MUST mirror sim/autophase_impact.py's section
-        # placement: the crest phases are ABSOLUTE (Impact-T theta0, t=0 ref), so the cumulative
-        # path length -- the bunch arrival time at sections 6-8 -- must hold or those sections
-        # fall off-crest. The element radius records the real inter-section pipe; Impact-T
-        # honours it on quads but NOT on drifts (drift V2 is unused per the manual), and the
-        # xyrad_m=0.02 computational box wall stays the binding gap aperture either way.
+        # Exit line: real inter-section optics (config exit_optics). Layout MUST mirror
+        # sim/autophase_impact.py's section placement -- theta0 is ABSOLUTE, so the cumulative
+        # path length must hold or later sections fall off-crest. Impact-T honours the pipe
+        # radius on quads but not on drifts; xyrad_m stays the binding gap aperture either way.
         line, pipe_r = section_exit_line(cfg, i)
         for j, (etype, L_ele, grad) in enumerate(line):
             if etype == "drift":
@@ -367,7 +338,7 @@ def build_impact(cfg, workdir=None):
 
     h = I.header
     h["Npcol"], h["Nprow"] = 1, 1
-    h["Bcurr"] = 0.0                                     # space charge OFF (overridden if SC on)
+    h["Bcurr"] = 0.0                                     # space charge off
     h["Flagimg"] = 0                                     # no image charge (no cathode)
     h["Dt"] = cfg["deck"]["dt"]
     h["Ntstep"] = cfg["deck"]["ntstep"]
@@ -390,10 +361,8 @@ def build_impact(cfg, workdir=None):
 # ── Handoff IN: the positron core from the converter (which sits after the WarpX section 4) ──────
 def load_converter_core(cfg):
     """Read the converter positron beam, keep the captured core (KE >= MIN_KE_MEV), match the core
-    to Np (downsample if richer; smeared upsample to Np if `beam.upsample` and the converter yield
-    left fewer -- so the ~1% survivors are enough for statistics), drift to mean t + zero z for
-    Impact-T injection. Returns (ParticleGroup, info dict). The ParticleGroup carries the
-    captured-core charge (no renormalisation).
+    to Np (downsample or smeared-upsample), drift to mean t and zero z for Impact-T injection.
+    Returns (ParticleGroup, info dict).
     """
     diag = cfg["io"]["conv_particles"]
     summary = cfg["io"]["conv_summary"]
@@ -424,16 +393,12 @@ def load_converter_core(cfg):
         Pc = Pc[sel]
         Pc.weight = Pc.weight * (q_core / float(Pc.charge))   # restore total core charge
     elif Pc.n_particle < np_keep and cfg["beam"].get("upsample", False):
-        # The converter yield caps the core macro count, so the surviving handful is too few for
-        # downstream statistics. SC is OFF, so each macro is dynamically independent: split the core
-        # to Np with local phase-space smear (NOT plain bootstrap -- coincident duplicates track
-        # identically and add nothing). Survival fraction + moments are preserved; only the SAMPLING
-        # density rises. The genuine resolution is still set by n_core_raw (recorded for honesty).
+        # Too few survivors for downstream statistics. SC is off, so smeared-upsample to Np
+        # (not plain bootstrap -- coincident duplicates would track identically and add nothing).
         Pc = upsample_smeared(Pc, np_keep, rng_seed=rng_seed,
                               smear=float(cfg["beam"].get("upsample_smear", 0.2)))
-        # Re-impose the KE floor: smearing the transverse momentum of a low-pz / large-angle
-        # parent (kept only by its transverse p in the TOTAL-energy cut) can pull a clone below
-        # MIN_KE_MEV. Drop those so the relativistic-core guarantee (beta_min, no-slip crest) holds.
+        # Smearing can pull a low-pz clone below MIN_KE_MEV; re-impose the floor so the
+        # relativistic-core guarantee (beta_min, no-slip crest) holds.
         keep = (Pc.energy - MC2_MEV * 1e6) / 1e6 >= min_ke_mev
         if not keep.all():
             Pc = Pc[keep]
@@ -537,10 +502,9 @@ def main():
     first = cfg["lattice"]["first_section"]
     power_mw = cfg["rf"]["power_mw"]
 
-    # Apply the frozen calibration via the rf_field_scale ControlGroup (NOT just the build-time
-    # element scales): the group is absolute=True defaulting 0, so adding it + configure() would
-    # overwrite the baked-in scales with 0 (silent no-acceleration). Set the group scale AND the
-    # absolute crest phase per section (theta0 is ABSOLUTE), then configure once.
+    # Apply the frozen calibration via the rf_field_scale ControlGroup: it is absolute=True
+    # defaulting 0, so it must be set explicitly or configure() overwrites the baked-in scales
+    # with 0 (silent no-acceleration).
     calib = []
     for i, sec in enumerate(cfg["sections"]):
         gname = _ensure_section_group(I, cfg, i)
@@ -611,7 +575,9 @@ def main():
         total_lattice_length_m=float(total_len),
         power_mw=float(power_mw), phase_deg=float(cfg["rf"]["phase_deg"]),
         quads_on=True,
-        sec56_solenoid_b_tesla=[float(s.get("solenoid_b_tesla", 0.0)) for s in cfg["sections"]],
+        sec56_solenoid_b_tesla=[float(s.get("solenoid_b_tesla", 0.0)) * conv_field_ratio(cfg)
+                                for s in cfg["sections"]],
+        conv_field_ratio=conv_field_ratio(cfg),
         quad_scale=[float(s.get("quad_scale", 1.0)) for s in cfg["sections"]],
         bore_aperture_on=bool(cfg["lattice"]["bore_aperture_on"]),
         xyrad_m=float(cfg["deck"]["xyrad_m"]),
@@ -619,7 +585,6 @@ def main():
         ke_out_mev=ke_out,
         mean_z_reached_m=mean_z_reached,
         beta_min_core=core_info["beta_min_core"],
-        # Transmission from MACRO COUNT (n_out/n_in), measured before re-imposing charge.
         n_core_in=n_in, n_out=n_out,
         transmission_core=transmission,
         q_out_C=q_out,
