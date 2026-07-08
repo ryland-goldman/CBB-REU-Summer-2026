@@ -66,9 +66,12 @@ The physical bunch charge is then **measured** from the field diagnostic:
 $$ Q = \pi R_{\text{cathode}}^2 \cdot \Big(\!\int J_z(t)\,dt\Big) \cdot \text{GRID\_TRANS} $$
 
 `J_z` (a real local current density even in 2D — the planar diode is locally 1D) is integrated at
-mid-gap over the pulse; the naive `Σ(weight)` is **not** usable for total charge (2D weights are
-per-unit-out-of-plane-length). The result lands in `injection_summary.json` (`q_emit_C`), and the
-gun reads it as its renormalization target — replacing the old hardcoded `BUNCH_CHARGE`.
+**mid-gap**, not at the anode/absorbing-boundary row: sampling right at the absorbing boundary
+inflates the measured collection by roughly 14% (a collection-edge artifact of that row, not a
+real difference in J_z along the gap). The naive `Σ(weight)` is **not** usable for total charge
+(2D weights are per-unit-out-of-plane-length). The result lands in `injection_summary.json`
+(`q_emit_C`), and the gun reads it as its renormalization target — replacing the old hardcoded
+`BUNCH_CHARGE`.
 
 ---
 

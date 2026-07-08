@@ -1,32 +1,10 @@
 """
-Auto-phase the injector prebuncher cavities and rewrite config/injector.yaml.
-
-The analog of sim/autophase.py (WarpX linac) / sim/autophase_impact.py (Impact-T) for the injector
-RF -- but the prebunchers are VELOCITY BUNCHERS, not accelerators, so the objective is the opposite:
-not the crest (max bunch energy) but the phase that MINIMISES the bunch length at the linac handoff
-plane. The driver lands each cavity centroid on the RF zero-crossing analytically (`PHASE: zc`, net
-mean kick 0); the autophased knobs are the per-cavity offsets from that base (PREB1_PHI_OFF /
-PREB2_PHI_OFF), which set where on the bunching slope the cavity sits and thus where the velocity
-focus lands. Re-run it whenever the gun beam shifts and the hardcoded offsets go stale.
-
-Method: import the gun exit beam exactly as sim/injector.py does (same downsample, same
-tail->Z_INJECT shift, same centroid kinematics), reproduce the driver's per-cavity phase
-construction byte-for-byte by calling sim/injector.cavity_drive (scale = sqrt(1e3 Q_L P /
-2 pi f), the centroid-arrival t_gap, the +pi reversed-Preb-2 phase, and Preb-2's two-segment arrival
-through the analytic post-Preb-1 speed), and RK4-integrate the WHOLE bunch longitudinally through the
-two on-axis prebuncher gaps to the INJ_Z_HANDOFF plane. The on-axis field is the same 1-J map the
-driver loads (Bphi vanishes on axis, so only Ez acts longitudinally). The objective is the
-weighted-RMS arrival-time spread sigma_t = sigma_z / v_beam at the handoff snapshot; the optimum
-offset minimises it. Two cavities are optimised by coordinate descent (each a coarse -> fine ->
-parabolic min, two passes); Preb-2's arrival depends on Preb-1's offset, so the phases are rebuilt at
-every evaluation. This is a 1D longitudinal model (no transverse / space-charge back-reaction) -- the
-focus position the buncher exists to set is a longitudinal quantity, so it captures the tuning knob.
+Auto-phase the injector prebuncher offsets (PREB1_PHI_OFF / PREB2_PHI_OFF) and rewrite
+config/injector.yaml. See docs/injector.md.
 
   python sim/autophase_injector.py            # phase both prebunchers, rewrite the YAML
   python sim/autophase_injector.py 1          # only Prebuncher 1's offset
   python sim/autophase_injector.py --dry-run  # scan + report, write nothing
-
-No WarpX is launched; only the existing logs/diags/gun dump + the prebuncher GDF map are read.
 """
 
 import os
@@ -44,23 +22,19 @@ from sim.helpers.buildfields import (
 from sim import injector as drv          # driver loaders + cavity_drive (warpx-free at import)
 
 CONFIG = "config/injector.yaml"
-# Which cavity each CLI section selects, and its offset knob in the YAML.
 PHASE_KEY = {1: "PREB1_PHI_OFF", 2: "PREB2_PHI_OFF"}
 
-SUBSAMPLE = 1536            # macroparticles integrated per phase (bunch-length objective converges)
-COARSE_HALF_DEG = 60.0     # +-window about the current offset for the wide scan
+SUBSAMPLE = 1536
+COARSE_HALF_DEG = 60.0
 COARSE_STEP_DEG = 10.0
-FINE_HALF_DEG = 10.0       # +-window about the coarse min
+FINE_HALF_DEG = 10.0
 FINE_STEP_DEG = 1.0
-DESCENT_PASSES = 2         # coordinate-descent sweeps over (off1, off2)
+DESCENT_PASSES = 2
 
 
 def _load_bunch(p):
-    """Gun exit beam as sim/injector.py injects it, subsampled for the scan. Returns (z [m],
-    uz = longitudinal gamma*beta per particle, uperp2 = ux^2+uy^2 (frozen transverse gamma*beta^2),
-    w, z_centroid [m], v_beam [m/s], ke_mean [keV]). uz and uperp are carried separately so the Ez
-    kick acts only on uz while gamma keeps the transverse momentum -- matching the uz/gamma v_beam in
-    helpers.loadparticles.beam_kinematics that converts sigma_z to sigma_t."""
+    """uz and uperp2 are carried separately so the Ez kick acts only on uz while gamma keeps the
+    transverse momentum, matching the uz/gamma v_beam convention in helpers.loadparticles.beam_kinematics."""
     bunch, v_beam, ke_mean, z_centroid = drv.load_gun_bunch(
         p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
     z, w = np.asarray(bunch["z"], float), np.asarray(bunch["w"], float)
@@ -74,9 +48,8 @@ def _load_bunch(p):
 
 
 def _cavity_phases(p, v_beam, ke_mean, z_centroid, off1, off2, omega):
-    """Reproduce sim/injector.py's two cavity_drive calls for given offsets, returning
-    (scale1, phi1, scale2, phi2). Preb-2's arrival time runs through the analytic post-Preb-1 speed
-    (its t_gap, hence phi2, depends on off1 via Preb-1's mean kick), exactly as the driver bakes it."""
+    """Preb-2's arrival time runs through the analytic post-Preb-1 speed (its t_gap, hence phi2,
+    depends on off1 via Preb-1's mean kick), exactly as the driver bakes it."""
     PHASE, F_RF = p["PHASE"], p["F_RF"]
     base = np.pi / 2.0 if PHASE == "zc" else np.pi
     _, _, scale1, phi1, t_gap1 = drv.cavity_drive(
@@ -96,13 +69,10 @@ def _sigma_t_ps(z0, uz0, uperp2, w, scale1, phi1, scale2, phi2, ez_axis, zmap1, 
                 preb1_on, preb2_on, v_beam):
     """Weighted-RMS arrival-time spread [ps] at the Z_HANDOFF plane for one (phi1, phi2) pair.
 
-    RK4-integrates the WHOLE bunch (dz/dt = c*uz/gamma, duz/dt = -(e/m_e c) Ez) through both on-axis
-    prebuncher gaps until the centroid reaches Z_HANDOFF, then returns sigma_z/v_beam at that
-    snapshot. The longitudinal Ez kicks only uz; gamma = sqrt(1 + uz^2 + uperp2) carries the frozen
-    transverse momentum, so v_z = c*uz/gamma matches the uz/gamma convention of beam_kinematics.
-    Ez = scale1 Ez_map(z-gap1) cos(wt+phi1) + scale2 Ez_map(z-gap2) cos(wt+phi2); the field is exactly
-    zero outside each map (np.interp left/right=0) so the bunch coasts between cavities and after the
-    second gap. Bphi vanishes on axis, so Ez is the only longitudinal field."""
+    gamma = sqrt(1 + uz^2 + uperp2) carries the frozen transverse momentum, so v_z = c*uz/gamma
+    matches the uz/gamma convention of beam_kinematics. Ez is zero outside each map (np.interp
+    left/right=0), so the bunch coasts between cavities; Bphi vanishes on axis so Ez is the only
+    longitudinal field."""
     k = q_e / (m_e * c)
     z, uz = z0.copy(), uz0.copy()
     dt = (2.0 * np.pi / omega) / 100.0                        # resolve the RF cycle
@@ -138,8 +108,7 @@ def _sigma_t_ps(z0, uz0, uperp2, w, scale1, phi1, scale2, phi2, ez_axis, zmap1, 
 
 
 def _min_offset(objective, x0):
-    """Offset [deg] minimising `objective` near x0: a coarse scan, a fine scan about the min, then a
-    parabolic refine of the bottom 3 (the min mirror of sim/autophase.find_crest's argmax)."""
+    """Mirrors sim/autophase.find_crest's argmax scan, but minimising instead of maximising."""
     coarse = x0 + np.arange(-COARSE_HALF_DEG, COARSE_HALF_DEG + 1e-9, COARSE_STEP_DEG)
     c0 = coarse[int(np.argmin([objective(x) for x in coarse]))]
     fine = c0 + np.arange(-FINE_HALF_DEG, FINE_HALF_DEG + 1e-9, FINE_STEP_DEG)
@@ -182,7 +151,7 @@ def main():
     preb1_on = p["PREB1_KW"] > 0
     preb2_on = p["PREB2_KW"] > 0
 
-    # On-axis Ez (r=0 row of the 1-J map) placed at each gap, exactly as the driver loads it.
+    # On-axis (r=0) Ez, exactly as the driver loads it.
     r, z_native, _Er, Ez, _Bphi = _load_prebuncher_map()
     ez_axis = Ez[0]
     zmap1 = Z_GAP_CENTER_1 + z_native

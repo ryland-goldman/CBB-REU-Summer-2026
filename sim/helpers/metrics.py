@@ -11,12 +11,8 @@ BEAM_QUALITY_KEYS = ("eps_n_x_m", "eps_n_y_m", "sigma_E_mev", "sigma_E_rel",
 
 
 def beam_quality(pg):
-    """Exit beam-quality metrics from an openPMD-beamphysics ParticleGroup.
-
-    Returns normalized transverse emittances [m·rad] (centered, charge-weighted, via
-    ParticleGroup.norm_emit_x/y), absolute/relative energy spread (sigma_E_rel = std(KE)/mean(KE),
-    and std(KE)==std(total energy) since the rest mass is constant), and RMS spot size [mm].
-    All-NaN when `pg` is None or empty (the no-survivor case) so callers never KeyError on it.
+    """sigma_E_rel = std(KE)/mean(KE); std(KE)==std(total energy) since rest mass is constant.
+    All-NaN when `pg` is None or empty so callers never KeyError.
     """
     if pg is None or getattr(pg, "n_particle", 0) == 0:
         return {k: float("nan") for k in BEAM_QUALITY_KEYS}
@@ -31,27 +27,14 @@ def beam_quality(pg):
 
 
 def _group_bounds(sorted_ids):
-    """Start/stop indices of each run of equal ids in an id-sorted array."""
     edges = np.flatnonzero(np.r_[True, sorted_ids[1:] != sorted_ids[:-1], True])
     return zip(edges[:-1], edges[1:])
 
 
 def screen_profile(ids, z, weight, quantities, emit_pairs=(),
                    n_screen=80, min_cross=20, z_range=None):
-    """Charge-weighted beam moments on fixed-z virtual screens (a station diagnostic).
-
-    Pool every (id, dump) row from a volumetric run and treat each macroparticle's
-    id-trajectory as a path crossing every z-plane once (valid for forward, monotonic-in-z
-    motion). Per screen, each crossing particle's listed quantities are linearly interpolated
-    along its own trajectory to that plane, then charge-weighted moments accumulate -- a true
-    local-in-z phase space with no z-binning. See gun energy_gain / beam_envelope figures.
-
-    ids, z, weight : (N,) arrays pooled over all dumps.
-    quantities     : {name: (N,) array}; per-screen mean/rms/max returned for each.
-    emit_pairs     : iterable of (q_name, u_name); per-screen raw rms emittance for each.
-
-    Returns (screens [m], out) where out has `count` and dicts mean/rms/max (by quantity)
-    and emit (by pair); moments are RAW and NaN on screens with < min_cross crossings.
+    """Charge-weighted beam moments on fixed-z virtual screens, interpolated per-id along z
+    (assumes forward, monotonic-in-z motion); NaN on screens with < min_cross crossings.
     """
     ids = np.asarray(ids)
     z = np.asarray(z, float)
@@ -74,10 +57,10 @@ def screen_profile(ids, z, weight, quantities, emit_pairs=(),
 
     count = np.zeros(n_screen)
     sum_w = np.zeros(n_screen)
-    sum_wv = {n: np.zeros(n_screen) for n in names}          # sum w*v
-    sum_wvv = {n: np.zeros(n_screen) for n in names}         # sum w*v^2
+    sum_wv = {n: np.zeros(n_screen) for n in names}
+    sum_wvv = {n: np.zeros(n_screen) for n in names}
     peak = {n: np.full(n_screen, -np.inf) for n in names}
-    sum_wqu = {p: np.zeros(n_screen) for p in emit_pairs}    # sum w*q*u (emittance cross term)
+    sum_wqu = {p: np.zeros(n_screen) for p in emit_pairs}
 
     order = np.argsort(ids, kind="stable")
     ids, z, weight = ids[order], z[order], weight[order]

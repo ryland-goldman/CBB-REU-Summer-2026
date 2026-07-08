@@ -119,6 +119,29 @@ The exact fix is a two-pass run (read the post-Preb-1 beta from a diagnostic, re
 timing); only needed if a future study gives Preb-1 a non-zero net kick (a Preb-1 power scan, or
 `PHASE="crest"` which net-accelerates).
 
+## Autophasing the bunch-length focus (`sim/autophase_injector.py`)
+
+Unlike the WarpX/Impact-T linac stages -- where "autophase" means finding the **crest** (max mean
+energy gain) -- the prebunchers are velocity bunchers, not accelerators, so there is no crest to
+chase here. The driver already lands each cavity centroid on the RF zero-crossing analytically
+(`PHASE="zc"`, net mean kick 0); what `sim/autophase_injector.py` searches for instead is the
+**per-cavity offset from that base** (`PREB1_PHI_OFF` / `PREB2_PHI_OFF`) that sets where on the
+bunching slope each cavity sits, and therefore where the velocity focus (minimum bunch length)
+lands relative to the ~2.03 m `Z_HANDOFF` plane (`INJ_Z_HANDOFF`) the driver hands off at. Re-run it whenever the gun exit beam shifts --
+these offsets are hardcoded, frozen numbers that go stale otherwise.
+
+Method: import the gun exit beam exactly as `sim/injector.py` does (same downsample, same
+tail->`Z_INJECT` shift, same centroid kinematics), then reproduce the driver's per-cavity phase
+construction byte-for-byte via `sim/injector.cavity_drive` (the `sqrt(1e3*Q_L*P/(2pi*f))` scale,
+the centroid-arrival `t_gap`, the `+pi` reversed-Preb-2 phase, and Preb-2's two-segment arrival
+through the analytic post-Preb-1 speed described above). It then RK4-integrates the whole bunch
+longitudinally through both on-axis prebuncher gaps to the handoff plane, using the same 1-J
+on-axis field map the driver loads (`Bphi` vanishes on axis, so only `Ez` acts longitudinally).
+The two offsets are optimized by coordinate descent (coarse -> fine -> parabolic minimum, two
+passes); because Preb-2's arrival timing depends on Preb-1's offset, both cavities' phases are
+rebuilt at every evaluation. This is a 1D longitudinal model with no transverse or space-charge
+back-reaction -- the focus position a buncher sets is a longitudinal quantity, so that suffices.
+
 ## Solenoid lenses (transverse focusing, native placement)
 
 All six injector solenoids are built and wired (in z-order). LENS_0A / SOL_0 / LENS_0E carry the

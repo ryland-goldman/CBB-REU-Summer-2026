@@ -22,31 +22,30 @@ physics:
                                 # `python sim/converter.py N` overrides this for a quick test
   rng_seed: 0                   # deterministic (g4bl also seeds its RNG per EventID)
 
-# Capture solenoid: a real current coil around/after the target that focuses the diverging positrons
-# before the sampling plane (the high-field-solenoid "capture optic" of a real e+ source). Modeled as
-# a g4bl `coil` + `solenoid`, so g4bl computes the full Maxwellian field -- including the END FRINGE
-# (the radial B_r at the coil ends that gives the solenoid its lens action). The conductor current
-# density is auto-solved (sim/converter.py) so the CENTRAL (peak) field equals `b_tesla`; the field
-# sags toward the ends and fringes out past them. `enabled: false` reverts to the field-free run.
+# Capture solenoid: the real CONV_HV converter solenoid from the CLASSE BMAD deck
+# (section_5_8_layout.bmad), tracked as a g4bl `fieldmap` of the committed con_sol extraction --
+# the measured Br+Bz r-z grid (200x200 mm, 1 mm), normalized to on-axis peak 1, so the full
+# Maxwellian field including the END FRINGE (the radial B_r that gives the lens action) is the
+# deck's. The map's local origin is the target BACK face (the BMAD D_CONV start, where CONV_HV
+# is centred): the field covers the target, peaks right at its back face, and dies out by
+# +121 mm. `place ... current=b_tesla` sets the on-axis peak [T]. `enabled: false` reverts to
+# the field-free run.
 solenoid:
   enabled: true
-  b_tesla: 1.3                 # Fromowitz 1.3 T infinite-solenoid value (reached by the short coil at
-                               # the ~8 kA upgrade current). PEAK (central) axial field [T]; current
-                               # density auto-solved.
-  length_mm: 46.5              # short coil: 6 turns @ 7.75 mm spacing (two concentric rows, n~258/m)
-  inner_radius_mm: 13.0        # bore ~13 mm radius (tracked-distribution aperture; clears the target)
-  outer_radius_mm: 25.0        # two-row winding outer radius [mm] (estimate; thesis gives turns, not
-                               # the winding OD -- only affects the fringe shape, not the auto-solved peak)
-  start_z_mm: 0.0              # coil upstream end rel. to the target front face [mm]
-  exit_drift_mm: 100.0         # field-free drift past the coil exit to the sampling plane [mm]
-                               # (clears the exit fringe -- ~2% of peak by here -- so the handoff is
-                               # field-free with the fringe focusing fully applied; longer = bigger
-                               # beam, since the now-parallel beam expands over the drift)
+  b_tesla: 0.7022              # on-axis peak [T] = the con_sol grid at the deck's 3300 A setpoint
+                               # (the deck SHIPS the element at scale 1 -- off -- with 3300
+                               # commented as the operating value). Fromowitz's 1.3 T
+                               # infinite-solenoid upgrade value is the alternative.
+  map: fieldmaps/g4bl/con_sol_fieldmap.txt
+  map_span_mm: [-79.1, 120.9]  # grid z-extent rel. to the target back face (sample-plane guard)
+  exit_drift_mm: 129.0         # target back face -> sampling plane [mm]. 129 = the BMAD D_CONV
+                               # length, so the handoff plane IS the section-5 entrance flange;
+                               # must exceed map_span end (120.9) so the handoff is field-free.
 
 # Output sampling plane (a thin virtualdetector just past the target back face) + selection.
 detector:
-  back_clearance_mm: 3.0        # gap from the downstream-most element to the sampling plane [mm]
-                                # (the capture-solenoid exit when on, else the target back face)
+  back_clearance_mm: 3.0        # gap from the target back face to the sampling plane [mm]
+                                # (solenoid-off runs only; else exit_drift_mm places the plane)
   radius_mm: 1000.0             # accept the full forward shower
   min_ke_mev: 1.0               # output KE threshold [MeV] (drop the soft shower debris)
   forward_only: true            # keep Pz > 0 tracks (drop backscatter toward the gun)

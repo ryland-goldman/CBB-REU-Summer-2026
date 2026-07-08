@@ -20,6 +20,15 @@ lattice:
   first_section: 5               # machine section number of sections[0]; deck names derive from it
   bore_aperture_on: true         # solrf `radius` = real tapered bore (the binding aperture)
 
+# The sec-5/6 capture solenoids TRACK the converter capture field: each section's
+# solenoid_b_tesla below is its value at the converter reference field conv_b_ref (the CONV_HV
+# 3300 A setpoint the 264 A string values are paired with), and the driver multiplies it by
+# (converter solenoid.b_tesla / conv_b_ref) -- so retuning/scanning the converter capture field
+# scales the whole capture line together. Converter block missing or disabled -> ratio 1.
+solenoid_tracking:
+  converter_config: config/converter.yaml
+  conv_b_ref: 0.7022
+
 # Beam / capture.
 beam:
   species: positrons             # upstream is the converter positron beam (q=+e); sign flips Bcharge

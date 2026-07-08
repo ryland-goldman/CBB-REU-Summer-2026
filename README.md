@@ -63,6 +63,22 @@ The WarpX stages each run in a fresh subprocess (pywarpx binds one geometry per 
 Impact-T runs the same way. Subprocess output is captured to `logs/pipeline/log_<date>.log` while
 progress bars stay on the terminal.
 
+## GUI
+
+```bash
+python sim/gui.py                  # desktop control panel, from the repo root in the CBB env
+```
+
+`sim/gui.py` is a Tk desktop control panel for the chain, three panes in one window: a left column
+of per-stage pipeline cards (cathode … linac 5-8), each with Edit Config / Run / Plot buttons and,
+for the linac stages, an Autophase toggle that runs the same `sim/autophase*.py` pre-step
+`sim/main.py` drives before that stage's sim; a right notebook with a Beam Explorer tab (Trends /
+1D / 2D views over a stage's existing openPMD dumps, ordered by dump ⟨z⟩) and a Plots tab (browses
+the PNGs already written under `logs/plots/<stage>/`); and a bottom console mirroring every
+launched subprocess's stdout/stderr. It only reads existing diagnostics/figures on disk — it shells
+out to the same `sim/plot`/`sim/autophase*.py` scripts `sim/main.py` uses, and does not simulate
+anything itself.
+
 ## Stages
 
 | Stage | Driver / config | What it does |
@@ -71,11 +87,52 @@ progress bars stay on the terminal.
 | **Gun** | `sim/gun.py` · `config/gun.yaml` | CESR electrostatic gun in RZ from the `CESR_gun.gdf` field map, with the relativistic EMS self-field. Timed beam release; writes a field-free-pad exit handoff. |
 | **Injector** | `sim/injector.py` · `config/injector.yaml` | The LinacSim injector in one RZ space-charge run: two 214 MHz prebunchers (velocity bunching) + six solenoid lenses (focusing) + the 9.547 mm iris, handing off near z ≈ 2.03 m. |
 | **Linac 1–4** | `sim/linac1-4.py` · `config/linac{1,2,3,4}.yaml` | Four SLAC-design 3 m, 2π/3 traveling-wave sections (RZ, WarpX) reusing the SLAC field maps. Section 1 captures the injector beam through the iris; sections 2–4 accelerate the captured core. Section 4's exit is the 4→5 boundary. |
-| **Converter** | `sim/converter.py` · `config/converter.yaml` | e⁺/e⁻ converter target (G4beamline/Geant4): drives the section-4 exit electrons into a 6.35 mm tungsten radiator (brems → pair production) and hands the resulting positron beam, with a capture solenoid, to the Impact-T linac. |
+| **Converter** | `sim/converter.py` · `config/converter.yaml` | e⁺/e⁻ converter target (G4beamline/Geant4): drives the section-4 exit electrons into a 6.35 mm tungsten radiator (brems → pair production) and hands the resulting positron beam to the Impact-T linac, focused by the real CONV_HV capture-solenoid fieldmap from the CLASSE BMAD deck (0.70 T peak at the target back face). |
 | **Linac 5–8** | `sim/linac5-8.py` · `config/linac5-8.yaml` | Four S-band traveling-wave sections (CEA 4/5 + CU 3/4) in one Impact-T deck, using the generic `rfdata4–7` field shape, accelerating the converter positrons. Space charge off; the real CESR capture optics are modelled (sec 5/6 264 A capture solenoids, 0.243 T flat-top, + the inter-section drift/quad lines from the CLASSE BMAD deck). |
 
 Each stage's physics, field model, configuration knobs, and figures are documented in
 [`docs/`](docs/).
+
+## Shared helpers
+
+`sim/helpers/` is the stage-agnostic plumbing every driver imports:
+
+- **`buildfields.py`** builds the GDF→openPMD field maps read by the stage drivers. The SLAC
+  traveling-wave maps are built once and reused by linac sections 1–4 rather than rebuilt per
+  section. Map-geometry constants (gap centres, bore radius, 1-J/1-kW reference voltages) are fixed
+  facts of the committed GDF inputs, not tunable operating points — tunables (gun voltage, RF
+  power, frequency, Q) live in `config/*.yaml` and are passed in or read by the stage drivers. The
+  openPMD files it writes use axis order `["r","z"]`, `m=0`, nodal component centering, and V/m & T
+  unit dimensions — a deliberate, reader-validated deviation from WarpX's native RZ diag schema,
+  kept because it matches how the stage drivers load these maps. Its prebuncher z-grid uniformity
+  check exists because the GDF export's per-interval z spacing wobbles (worst case ~1.6% on the
+  prebuncher map); using the mean step (rather than the first interval) avoids a drift of the far
+  end of the 305 mm prebuncher map that otherwise mis-sizes the gap voltage.
+- **`loadparticles.py`** handles beam handoff between stages. Gun's `anode_beam_mask` takes the
+  anode-crossing electron flux as a single crest-time slab (z in the top fraction of the gap,
+  moving forward) rather than an id-tracked transit count, since cathode particle dumps are written
+  far sparser in time than the ~62 ps gap transit — this also excludes the dense near-cathode
+  space-charge pileup and the reflected half of over-injected charge that never exits. Linac 5–8
+  upsamples the converter/positron beam with `upsample_smeared` rather than plain bootstrap
+  resampling: it bootstrap-draws parents with replacement, then jitters each clone's transverse
+  phase space (x, y, px, py by default) by an amount proportional to its distance to its k-th
+  nearest neighbour in standardized phase space (a local, KDE-style bandwidth), so clones decorrelate
+  instead of landing on exact duplicates that would track identically under SC-off deterministic
+  optics. Only the transverse columns are smeared — pz/z/t carry from the parent unchanged — so
+  total energy is only approximately preserved (~0.5%), and a clone of a low-pz or large-angle
+  parent can drop below an upstream KE floor after smearing (any KE cut that must hold exactly needs
+  to be re-imposed downstream of the upsample). This upsampling is safe only with self-fields off,
+  since the synthetic clones would otherwise inject a spurious self-field.
+- **`metrics.py`**'s `screen_profile` treats each macroparticle's pooled `(id, z, quantity)` rows
+  across all volumetric dumps as samples of a single continuous id-trajectory, valid only when
+  motion is forward and monotonic in z; it interpolates each id's trajectory onto fixed z-screens
+  and charge-weights the result, giving a true local-in-z phase-space diagnostic (no z-binning). It
+  backs the gun `energy_gain` and `beam_envelope` figures.
+- **`sim/plot/common.py`**'s `evolution_screens` assumes each `ParticleGroup` weight is real Coulomb
+  charge for its 4th (charge) panel. The 2D cathode-stage diagnostic is a slab (not RZ), so its
+  particle weight is charge-per-unit-out-of-plane-length rather than true Coulombs — the
+  charge-vs-z panel from `evolution_screens`/`evolution_vs_z` is omitted for the cathode stage as
+  not physically meaningful there.
 
 ## Configuration & frozen RF setpoints
 

@@ -2,16 +2,7 @@
 static-figure browser, and an interactive beam-properties explorer over the existing
 openPMD dumps (nothing re-simulated).
 
-Three surfaces in one window:
-  - left  : one card per stage (cathode … linac5-8) with [edit config] [run] [plot]
-            and, for the linac stages, [autophase] — each shells out to the same
-            sim/plot/autophase scripts sim/main.py drives, streaming output to the console.
-  - right : a notebook — "Beam Explorer" (Trends / 1D / 2D over a stage's ⟨z⟩-ordered
-            screens) and "Plots" (the PNGs under logs/plots/<stage>/).
-  - bottom: a console mirroring every subprocess's stdout/stderr.
-
 Run from the repo root in the CBB env:  python sim/gui.py
-See docs/ for the per-stage physics; the stage-local-z / σ_z-vs-σ_t conventions match sim/main.py.
 """
 
 import os
@@ -57,9 +48,7 @@ from pmd_beamphysics import ParticleGroup
 from sim.helpers.loadparticles import make_particle_group
 
 # ── Stages, in chain order ───────────────────────────────────────────────────
-# Dumps store positions [m] and momenta u = γβ. The cathode is 2D (x–z, no y); the
-# rest are RZ. `sim`/`plot`/`autophase` are argv lists passed to the current interpreter;
-# `config` is the YAML edited by [edit config]; `plots` is the figure glob for the Plots tab.
+# Dumps store positions [m] and momenta u = γβ; the cathode is 2D (x–z, no y), the rest RZ.
 STAGES = [
     {"name": "Cathode",          "config": "config/cathode.yaml",   "geom": "2d",
      "diag": "logs/diags/cathode/particles",
@@ -130,9 +119,6 @@ TRENDS = {
 }
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Data layer: lazy per-stage loader with caching (one StageData per diag path).
-# ═════════════════════════════════════════════════════════════════════════════
 class StageData:
     """One stage's openPMD series: cached ParticleGroups and a ⟨z⟩-ordered screen list."""
 
@@ -143,10 +129,10 @@ class StageData:
         self.ts = OpenPMDTimeSeries(self.path)
         self.species = self.ts.avail_species[0] if self.ts.avail_species else "electrons"
         self.iterations = list(self.ts.iterations)
-        self.screens = None          # filled by build_screen_list(); list of (it, mean_z)
-        self._pg_cache = {}          # iteration -> ParticleGroup
-        self._trend_cache = {}       # trend-label -> (z[N], {key: vals[N]})
-        self._range_cache = {}       # var key -> (lo, hi) raw-unit data range over ALL screens
+        self.screens = None
+        self._pg_cache = {}
+        self._trend_cache = {}
+        self._range_cache = {}
 
     def build_screen_list(self, progress=None):
         """Populate `self.screens` = [(iteration, mean_z), …] sorted by ⟨z⟩.
@@ -251,14 +237,11 @@ def has_dumps(diag):
 
 
 class BouncyScroll:
-    """Inertial, rubber-banding vertical scroll for a frame inside a Canvas, with a live
-    scrollbar. Tk has no native overscroll, so we drive the inner frame's y-coordinate
-    ourselves: wheel ticks add velocity, friction decays it, and an edge spring lets the
-    content overshoot the top/bottom and settle back (the macOS rubber-band feel).
-    """
-    FRICTION = 0.80       # per-frame velocity decay
-    SPRING = 0.18         # pull-back fraction once past an edge (gentle bounce)
-    IMPULSE = 14          # px of velocity added per wheel tick
+    """Inertial, rubber-banding vertical scroll for a frame inside a Canvas (Tk has no
+    native overscroll, so this drives the inner frame's y-coordinate by hand)."""
+    FRICTION = 0.80
+    SPRING = 0.18
+    IMPULSE = 14
     VEL_MAX = 70          # cap so rapid trackpad events don't build runaway speed
 
     def __init__(self, canvas, inner, win, scrollbar):
@@ -347,17 +330,14 @@ def postprocess(P, *, kill_zero_weight=False, r_cut=None, z_slice=None):
     return ParticleGroup(data=data)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Subprocess runner: stream a stage script's output to the console (one at a time —
-# pywarpx binds one geometry per interpreter, so stage sims must not overlap).
-# ═════════════════════════════════════════════════════════════════════════════
+# pywarpx binds one geometry per interpreter, so stage sims must not overlap — jobs run one at a time.
 class Runner:
     def __init__(self, console_write, on_state):
         self._write = console_write
         self._on_state = on_state          # called(busy: bool) on the main thread
         self.q = queue.Queue()
         self._proc = None
-        self._pending = []                 # remaining (argv, title) jobs in the sequence
+        self._pending = []
         self._stopped = False
         self.busy = False
 
@@ -430,7 +410,7 @@ class Runner:
                 if kind == "done":
                     self._proc = None
                     if self._pending and not self._stopped:
-                        self._start_next()        # next job in the sequence
+                        self._start_next()
                     else:
                         self.busy = False
                         self._on_state(False)
@@ -442,14 +422,14 @@ class BeamGUI:
     def __init__(self, root):
         self.root = root
         root.title("CESR Injector Linac Simulation (2026)")
-        self.stage_data = {}          # name -> StageData (lazy)
-        self.q = queue.Queue()        # worker-thread → main-thread results (explorer)
+        self.stage_data = {}
+        self.q = queue.Queue()
         self._busy = False
         self._gen = 0                 # monotonic token; a newer _run_async supersedes older
         self._progress_text = ""      # worker-written; reflected to Tk only on the main thread
 
         self.runner = Runner(self._console_write, self._on_run_state)
-        self._run_buttons = []        # toggled while a subprocess is live
+        self._run_buttons = []
 
         self._set_app_icon()
         self._build_widgets()
@@ -461,11 +441,8 @@ class BeamGUI:
 
     # ── chrome: app icon + menu bar ──────────────────────────────────────────
     def _set_app_icon(self):
-        """Draw a small beam-line icon and set it as the window/dock icon.
-
-        Rendered with matplotlib to an in-memory PNG so there's no committed asset; the
-        PhotoImage is kept on `self` so Tk doesn't garbage-collect it.
-        """
+        """Rendered with matplotlib to an in-memory PNG (no committed icon asset); the
+        PhotoImage is kept on `self` so Tk doesn't garbage-collect it."""
         try:
             fig = plt.figure(figsize=(1, 1), dpi=64)
             ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
@@ -525,9 +502,9 @@ class BeamGUI:
         wrap.pack_propagate(False)
         parent.add(wrap, weight=0)
 
-        self.stage_selected = {}          # stage name -> BooleanVar (run-this-stage)
-        self.stage_autophase = {}         # stage name -> BooleanVar (autophase before run)
-        self._stage_dot = {}              # stage name -> readiness Checkbutton (●/○)
+        self.stage_selected = {}
+        self.stage_autophase = {}
+        self._stage_dot = {}
 
         ttk.Label(wrap, text="Pipeline", font=("", 12, "bold")).pack(anchor=tk.W, padx=8, pady=(8, 2))
         bar = ttk.Frame(wrap)
@@ -544,8 +521,6 @@ class BeamGUI:
         ttk.Button(bar2, text="☐ None", width=7,
                    command=lambda: self._select_all(False)).pack(side=tk.LEFT, padx=2)
 
-        # Scrollable, rubber-banding stack of full-width cards. BouncyScroll owns the
-        # canvas/scrollbar/wheel and keeps the inner frame pinned to the canvas width.
         canvas = tk.Canvas(wrap, highlightthickness=0)
         sb = ttk.Scrollbar(wrap, orient=tk.VERTICAL)
         cards = ttk.Frame(canvas)
@@ -572,8 +547,8 @@ class BeamGUI:
         grid = ttk.Frame(card)
         grid.pack(fill=tk.X, padx=4, pady=4)
 
-        # (text, command, is_run_button). Wrap into a 2-column grid so the buttons
-        # always fit the narrow card regardless of how many a stage has.
+        # Wrap into a 2-column grid so the buttons always fit the narrow card regardless
+        # of how many a stage has.
         buttons = [("✎  Edit Config", lambda s=st: self._edit_config(s), False),
                    ("▶  Run", lambda s=st: self.runner.run(s["sim"], f"{s['name']} run"), True),
                    ("📊  Plot", lambda s=st: self.runner.run(s["plot"], f"{s['name']} plot"), True)]
@@ -618,7 +593,6 @@ class BeamGUI:
             ttk.Label(f, text=label, width=14).pack(side=tk.LEFT)
             return f
 
-        # Only stages with openPMD dumps on disk are browsable.
         self.available = [s for s in STAGES if has_dumps(s["diag"])]
         names = [s["name"] for s in self.available] or ["(no data)"]
         default = "Gun" if "Gun" in names else names[-1]   # KE-vs-z phase space on the gun
@@ -637,7 +611,6 @@ class BeamGUI:
 
         ttk.Separator(controls, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
 
-        # Screen selector (1D / 2D modes)
         self.screen_frame = ttk.Frame(controls)
         self.screen_frame.pack(fill=tk.X)
         ttk.Label(self.screen_frame, text="Screen (by ⟨z⟩)").pack(anchor=tk.W)
@@ -812,7 +785,7 @@ class BeamGUI:
 
         self._refresh_plot_list()
         if self.available:
-            self._on_stage_change()   # re-index dumps + replot the current stage
+            self._on_stage_change()
 
     def _select_stage(self, name):
         self.stage_var.set(name)
@@ -876,7 +849,6 @@ class BeamGUI:
         self.runner.run_many(jobs)
 
     # ── config editor ────────────────────────────────────────────────────────
-    # YAML token → (color); a dark VS-Code-ish palette so highlighting reads well.
     _YAML_COLORS = {"comment": "#6a9955", "key": "#9cdcfe", "string": "#ce9178",
                     "number": "#b5cea8", "const": "#569cd6"}
 

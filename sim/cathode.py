@@ -1,16 +1,8 @@
 """
 Finite thermionic cathode emitting through a pulsed grid — WarpX 2D.
 
-Drives lume-warpx from config/cathode.yaml (which holds every constant); this module reads
-those back and overrides the runtime-computed values (flux, thermal velocity, dt, the diagnostic
-periods, and the V(t) grid-pulse boundary). The grid bias is pulsed (LinacSim CESR operating
-point): the anode rides V(t) = V_OFF + V_PULSE·tent(t), and over-injecting at 2× the peak-voltage
-J_CL lets WarpX's self-consistent fields self-limit the transmitted current to J_CL(V(t)) through
-the pulse — so the EMITTED CHARGE is measured (∫J_z over the disc × grid transmission), not imposed.
-See docs/cathode.md for physics, parameters, and gotchas.
-
-main() runs the simulation and writes logs/diags/cathode/injection_summary.json (the measured
-bunch charge the gun renormalizes to); sim/plot/cathode.py produces the figures.
+Reads config/cathode.yaml, overrides the runtime-computed values, runs the sim, and writes
+logs/diags/cathode/injection_summary.json (measured emitted charge) for the gun. See docs/cathode.md.
 """
 
 import os
@@ -50,12 +42,8 @@ def _pulse_string(v_off, v_pulse, v_slope):
 
 
 def _measure_emitted_charge(emit_r, grid_trans):
-    """Integrate the transmitted current density over the pulse to get the physical emitted charge.
-
-    Q = π·emit_r²·∫⟨J_z⟩_midgap(t) dt · grid_trans. J_z [A/m²] is a real local current density even
-    in 2D (the planar diode is locally 1D), so this is the physical disc charge — the naive Σ(weight)
-    is not (2D weights are per-unit-out-of-plane-length). Mid-gap row, not the anode, avoids the
-    ~14% collection-edge inflation seen at the absorbing boundary."""
+    """Integrate transmitted J_z over the pulse for the physical emitted charge; mid-gap row avoids
+    the ~14% collection-edge inflation at the absorbing boundary."""
     files = sorted(glob.glob(os.path.join(DIAG_DIR, "fields", "openpmd_*.h5")),
                    key=lambda f: int(f.split("_")[-1].split(".")[0]))
     times, jbar = [], []

@@ -1,7 +1,7 @@
 """Cornell Linac e+/e- converter target (G4beamline). main(): read the WarpX section-4 exit
-electron beam (the 4->5 boundary) -> resample to the incident-event count + write a BLTrackFile -> generate the
-.g4bl deck -> run g4bl (6.35 mm W target, brems->pair production) -> sample the exit plane -> keep the
-forward positron core -> openPMD handoff OUT (`positrons`, +e) + injection_summary.json.
+electron beam (the 4->5 boundary) -> resample to the incident-event count + write a BLTrackFile ->
+generate the .g4bl deck -> run g4bl -> sample the exit plane -> keep the forward positron core ->
+openPMD handoff OUT (`positrons`, +e) + injection_summary.json.
 
 Run `python sim/converter.py [n_events]` (the optional arg overrides config n_events for a quick
 test). sim/plot/converter.py makes the figures. See docs/converter.md.
@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_THREADS", "1"))
 
 import json
-import math
 import shutil
 import subprocess
 
@@ -37,6 +36,8 @@ def load_config(path=CONFIG):
     with open(path) as fh:
         cfg = yaml.safe_load(fh)
     cfg["physics"]["n_events"] = int(cfg["physics"]["n_events"])
+    if "b_tesla" in cfg.get("solenoid", {}):
+        cfg["solenoid"]["b_tesla"] = float(cfg["solenoid"]["b_tesla"])
     return cfg
 
 
@@ -61,49 +62,33 @@ def load_incident_beam(cfg):
     n_events = cfg["physics"]["n_events"]
     rng = np.random.default_rng(cfg["physics"]["rng_seed"])
 
-    P = read_warpx_dump(diag)                                  # full sec4 exit (last dump), electrons
-    q_incident = float(P["charge"])                            # incident charge denominator
+    P = read_warpx_dump(diag)
+    q_incident = float(P["charge"])
     z_inject_lab = upstream_exit_lab_z(cfg["io"]["sec4_summary"], float(P["mean_z"]))
 
     w = np.asarray(P.weight, dtype=float)
     idx = rng.choice(P.n_particle, size=n_events, replace=True, p=w / w.sum())
-    Pin = P[idx]                                               # bootstrap (each event seeds its own RNG)
+    Pin = P[idx]
 
-    # Place the bunch head `front_clearance_mm` upstream of the target front face (g4bl injects
-    # tracks at their file z; relativistic e- drift straight into the target).
+    # g4bl injects tracks at their file z, so the beam head must be placed upstream by hand.
     g = cfg["geometry"]
     z_start_m = (g["target_front_z_mm"] - g["front_clearance_mm"]) * 1e-3
     Pin.z = Pin.z - float(np.max(Pin.z)) + z_start_m
 
-    w_evt = q_incident / n_events                             # uniform charge per incident event
+    w_evt = q_incident / n_events
     return Pin, q_incident, w_evt, z_inject_lab
 
 
-def coil_current_density(b_tesla, inner_mm, outer_mm, length_mm):
-    """Conductor current density [A/mm^2] giving a central field of `b_tesla` for a uniform thick
-    solenoid (inner/outer radius, length [mm]). Exact thick-solenoid on-axis centre formula
-    B = mu0*J*b*ln[(a2+sqrt(a2^2+b^2))/(a1+sqrt(a1^2+b^2))], b=L/2; matches g4bl's coil to <1e-5."""
-    mu0 = 4e-7 * math.pi
-    a1, a2, b = inner_mm * 1e-3, outer_mm * 1e-3, length_mm * 1e-3 / 2.0
-    fac = mu0 * b * math.log((a2 + math.hypot(a2, b)) / (a1 + math.hypot(a1, b)))
-    return b_tesla / fac / 1e6                                # A/m^2 -> A/mm^2
-
-
 def _solenoid_deck(cfg, front):
-    """The capture-solenoid lines (a real `coil` + `solenoid`, so g4bl computes the Maxwellian field
-    with end fringe) for the deck, or '' when disabled. Coil spans `start_z_mm`..+`length_mm` rel. to
-    the target front; current density is auto-solved so the central field equals `b_tesla`."""
+    """Capture-solenoid deck lines, or '' when disabled. Map origin is the target BACK face;
+    `current` = on-axis peak field [T] (map data normalized to peak 1)."""
     sol = cfg.get("solenoid", {})
     if not sol.get("enabled", False):
         return ""
-    L = sol["length_mm"]
-    center = front + sol["start_z_mm"] + L / 2.0
-    j = coil_current_density(sol["b_tesla"], sol["inner_radius_mm"], sol["outer_radius_mm"], L)
+    back = front + cfg["geometry"]["target_length_mm"]
     return (
-        f"coil Capture innerRadius={sol['inner_radius_mm']:g} outerRadius={sol['outer_radius_mm']:g} "
-        f"length={L:g} material=Cu\n"
-        f"solenoid CaptureSol coilName=Capture current={j:.6g}\n"
-        f"place CaptureSol z={center:g}\n")
+        f"fieldmap ConvSol filename={os.path.abspath(sol['map'])}\n"
+        f"place ConvSol z={back:g} current={sol['b_tesla']:g}\n")
 
 
 def write_g4bl_deck(cfg, path, beam_in, out_file):
@@ -113,11 +98,14 @@ def write_g4bl_deck(cfg, path, beam_in, out_file):
     front, L = g["target_front_z_mm"], g["target_length_mm"]
     center = front + L / 2.0
     sol = cfg.get("solenoid", {})
-    # Sample plane: when the capture coil is on, drift `exit_drift_mm` past its exit so the handoff is
-    # field-free (the exit fringe has died -> the fringe focusing kick is fully applied). Else sample
-    # `back_clearance_mm` past the target back face.
+    # Sample plane must clear the solenoid map end so the handoff is field-free with the fringe
+    # focusing fully applied; else sample `back_clearance_mm` past the back face.
     if sol.get("enabled", False):
-        sample_z = front + sol["start_z_mm"] + sol["length_mm"] + sol["exit_drift_mm"]
+        if sol["exit_drift_mm"] <= sol["map_span_mm"][1]:
+            raise ValueError(
+                f"solenoid.exit_drift_mm={sol['exit_drift_mm']} places the sampling plane inside "
+                f"the capture field (map extends to {sol['map_span_mm'][1]} mm past the back face)")
+        sample_z = front + L + sol["exit_drift_mm"]
     else:
         sample_z = front + L + det["back_clearance_mm"]
     deck = (
@@ -169,7 +157,7 @@ def _lepton_cuts(df, cfg):
 def main():
     prepare_env()
     cfg = load_config()
-    if len(sys.argv) > 1:                                     # quick-test override: python ... N
+    if len(sys.argv) > 1:
         cfg["physics"]["n_events"] = int(sys.argv[1])
 
     outdir, workdir = cfg["io"]["outdir"], cfg["io"]["workdir"]
@@ -232,7 +220,7 @@ def main():
     _sol = cfg.get("solenoid", {})
     sol_on = bool(_sol.get("enabled", False))
     inj = dict(
-        q_injected_C=q_incident,                             # denominator (full sec4 exit e-)
+        q_injected_C=q_incident,
         q_incident_C=q_incident, n_events=n_events,
         z_inject_lab_m=float(z_inject_lab + sample_z_mm * 1e-3),
         z_inject_mean_m=0.0,
@@ -244,13 +232,10 @@ def main():
         max_step_mm=cfg["physics"]["max_step_mm"],
         min_ke_mev_cut=cfg["detector"]["min_ke_mev"],
         forward_only=bool(cfg["detector"].get("forward_only", True)),
-        # Capture coil (the focusing optic; peak field, length, auto-solved current density)
         capture_solenoid_on=sol_on,
         capture_solenoid_b_tesla=float(_sol.get("b_tesla", 0.0)) if sol_on else 0.0,
-        capture_solenoid_length_mm=float(_sol.get("length_mm", 0.0)) if sol_on else 0.0,
-        capture_solenoid_current_a_per_mm2=(
-            coil_current_density(_sol["b_tesla"], _sol["inner_radius_mm"],
-                                 _sol["outer_radius_mm"], _sol["length_mm"]) if sol_on else 0.0),
+        capture_solenoid_map=str(_sol.get("map", "")) if sol_on else "",
+        capture_solenoid_map_span_mm=(list(_sol.get("map_span_mm", [])) if sol_on else []),
         # Yields (per incident electron)
         yield_positron=yield_pos, yield_positron_raw=yield_pos_raw,
         yield_electron=len(df_ele) / n_events, yield_gamma=n_gamma / n_events,

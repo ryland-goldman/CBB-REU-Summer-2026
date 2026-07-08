@@ -58,7 +58,10 @@ encode the steady-state population *in transit through the diode*, not a bunch c
 imports that phase space and reshapes it (`load_cathode_bunch`):
 
 1. **Import** the emitted phase-space distribution (positions + momenta) from the last cathode
-   snapshot at `logs/diags/cathode/particles`.
+   snapshot at `logs/diags/cathode/particles`, restricted (`gap_d`/`anode_frac`) to the
+   forward-moving beam crossing the anode plane — the delivered flux only. This deliberately
+   drops the near-cathode charge pileup and any reflected/over-injected population, which would
+   otherwise inflate the seeded charge.
 2. **2D-slab → RZ remap.** The cathode is a 2D Cartesian (x, z) slab; treat `|x|` as the radius
    `r` and smear the particles uniformly in azimuth (`x = r cosθ, y = r sinθ`), rotating the
    transverse momentum accordingly (radial component `ux·sign(x)`, azimuthal `uy`). The
@@ -68,7 +71,9 @@ imports that phase space and reshapes it (`load_cathode_bunch`):
    with probability ∝ `r·w`), so `dN/dr → r·dN/dr` and `n(r)` matches the cathode's true radial
    profile (a flat-top emitting strip → a uniform-density disc), keeping macroparticle weights
    uniform. Because the draw is with replacement, the effective independent sample count is
-   below the drawn count (relevant if `MAX_PART` is set small).
+   below the drawn count (relevant if `MAX_PART` is set small); each resampled copy still draws
+   its own independent azimuthal angle `θ`, so duplicate copies from the resampling spread around
+   the ring rather than overlapping at the same azimuthal position.
 3. **Renormalize** the total weight to a physical gun bunch charge `BUNCH_CHARGE` (1 nC). The
    CESR gun is grid-pulse gated; injecting the full DC-transit charge as one instantaneous
    bunch is unphysical — its radial space-charge field dwarfs the gun field and blows the beam

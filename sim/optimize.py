@@ -1,20 +1,8 @@
 """
-Multi-objective optimization of the Cornell linac chain with Xopt/CNSGA.
-
-Reads config/xopt.yaml (VOCS + CNSGA + executor), then for each population member: builds a unique
-LINACSIM_OUT_DIR sandbox (isolation plan), seeds the frozen upstream dump (every stage upstream of
-the earliest varied one -- the freeze boundary),
-writes the variables into the sandbox config COPY (NEVER the canonical config/ -- phase variables
-go to the crest_offset_deg / PHASE_OFFSET_DEG knobs autophase never rewrites, NOT crest_phase_deg/
-PHASE_DEG), runs the chain as a subprocess, and reads the objectives/constraints from the (extended)
-linac5-8 injection_summary.json. CNSGA returns the charge<->emittance Pareto front. See
-docs/optimization-plan.md and docs/per-eval-isolation-plan.md.
+Multi-objective (charge vs. emittance) CNSGA optimization of the linac chain via Xopt, one
+LINACSIM_OUT_DIR sandbox per population member. See docs/optimization-plan.md.
 
   python sim/optimize.py            # run the optimization (config/xopt.yaml)
-
-Objectives: maximize q_out_C, minimize eps_n=sqrt(eps_n_x*eps_n_y). Constraints: ke_out_mev,
-sigma_E_rel, sigma_x_mm, transmission_core. A failed/empty-beam eval returns NaN objectives (CNSGA's
-discard mechanism), so a diverged member never kills the worker.
 """
 
 import hashlib
@@ -36,15 +24,11 @@ from sim.helpers.sandbox import make_out_dir
 
 XOPT_CONFIG = os.path.join(REPO_ROOT, "config/xopt.yaml")
 
-# Objective + constraint output names (the keys Xopt reads from each eval). Failure => all NaN.
 OUTPUT_KEYS = ("q_out_C", "eps_n", "ke_out_mev", "sigma_E_rel", "sigma_x_mm", "transmission_core")
 
-# Variable -> sandbox-config target. Each entry is (relative yaml path, addressing). Addressing is
-# ("block", key) for a top-level-ish scalar `key: value` (keys are unique within the file), or
-# ("section", index, key) for a key inside linac5-8.yaml's i-th inline-flow `- {...}` section dict.
-# Phase variables map to the OFFSET keys (crest_offset_deg / PHASE_OFFSET_DEG) -- autophase owns the
-# crest itself and would overwrite it. field_scale/quad/solenoid are amplitude knobs autophase never
-# touches. PHASE_OFFSET_DEG is absent from the canonical linac1.yaml and is inserted under `params:`.
+# addressing: ("block", key[, parent]) for a top-level scalar, ("section", idx, key) for the
+# idx-th inline-flow section dict in linac5-8.yaml. Phase variables target crest_offset_deg /
+# PHASE_OFFSET_DEG, never crest_phase_deg / PHASE_DEG -- autophase owns and overwrites the latter.
 OVERRIDES = {
     "l5_field_scale_0":   ("config/linac5-8.yaml", ("section", 0, "field_scale")),
     "l5_field_scale_1":   ("config/linac5-8.yaml", ("section", 1, "field_scale")),
@@ -71,10 +55,7 @@ OVERRIDES = {
     "inj_preb2_phi":      ("config/injector.yaml", ("block", "PREB2_PHI_OFF")),
 }
 
-# Pipeline stage order (mirrors sim/main.py STAGES) and which stage each OVERRIDES config feeds.
-# Every stage UPSTREAM of the earliest varied one is parameter-independent across the whole
-# population: it runs ONCE and each eval symlinks its frozen dump instead of recomputing it. The
-# scope=full VOCS varies injector onward, so cathode+gun (~16 min/eval) are frozen.
+# Mirrors sim/main.py STAGES.
 STAGE_ORDER = ["cathode", "gun", "injector", "linac1", "linac2", "linac3", "linac4",
                "converter", "linac5-8"]
 CONFIG_STAGE = {
@@ -82,9 +63,8 @@ CONFIG_STAGE = {
     "config/injector.yaml": "injector", "config/linac1.yaml": "linac1",
     "config/converter.yaml": "converter", "config/linac5-8.yaml": "linac5-8",
 }
-# Boundary `--from` stage -> (frozen-upstream dump symlinked into each sandbox, the `--to` stage of
-# the one-time prefix prerun that produces it). Keyed by every stage that reads a previous stage's
-# openPMD dump; a boundary not listed (cathode/gun) means nothing upstream is frozen.
+# from_stage -> (frozen dump path to symlink, prefreeze's --to stage). A stage absent here
+# (cathode/gun) has nothing upstream frozen.
 FREEZE_SEED = {
     "injector":  ("logs/diags/gun",           "gun"),
     "linac1":    ("logs/diags/injector",      "injector"),
@@ -177,7 +157,7 @@ def _set_section_key(text, idx, key, value):
         if re.search(rf"\b{re.escape(key)}:", line):
             lines[li] = re.sub(rf"({re.escape(key)}:\s*)(\S+?)(\s*[}},])",
                                lambda m: m.group(1) + value + m.group(3), line, count=1)
-        else:                                       # insert before the closing brace
+        else:
             lines[li] = re.sub(r"\}", f", {key}: {value}}}", line, count=1)
         return "".join(lines)
     raise KeyError(f"section index {idx} not found")
@@ -228,10 +208,7 @@ def seed_upstream(out_dir, from_stage):
 
 # ── Run the chain + read objectives ─────────────────────────────────────────────────
 def run_chain(out_dir, from_stage, timeout_s):
-    """Run the (partial) chain as a subprocess with LINACSIM_OUT_DIR=out_dir. `--from <boundary>`
-    starts at the earliest varied stage off the seeded frozen dump (full -> injector, downstream ->
-    converter); `--no-plots` drops the figures the optimizer never reads. cwd=out_dir mirrors how
-    sim/main.py launches its own stages; the script path is absolutized against REPO_ROOT."""
+    """Run the (partial) chain as a subprocess with LINACSIM_OUT_DIR=out_dir."""
     argv = [sys.executable, os.path.join(REPO_ROOT, "sim/main.py"), "--no-plots"]
     if from_stage is not None:
         argv += ["--from", from_stage]
@@ -240,9 +217,8 @@ def run_chain(out_dir, from_stage, timeout_s):
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("OMP_NUM_THREADS", "1")
     # start_new_session=True makes main.py its own process-group leader; on timeout kill the WHOLE
-    # group. subprocess.run(timeout=) would SIGKILL only main.py and ORPHAN its WarpX/g4bl
-    # grandchildren (reparented to init), which keep burning the node's cores long after the eval is
-    # abandoned -- the failure mode that collapsed the first 128-worker run.
+    # group -- subprocess.run(timeout=) would SIGKILL only main.py and ORPHAN its WarpX/g4bl
+    # grandchildren (reparented to init), which keep burning the node's cores indefinitely.
     proc = subprocess.Popen(argv, cwd=out_dir, env=env, start_new_session=True)
     try:
         rc = proc.wait(timeout=timeout_s)
@@ -309,12 +285,9 @@ def evaluate(inputs):
 
 # ── Xopt wiring ─────────────────────────────────────────────────────────────────────
 def make_executor(evcfg):
-    """Build the Xopt Evaluator executor. `process` (DEFAULT, local) is a ProcessPoolExecutor sized
-    to max_workers (else nproc-2 on the 16-core interactive node). `dask-sge` targets the CLASSE
-    cluster -- it runs SGE/qsub (NOT HTCondor, NOT SLURM), so the cluster path is
-    dask_jobqueue.SGECluster (the import is deferred into this branch so the process path needs no
-    dask-jobqueue). SGECluster typically needs a site `queue`/`resource_spec`; pass them via the
-    evaluator config when wiring the real CLASSE submit (cores=1 is one chain per slot)."""
+    """Build the Xopt Evaluator executor: `process` (local ProcessPoolExecutor) or `dask-sge`
+    (CLASSE's SGE/qsub cluster, NOT HTCondor/SLURM). The dask_jobqueue import is deferred into the
+    dask-sge branch so the process path needs no dask-jobqueue dependency."""
     from concurrent.futures import ProcessPoolExecutor
     kind = evcfg.get("executor", "process")
     if kind == "process":
@@ -352,9 +325,8 @@ def make_executor(evcfg):
 
 
 def save_pareto(X, outdir):
-    """Checkpoint the full data + the non-dominated FEASIBLE Pareto front to outdir. The front is
-    computed over ALL configured objectives (q_out_C, eps_n, and any demoted beam-quality objectives),
-    each normalised to a minimise sense via its MAXIMIZE/MINIMIZE direction, so it stays correct as the
+    """Checkpoint the full data + the non-dominated feasible Pareto front to outdir, normalizing each
+    objective to a minimize sense via its MAXIMIZE/MINIMIZE direction so it stays correct as the
     objective set changes."""
     os.makedirs(outdir, exist_ok=True)
     if X.data is None or len(X.data) == 0:
@@ -383,12 +355,9 @@ def save_pareto(X, outdir):
 
 
 def prebuild_fieldmaps():
-    """Build the shared WarpX field maps ONCE before launching the population. The maps are
-    parameter-independent for the optimized variables (gun voltage is not optimized), so every
-    sandbox reads them via its fieldmaps symlink; the per-output skip-guard makes a re-run a no-op.
-    Without this, the first concurrent wave of evals would race building the shared fieldmaps/h5.
-    Only the upstream WarpX stages (gun/injector/linac1-4) build maps, so this is a no-op need for
-    scope=downstream (converter is g4bl, linac5-8 reads the committed rfdata template)."""
+    """Build the shared WarpX field maps ONCE before launching the population -- without this the
+    first concurrent wave of evals would race building the shared fieldmaps/h5. The per-output
+    skip-guard makes a re-run a no-op."""
     from sim.helpers.buildfields import (
         build_gun_field, build_injector_fields, build_linac_slac_fields)
     os.chdir(REPO_ROOT)                              # maps write to the shared REPO_ROOT/fieldmaps/h5
@@ -400,11 +369,9 @@ def prebuild_fieldmaps():
 
 def prefreeze_upstream(from_stage):
     """Run the frozen prefix (cathode..the stage before `from_stage`) ONCE at REPO_ROOT so every eval
-    symlinks its dump instead of recomputing a parameter-independent prefix (scope=full freezes
-    cathode+gun, ~16 min/eval). Idempotent: a no-op once a COMPLETED prefix exists (resume / prior
-    run). Gated on a `.prefreeze_complete` sentinel written only after the prerun returns 0 -- a dir
-    alone is NOT a completion marker: a prerun killed mid-write (OOM / walltime / Ctrl-C) leaves a
-    partial dump that every eval would then silently symlink as the frozen upstream beam."""
+    symlinks its dump instead of recomputing it. Gated on a `.prefreeze_complete` sentinel written
+    only after the prerun returns 0 -- a dir alone is NOT a completion marker: a prerun killed
+    mid-write (OOM / walltime / Ctrl-C) leaves a partial dump every eval would silently symlink."""
     if from_stage is None:
         return
     rel, to_stage = FREEZE_SEED[from_stage]

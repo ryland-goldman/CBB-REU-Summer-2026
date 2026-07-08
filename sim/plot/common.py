@@ -35,12 +35,11 @@ _E_UNIT_PER_EV = {"eV": 1.0, "keV": 1e3, "MeV": 1e6}   # divide eV by this to ge
 def energy_spectrum(pg, n_bins=80, use_ke=True, e_unit="keV"):
     """Charge-weighted histogram of (kinetic) energy -- the beam's energy spread.
 
-    `e_unit` ("eV"/"keV"/"MeV") scales the energy axis: keV suits the source/injector chain,
-    MeV the relativistic linac exit (~300 MeV).
+    `e_unit` ("eV"/"keV"/"MeV") scales the energy axis.
     """
     key = "kinetic_energy" if use_ke else "energy"
     div = _E_UNIT_PER_EV[e_unit]
-    e = pg[key] / div                                   # eV -> e_unit
+    e = pg[key] / div
     w = pg["weight"] * 1e12                             # C -> pC
     mean, std = np.average(e, weights=pg["weight"]), _wstd(e, pg["weight"])
 
@@ -95,7 +94,6 @@ def energy_chirp(pg, n_slice=60):
 def pool_trajectories(ts, iters, species="electrons", with_y=True):
     """Concatenate (id, z, x, y, ux, uy, uz, ke, w) over every dump for virtual screens.
 
-    The pooled id-trajectories feed `evolution_screens` (the fixed-z virtual-screen engine).
     `with_y=False` for a 2D (x, z) slab that has no y coordinate (y is then filled with zeros).
     """
     keys = ["id", "z", "x"] + (["y"] if with_y else []) + ["ux", "uy", "uz", "w"]
@@ -115,9 +113,8 @@ def pool_trajectories(ts, iters, species="electrons", with_y=True):
 def evolution_screens(pool, n_screen=80):
     """(z [m], <KE> [keV], eps_n,x [mm.mrad], sigma_x [mm], charge [pC]) on fixed-z screens.
 
-    The charge crossing each screen is the summed real-particle weight (-> pC); it falls where
-    particles are lost (scraped / leave the domain). Only physical for the RZ stages -- the 2D
-    cathode slab weight is per-unit-out-of-plane-length, not Coulombs, so skip its charge panel.
+    Charge is only physical for the RZ stages -- the 2D cathode slab weight is per-unit-length,
+    not Coulombs, so skip its charge panel there.
     """
     screens, prof = screen_profile(
         pool["id"], pool["z"], pool["w"],
@@ -133,8 +130,7 @@ def evolution_vs_z(z_m, ke, emit, sigma, charge_pc=None, ke_unit="keV", title=""
     """Beam evolution along z: mean KE, normalized emittance eps_n,x, RMS spot size, and -- when
     `charge_pc` is given -- the charge [pC] crossing each screen (a 4th panel showing loss vs z).
 
-    Arrays are aligned on z_m [m]; the WarpX stages feed `evolution_screens` output and linac5-8
-    feeds the summary's stat_vs_z table. `notes` is an optional {panel: str} (panel in
+    Arrays are aligned on z_m [m]. `notes` is an optional {panel: str} (panel in
     {"ke","emit","sigma","charge"}) for per-panel caveats.
     """
     notes = notes or {}
@@ -172,8 +168,7 @@ def transverse_rpr(x, y, ux, uy, w=None, title="Transverse phase space  (r, p_r)
                    p_unit="keV"):
     """Transverse r-p_r phase space: r = hypot(x, y) [mm], p_r = (x.ux + y.uy)/r . MC2 [p_unit/c].
 
-    `p_unit` ("keV"/"MeV") scales the momentum axis: keV/c suits the source/injector chain,
-    MeV/c the relativistic linac exit.
+    `p_unit` ("keV"/"MeV") scales the momentum axis.
     """
     x, y, ux, uy = (np.asarray(a, float) for a in (x, y, ux, uy))
     r = np.hypot(x, y)

@@ -1,10 +1,5 @@
 """G4beamline <-> openPMD/ParticleGroup adapters for the converter stage: BLTrackFile ASCII IO
 (via pandas) and conversion to/from `pmd_beamphysics.ParticleGroup`. See docs/converter.md.
-
-Conventions: BLTrackFile is mm / MeV/c / ns with a PDGid column (e-=11, e+=-11, gamma=22);
-ParticleGroup momentum px/py/pz is eV/c (= gamma*beta*MC2_EV), positions m, time s, weight the
-per-macroparticle CHARGE magnitude [C]. The original BLTrackFile (not BLTrackFile2/ROOT) is used so
-EventID -- the incident-electron identity the yield bookkeeping keys on -- is exact.
 """
 
 import numpy as np
@@ -19,9 +14,9 @@ PDG_ELECTRON = 11
 PDG_POSITRON = -11
 PDG_GAMMA = 22
 
-_MEV_PER_EV = 1e-6        # eV/c -> MeV/c
-_MM_PER_M = 1e3           # m -> mm
-_NS_PER_S = 1e9           # s -> ns
+_MEV_PER_EV = 1e-6
+_MM_PER_M = 1e3
+_NS_PER_S = 1e9
 _M_E_MEV = MC2_EV * _MEV_PER_EV   # electron/positron rest mass [MeV/c^2]
 
 

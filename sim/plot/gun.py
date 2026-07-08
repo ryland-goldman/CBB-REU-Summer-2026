@@ -1,11 +1,6 @@
 """
 Figures for the WarpX RZ CESR-gun simulation over logs/diags/gun/. Writes PNGs to
-logs/plots/gun/.
-
-Figures: phase_space_z_KE, energy_spectrum, transverse_r_pr, evolution_vs_z (mean KE / eps_n,x /
-sigma_x along the gun via fixed-z virtual screens), plus the stage-specific rich figures (on-axis
-applied field gun_field, r–z transport beam_rz, and the beam self-field space_charge). See
-docs/gun.md for the physics each figure shows.
+logs/plots/gun/. See docs/gun.md for the physics each figure shows.
 
 main() runs ONLY the plotting; sim/gun.py runs the simulation.
 """
@@ -138,7 +133,6 @@ def main():
     w = WarpX(input_file=CONFIG, path="logs/diags/gun")
     it = _last_populated(PARTICLES)
 
-    # Generic phase-space / spectrum figures (lume-warpx helpers + shared plot common).
     w.load_output(diag_dir=PARTICLES)
     pg = w._particle_group(iteration=it)
     for name, fig in [
@@ -147,7 +141,6 @@ def main():
     ]:
         _save(fig, name)
 
-    # Stage-specific rich figures (raw openPMD: applied field, transport, evolution, self-field).
     ts = OpenPMDTimeSeries(PARTICLES)
     live_iters, populated_iters, zmean_by_it = [], [], {}
     for itr in ts.iterations:

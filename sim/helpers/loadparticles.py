@@ -1,10 +1,6 @@
-"""Particle handoff IO shared across stages: read/write openPMD beams, build
-`pmd_beamphysics.ParticleGroup`s, weighted downsampling, kinematics, the captured-core
-cut between linac sections, the injector->linac iris scrape, and the Impact-T adapters.
-
-Conventions: ux/uy/uz are dimensionless gamma*beta; ParticleGroup momentum px/py/pz is
-eV/c (= gamma*beta*MC2_EV); `weight` is per-macroparticle CHARGE [C] (= count*q_e).
-Stage-specific phase-space remaps (cathode 2D->RZ, gun->injector) live in their stage drivers.
+"""Particle handoff IO shared across stages: read/write openPMD beams, build ParticleGroups,
+downsampling/resampling, kinematics, the captured-core cut, the iris scrape, and the Impact-T
+adapters. ux/uy/uz are gamma*beta; ParticleGroup px/py/pz are eV/c; weight is charge [C].
 """
 
 import json
@@ -29,20 +25,14 @@ def open_particle_series(diag, stage_hint=None):
 
 
 def anode_beam_mask(z, uz, gap_d, frac):
-    """Forward-moving electrons in the top `frac` of the cathode gap -- the beam crossing the anode
-    plane (the delivered flux). Excludes the dense near-cathode space-charge pileup and the reflected
-    half of the over-injection that never exits. The cathode particle dumps are far sparser in time
-    than a gap transit (~62 ps), so transits cannot be tracked as id-trajectory z-screens; the anode
-    flux is taken as this crest-snapshot slab instead."""
+    """Forward-moving electrons in the top `frac` of the cathode gap: a crest-snapshot proxy for the
+    anode flux, since dumps are far sparser than a gap transit (~62 ps) to id-track directly."""
     return (np.asarray(z) >= gap_d * (1.0 - frac)) & (np.asarray(uz) > 0.0)
 
 
 def make_particle_group(x, y, z, ux, uy, uz, w):
-    """ParticleGroup from RZ phase space: ux/uy/uz = gamma*beta, w = macroparticle count.
-
-    Momentum px/py/pz = gamma*beta*MC2_EV [eV/c]; weight = count*q_e [C]; species "electron"
-    (SINGULAR -- ParticleGroup's spelling; openPMD readers key the PLURAL "electrons").
-    """
+    # species "electron" is SINGULAR (ParticleGroup's spelling); openPMD readers key PLURAL "electrons".
+    """ParticleGroup from RZ phase space: ux/uy/uz = gamma*beta, w = macroparticle count."""
     from pmd_beamphysics import ParticleGroup
     n = x.size
     return ParticleGroup(data=dict(
@@ -64,17 +54,11 @@ def downsample(arrays, w, max_part, rng):
 
 
 def resample(arrays, w, n_target, rng):
-    """Resample to EXACTLY `n_target` macroparticles, conserving total charge.
+    """Resample to EXACTLY `n_target` macroparticles (down w/o replacement, up w/ replacement),
+    reweighting to conserve total charge exactly.
 
-    Downsamples without replacement when n > n_target; UPsamples WITH replacement when
-    n < n_target (bootstrap — useful to refill a depleted beam to a fixed macroparticle
-    count). Reweights the picks so sum(w) is preserved exactly (not just in expectation).
-    No-op if `n_target` is falsy or already equal. Returns (tuple of arrays, w).
-
-    Upsampling adds COINCIDENT duplicate macroparticles (no new phase-space information); it
-    does NOT increase resolution. Safe only ahead of a stage that decorrelates them (the
-    converter's stochastic showers) or with self-fields off — do not upsample into an SC-ON
-    stage (cathode/gun/linac section 1), where duplicates would inject a spurious self-field.
+    Upsampling makes coincident duplicates: do not use it ahead of an SC-ON stage (cathode/gun/
+    linac section 1) -- the duplicates would inject a spurious self-field.
     """
     n = w.size
     if not n_target or n == n_target:
@@ -86,23 +70,12 @@ def resample(arrays, w, n_target, rng):
 
 def upsample_smeared(P, n_target, rng_seed=0, k_neighbors=8, smear=0.2,
                      smear_cols=("x", "y", "px", "py")):
-    """Upsample a `ParticleGroup` to `n_target` macroparticles by KDE-style local smearing.
+    """Upsample a `ParticleGroup` to `n_target` macroparticles by KDE-style local smearing of
+    `smear_cols` (pz/z/t carried unchanged from the parent). No-op if `n_target` <= current count.
 
-    Bootstrap-draws parents WITH replacement, then jitters each clone by `smear` x its distance
-    to the `k_neighbors`-th nearest neighbour in std-whitened phase space, so the clones
-    decorrelate and sample the LOCAL density. This is what `resample()` (plain bootstrap) cannot
-    do: its coincident duplicates track identically under SC-off deterministic optics and add no
-    statistics. Only `smear_cols` are jittered -- the default is the TRANSVERSE phase space
-    (x, y, px, py), which governs aperture survival; pz/z/t are carried from the parent unchanged.
-    Energy is thus APPROXIMATELY preserved (~0.5%) -- not exact, since total energy still depends on
-    the smeared px/py -- so a clone of a low-pz / large-angle parent kept only by its transverse
-    momentum CAN drop below an upstream KE floor; re-impose the cut downstream if it must hold.
-    Total charge is preserved (uniform weight =
-    q/n_target). Emittance inflation grows ~ smear^2, kept small by the per-particle (local)
-    bandwidth -- dense regions get a small jitter, sparse halo a large one. No-op (returns P) if
-    `n_target` is falsy or <= the current count. Returns a NEW group.
-
-    SC-OFF ONLY: with self-fields on the synthetic clones would inject a spurious self-field.
+    SC-OFF ONLY -- with self-fields on, the synthetic clones would inject a spurious self-field.
+    Smearing only the transverse cols leaves energy approximate (~0.5%), so a clone can drop below
+    an upstream KE floor -- re-impose the cut downstream if it must hold exactly.
     """
     from pmd_beamphysics import ParticleGroup
     from scipy.spatial import cKDTree
@@ -111,16 +84,16 @@ def upsample_smeared(P, n_target, rng_seed=0, k_neighbors=8, smear=0.2,
         return P
     cols = ("x", "y", "z", "px", "py", "pz", "t")
     d = {c: np.asarray(getattr(P, c), dtype=float) for c in cols}
-    feat = [c for c in smear_cols if d[c].std() > 0]           # smear only the requested live axes
+    feat = [c for c in smear_cols if d[c].std() > 0]
     F = np.column_stack([d[c] for c in feat])
     mu, sd = F.mean(0), F.std(0)
-    W = (F - mu) / sd                                           # per-axis std whitening
+    W = (F - mu) / sd
     dist, _ = cKDTree(W).query(W, k=min(k_neighbors + 1, n))
-    h = dist[:, -1]                                             # whitened distance to the k-th neighbour
+    h = dist[:, -1]
     rng = np.random.default_rng(rng_seed)
     par = rng.choice(n, n_target, replace=True)
     Fnew = (W[par] + smear * h[par][:, None] * rng.standard_normal((n_target, W.shape[1]))) * sd + mu
-    out = {c: d[c][par].copy() for c in cols}                   # parents carry pz/z/t unchanged
+    out = {c: d[c][par].copy() for c in cols}
     for j, c in enumerate(feat):
         out[c] = Fnew[:, j]
     q = float(P.charge)
@@ -140,22 +113,14 @@ def beam_kinematics(ux, uy, uz, w):
 
 def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=None,
                           core_ke_frac=0.5, resample_n=0):
-    """Import an upstream WarpX section's EXIT beam (last well-populated dump) for the next
-    linac section. Used by linac sections 2, 3 and 4 (no iris scrape -- that is the one-time
-    injector->linac event at the section-1 entrance).
-
-    Picks the last dump with >= `min_count` macroparticles (the captured beam coasting in the
-    field-free exit drift, not a depleted boundary dump), keeps only the captured core
-    (KE >= `core_ke_frac` * median KE), resizes the macroparticle count (reweighted), and shifts
-    its tail to `z_inject`. `resample_n` > 0 forces EXACTLY that count (up- or down-sample, see
-    `resample`); otherwise the core is downsampled to `max_part`. The core cut is essential: the
-    section-exit dump trails a sparse slipping low-energy
-    tail that lags the relativistic core by ~metres, not in the RF bucket -- genuinely lost
-    between sections (same physics as the linac5-8 MIN_KE_MEV cut).
+    """Import an upstream WarpX section's exit beam (last dump with >= `min_count` macroparticles,
+    i.e. the captured beam coasting in the field-free drift, not a depleted boundary dump) for the
+    next linac section: keep the captured core (KE >= `core_ke_frac` * median KE -- the slipping
+    low-energy tail lags the core by ~metres and is genuinely lost between sections), resize the
+    macroparticle count, and shift the tail to `z_inject`.
 
     Returns (bunch dict [gamma*beta momenta], v_beam [m/s], core <KE> [keV], info dict).
-    info["exit_zmean_local_m"] is the read dump's <z> in the UPSTREAM local frame (for lab-z
-    chaining via upstream_exit_lab_z); info["q_injected_C"] is the FULL exit charge.
+    info["exit_zmean_local_m"] is in the UPSTREAM local frame; info["q_injected_C"] is the full exit charge.
     """
     ts = open_particle_series(diag, label)
     mc = min_count if min_count is not None else max(50, max_part // 50)
@@ -170,7 +135,7 @@ def load_warpx_exit_bunch(diag, label, max_part, rng_seed, z_inject, min_count=N
 
     x, y, z, ux, uy, uz, w = ts.get_particle(
         ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it_exit)
-    q_in = float(w.sum()) * Q_E                          # FULL exit charge (honest denominator)
+    q_in = float(w.sum()) * Q_E
     exit_zmean_local = float(np.average(z, weights=w))   # UPSTREAM local frame (lab-z chain)
 
     gb = np.sqrt(1.0 + ux ** 2 + uy ** 2 + uz ** 2)
@@ -267,12 +232,10 @@ def read_warpx_dump(particles_dir, iteration=None, species="electrons"):
 
 def write_openpmd_particles(pg, out_dir, iteration=0, time=0.0,
                             species="electrons", charge=-Q_E, mass=M_E):
-    """Write a `ParticleGroup` to `out_dir` as a WarpX-style openPMD dump (handoff-OUT for
-    linac5-8). Hand-rolled (not ParticleGroup.write, which emits openPMD 2.0 with a STRING
-    extension openpmd-viewer rejects): replicate WarpX's byte-layout (openPMD 1.1.0, integer
-    ED-PIC ext). `species` is the openPMD group key (PLURAL); `species`/`charge`/`mass` default to
-    electrons, the converter passes positrons (`charge=+Q_E`). Records position [m], momentum
-    [kg*m/s], weighting [count], charge, mass, id. Returns the written file path.
+    """Write a `ParticleGroup` to `out_dir` as a WarpX-style openPMD dump. Hand-rolled, not
+    `ParticleGroup.write` -- that emits openPMD 2.0 with a STRING extension openpmd-viewer
+    rejects. `species` is the openPMD group key (PLURAL); the converter passes positrons
+    (`charge=+Q_E`). Returns the written file path.
     """
     import openpmd_api as io
     os.makedirs(out_dir, exist_ok=True)

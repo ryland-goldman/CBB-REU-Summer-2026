@@ -1,16 +1,7 @@
 """GDF -> openPMD field-map builders for every stage that loads an applied field.
 
-Consolidates the old pipeline/fieldio.py primitives and the four per-stage
-build_*_field.py scripts. Reads GPT .gdf maps from fieldmaps/gdf/ and writes openPMD
-thetaMode (RZ, m=0) .h5 maps to fieldmaps/h5/. The SLAC traveling-wave maps are built
-once and shared by linac sections 1-4.
-
-Map-geometry constants (gap centres, bore, 1-J/1-kW voltages) live here as facts of the
-fixed GDF inputs; tunable operating-point values (gun voltage, RF power, frequency, Q) live
-in the config YAMLs and are passed in or read by the stage drivers.
-
-Axis-order / m-mode convention (axis ["r","z"], m=0, nodal position, V/m & T unit
-dimensions) is a deliberate, reader-validated deviation from WarpX's native RZ diag schema.
+Reads GPT .gdf maps from fieldmaps/gdf/, writes openPMD thetaMode (RZ, m=0) .h5 maps to
+fieldmaps/h5/. See docs/gun.md, docs/injector.md, docs/linac1-4.md.
 """
 
 import os
@@ -70,14 +61,9 @@ def pad_r(r, rmax, *arrs):
 
 
 def uniform_spacing(x, name, axis):
-    """Mean grid step of a near-uniform GDF axis, guarding against a non-uniform source.
-
-    GDF maps are sampled on a nominally uniform grid, but float export makes the per-interval
-    spacing wobble (the prebuncher z-axis worst-case ~1.6%). The thetaMode writer stores ONE
-    grid_spacing, placing sample i at x0 + i*dx, so the right step is the MEAN (both endpoints
-    pinned, ~5 um residual misplacement) -- NOT the first interval x[1]-x[0], whose outlier
-    value drifts the far end of the 305 mm prebuncher map by ~1.2 mm (+0.39% gap voltage).
-    Raise if even the mean cannot represent the grid (a genuinely non-uniform / graded mesh)."""
+    """Mean grid step of a near-uniform GDF axis. The thetaMode writer stores ONE grid_spacing
+    (sample i at x0 + i*dx), so use the MEAN step, not the first interval -- an outlier first
+    interval can drift the far end of a graded map. Raises if even the mean misrepresents the grid."""
     n = x.size
     dx = (x[-1] - x[0]) / (n - 1)
     misplace = float(np.abs(x - (x[0] + np.arange(n) * dx)).max())
@@ -95,11 +81,8 @@ def write_thetamode_series(out_file, r0, z0, dr, dz, meshes):
     meshes = [(name, [(component, (nr,nz) array), ...], unit_dim_dict), ...].
     r0/z0 are the lab-frame coordinates of grid index 0 (grid_global_offset).
 
-    Per-output skip-guard (sandbox runs only): under LINACSIM_OUT_DIR the shared fieldmaps are
-    prebuilt once, so concurrent evals must NOT recreate them mid-read -- an existing target is left
-    intact. A plain repo run (no LINACSIM_OUT_DIR) keeps io.Access.create's truncate-rebuild so that
-    editing a source GDF / build parameter (e.g. GUN_VOLTAGE) regenerates the map per the repo's
-    "regenerate by re-running" contract.
+    Under LINACSIM_OUT_DIR an existing output is left in place (concurrent evals share prebuilt
+    fieldmaps); otherwise this always truncates and rebuilds.
     """
     if os.environ.get("LINACSIM_OUT_DIR") and os.path.exists(out_file):
         return
@@ -294,7 +277,7 @@ V1KW_KEV = 331.2                # [keV] on-axis int|Ez|dz of the 1-kW maps (asse
 
 def onaxis_quadrature_ez():
     """(z_maplocal [m], Ez1_onaxis, Ez2_onaxis) [V/m] of the two SLAC quadrature halves (r=0),
-    z from the structure entrance. Used by the frozen-setpoint derivation (scratchpad)."""
+    z from the structure entrance."""
     R, Z, Ez1 = load_cols(SLAC_RF1_GDF, ["R", "Z", "EzRe"])
     r, z, Ez1 = to_grid(R, Z, Ez1)
     R, Z, Ez2 = load_cols(SLAC_RF2_GDF, ["R", "Z", "EzIm"])

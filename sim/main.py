@@ -1,19 +1,7 @@
 """End-to-end pipeline driver: cathode -> gun -> injector -> linac1/2/3/4 -> converter -> linac5-8,
-then the cross-stage figures.
+then the cross-stage figures. See README.md.
 
-Each linac stage is preceded by an AUTOPHASE step that re-derives its frozen RF crest from the
-just-produced upstream exit dump and rewrites config/<stage>.yaml in place, so the stage's sim runs
-on a fresh setpoint rather than a stale hardcoded one (the WarpX autophase for sections 1-4 is cheap;
-the Impact-T autophase for sections 5-8 drives Impact-T many times and is the slow step).
-
-Each stage runs as a fresh subprocess (pywarpx binds one geometry per interpreter, so the
-WarpX stages MUST be isolated; Impact-T runs the same way for uniformity). A stage's sim and
-its plotter are separate subprocess calls. The Impact-T stage and the plotters pipe stdout to
-logs/pipeline/log_<date>.log with the bar on stderr; the WarpX stages keep stdout on the terminal
-(lume-warpx puts its bar on fd1 and routes the engine output to the log via PIPELINE_LOG_PATH).
-
-All tuning lives in the per-stage config/*.yaml -- there is no config() override layer.
-Run from the repo root:  python sim/main.py
+Run from the repo root: python sim/main.py
 """
 
 import os
@@ -27,10 +15,6 @@ from sim.helpers.tools import REPO_ROOT, MC2_EV, E_CHARGE, out_root
 from sim.helpers.sandbox import make_out_dir
 
 # (label, sim script, plot script, extra args, autophase argv (or None), exit-diag dir, KE unit)
-# autophase runs as a step BEFORE the stage's sim, re-deriving the frozen RF setpoint from the
-# just-produced upstream exit dump and rewriting config/<stage>.yaml in place (so the sim subprocess
-# reads the fresh value). The WarpX autophase (1-4) is a cheap 1D longitudinal model; the Impact-T
-# autophase (5-8) drives Impact-T O(sections x scan-points) times and is the slow step of the chain.
 STAGES = [
     ("cathode",  "sim/cathode.py",  "sim/plot/cathode.py",  [],    None,                          "logs/diags/cathode",            "keV"),
     ("gun",      "sim/gun.py",      "sim/plot/gun.py",      [],    None,                          "logs/diags/gun",                "keV"),
@@ -47,7 +31,6 @@ _lf = None
 
 
 def say(msg=""):
-    """Print to the terminal and append to the run log."""
     print(msg, flush=True)
     if _lf is not None:
         _lf.write(msg + "\n")
@@ -55,15 +38,11 @@ def say(msg=""):
 
 
 def run_subprocess(argv, title, fatal=True, warpx=False):
-    """Run one stage step as a subprocess: stdout -> log, stderr (progress bar) -> terminal.
+    """`fatal=False` (plotters) only warns -- a figure bug must not discard completed physics on disk.
 
-    `fatal=True` (the simulations) aborts the pipeline on a non-zero exit; `fatal=False` (the
-    plotters) only warns -- a figure bug must not discard the completed physics, which is on disk.
-
-    `warpx=True`: lume-warpx puts its bar on a dup of fd1 (disabled if that fd is not a tty) and
-    redirects the engine's stdout/stderr to PIPELINE_LOG_PATH itself during the step -- so leave the
-    child's stdout on the terminal (fd1 must stay a tty for the bar) and hand it the log path instead
-    of piping stdout to the log here (which would make fd1 a file and silently disable the bar).
+    `warpx=True`: lume-warpx puts its bar on a dup of fd1 (disabled if not a tty) and redirects the
+    engine's stdout/stderr to PIPELINE_LOG_PATH itself -- leave the child's stdout on the terminal
+    (fd1 must stay a tty for the bar) instead of piping it to the log here (that would disable the bar).
     """
     say(f"\n> {title}")
     if _lf is not None:
@@ -187,8 +166,7 @@ def main():
 
     for label, sim, plot, args, autophase, _diag, _unit in stages:
         if autophase:
-            # Re-derive this stage's frozen RF crest from the upstream exit dump (rewrites the YAML
-            # the sim then reads). Fatal: a stale/garbage crest would silently invalidate the stage.
+            # Fatal: a stale/garbage crest would silently invalidate the stage.
             run_subprocess(autophase, f"{label}: autophase")
         run_subprocess([sim, *args], f"{label}: simulation", warpx=(label not in ("linac5-8", "converter")))
         if not no_plots:

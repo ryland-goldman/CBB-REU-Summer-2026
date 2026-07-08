@@ -1,15 +1,9 @@
 """
-Figures for the e+/e- converter stage (sim/converter.py).
-
-Reads logs/diags/converter/main/{particles, injection_summary.json} and writes PNGs to
-logs/plots/converter/: positron_spectrum (KE histogram), yield_bars (e+/e-/gamma per incident
-electron from the summary), positron_divergence (transverse r-p_r phase space -- the wide-angle
-capture challenge), positron_radial_divergence (p_r/p_z histogram [mrad]), and z_ke (longitudinal
-phase space, KE vs z). The particle figures read the positron handoff (openPMD group `positrons`,
-charge +e); yield_bars is summary-derived.
+Figures for the e+/e- converter stage (sim/converter.py). Reads
+logs/diags/converter/main/{particles, injection_summary.json}, writes PNGs to logs/plots/converter/.
 
 main() runs ONLY plotting (sim/converter.py must have been run first). Run as
-`python sim/plot/converter.py`.
+`python sim/plot/converter.py`. See docs/converter.md.
 """
 
 import os
@@ -55,12 +49,10 @@ def main():
         print(f"plot converter: empty positron dump in {parts} -- skipping.", flush=True)
         return
 
-    # 1) positron kinetic-energy spectrum (positrons are ~MeV-tens of MeV)
     fig = px.energy_spectrum(pg, use_ke=True, e_unit="MeV")
     fig.savefig(os.path.join(RESULTS, "positron_spectrum.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # 2) species yields per incident electron (summary-derived bar chart)
     fig, ax = plt.subplots(figsize=(6.4, 4.6), constrained_layout=True)
     labels = ["positron", "electron", "gamma"]
     vals = [summ.get("yield_positron", np.nan), summ.get("yield_electron", np.nan),
@@ -78,7 +70,7 @@ def main():
     fig.savefig(os.path.join(RESULTS, "yield_bars.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # 3) positron transverse divergence (r-p_r phase space). pg.px = ux*MC2_EV -> ux = px/MC2_EV.
+    # pg.px is momentum in eV/c (= ux*MC2_EV); ux = px/MC2_EV.
     x = np.asarray(pg.x, float)
     y = np.asarray(pg.y, float)
     ux = np.asarray(pg.px, float) / MC2_EV
@@ -92,8 +84,7 @@ def main():
     fig.savefig(os.path.join(RESULTS, "positron_divergence.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # 4) radial divergence histogram [mrad]: r' = p_r/p_z, charge-weighted. The bulk + the wide-angle
-    #    tail quantify the capture challenge; x-axis clipped at the 99th percentile (the tail runs far).
+    # x-axis clipped at the 99th percentile -- the wide-angle tail otherwise dominates the plot range.
     uz = np.asarray(pg.pz, float) / MC2_EV
     rdiv_mrad = 1e3 * np.hypot(ux, uy) / uz
     hi = float(np.percentile(rdiv_mrad, 99))
@@ -111,7 +102,6 @@ def main():
     fig.savefig(os.path.join(RESULTS, "positron_radial_divergence.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # 5) longitudinal phase space: positron KE vs z (hexbin -- positrons span a wide KE range)
     ke_mev = pg["kinetic_energy"] / 1e6
     z_mm = (np.asarray(pg.z, float) - np.average(pg.z, weights=w)) * 1e3
     fig, ax = plt.subplots(figsize=(7.0, 4.8), constrained_layout=True)

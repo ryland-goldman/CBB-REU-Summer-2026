@@ -1,40 +1,12 @@
 """
-Auto-phase the linac 5-8 (Impact-T) RF sections for the POSITRON beam and rewrite the YAML.
-
-`sim/main.py` runs this **before the linac5-8 stage**; it also works standalone. The per-section
-crest_phase_deg are absolute Impact-T theta0 values that depend on both the species (positrons:
-q=+e crest ~180 deg from electrons, lower injection energy shifts it) and the deck geometry, so they
-must be re-found on the real deck with the positron core injected.
-
-NUMERICAL model -- no Impact-T is launched (the analog of sim/autophase.py for the WarpX sections).
-The Impact-T crest scan is already a pure 1D longitudinal problem (pencil-ised on-axis core, SC
-off; the exit-line quads have zero field on axis), so a longitudinal RK4 integration through the
-exact on-axis Ez loses no physics and replaces the old minutes-to-tens-of-minutes Impact-T scan
-with ~30 s of pure numpy.
-
-Method: reconstruct each TW section's on-axis Ez from the vendored rfdata4-7 Fourier shapes as
-Impact-T does (matches lume-impact's `impact.fieldmaps.ele_field` to float noise: the 4-line
-+0/+30/+90/+0 superposition, the 1/sin(beta0 d) body scale, the absolute phase cos(2 pi f t +
-theta0)). Place the sections at the real deck z (sections + the real exit-optics drift/quad lines)
-so the cumulative arrival time -- which the ABSOLUTE theta0 crest depends on -- matches the deck.
-Pencil-ise the converter positron core (momentum onto +z, on-axis) and RK4-integrate the WHOLE bunch
-through a base-phase scan; the crest maximises bunch-averaged exit KE (coarse -> fine -> parabolic, as
-sim/autophase.find_crest). Earlier sections are pinned to their already-found crest so each section's
-crest is found in their actual field, with the correct entering energy and time.
-
-CREST vs ENERGY. The crests this finds match Impact-T's (re-derived ones agree with the previously
-Impact-T-derived YAML values to ~1 deg). The reported per-section <KE> is a MODEL energy used only to
-LOCATE the crest -- its magnitude is ~1.7x Impact-T's actual gain, a constant offset between
-lume-impact's `ele_field` field reconstruction and the Fortran Impact-T field. A constant field-scale
-offset does not move the argmax over phase, so the crest is unaffected; do NOT read the <KE> as the
-stage energy (the real beam energy is what sim/linac5-8.py reports). --verify confirms the crest
-directly with a tight Impact-T phase scan (robust to the amplitude offset), not the energy magnitude.
+Auto-phase the linac5-8 (Impact-T) RF sections for the positron beam and rewrite
+config/linac5-8.yaml. Numerical 1D RK4 model through the on-axis Ez -- no Impact-T is launched.
+See docs/linac5-8.md.
 
   python sim/autophase_impact.py            # phase sections 5 6 7 8, rewrite the YAML
   python sim/autophase_impact.py 5 6        # only sections 5-6
   python sim/autophase_impact.py --dry-run  # scan + report, write nothing
-  python sim/autophase_impact.py --verify   # after scanning, run Impact-T at crest+-delta on the last
-                                            # phased section and confirm its exit KE peaks at the crest
+  python sim/autophase_impact.py --verify   # confirm the crest with a real Impact-T phase scan
 """
 
 import importlib.util
@@ -61,9 +33,7 @@ FINE_STEP_DEG = 1.0          # fine scan resolution
 
 
 def _load_driver():
-    """Import sim/linac5-8.py (hyphenated, not a normal module name) for its config loader, deck
-    geometry helpers, and the positron-core handoff so the field shapes, section placement, and
-    injected beam are byte-identical to what the driver runs."""
+    """Import sim/linac5-8.py (hyphenated, not a normal module name) via file path."""
     path = os.path.join(os.path.dirname(__file__), "linac5-8.py")
     spec = importlib.util.spec_from_file_location("linac58_driver", path)
     mod = importlib.util.module_from_spec(spec)
@@ -83,11 +53,8 @@ def _fourier_ez(z_local, coef, z0, zlen):
 
 
 def _build_section_fields(drv, cfg):
-    """One entry per TW section: its (z_entry, z_exit) in deck z and the 4 precomputed field lines
-    (entrance/body_1/body_2/exit). Each line carries a dense on-axis shape array (rf_field_scale *
-    Fourier(z)) over [zedge, zedge+L] and its fixed inter-line phase offset; the time factor
-    cos(omega t + base + offset) is applied per RK4 step. Section placement (sections + the real
-    exit-optics line lengths) mirrors linac5-8.build_impact so the absolute arrival time matches."""
+    """Section placement (sections + the real exit-optics line lengths) mirrors
+    linac5-8.build_impact so the absolute arrival time matches the deck."""
     from impact.fieldmaps import read_fieldmap_rfdata, solrf_field_from_data
 
     fields = {f: solrf_field_from_data(
@@ -163,9 +130,7 @@ def _mean_ke_mev(u, w):
 
 
 def find_crest(scan_coarse, scan_fine):
-    """Crest base phase [deg, in [0,360)] from two phase->KE callables (a light bunch for the wide
-    0..360 scan, the full bunch for the +-FINE_HALF fine scan about the max), then a parabolic refine
-    of the top 3 (mirrors sim/autophase.find_crest). Returns (crest_deg, exit_ke_mev_at_crest)."""
+    """Coarse scan -> fine scan -> parabolic refine of the top 3 (mirrors sim/autophase.find_crest)."""
     coarse = np.arange(0.0, 360.0, COARSE_STEP_DEG)
     c0 = coarse[int(np.argmax([scan_coarse(b) for b in coarse]))]
     fine = c0 + np.arange(-FINE_HALF_DEG, FINE_HALF_DEG + 1e-9, FINE_STEP_DEG)
@@ -183,11 +148,8 @@ def find_crest(scan_coarse, scan_fine):
 
 
 def _phase_yaml_lines(path, found, indices):
-    """Section-aware writeback: the sections are inline-flow mappings
-    `  - {name: "CEA 4", ..., crest_phase_deg: 179.5768}    # sec 5`, so a top-level `key:` regex does
-    NOT match. Walk the file; for each `^\\s*- \\{` line carrying a `crest_phase_deg`, if its running
-    section index is in `indices`, substitute the number (keeping every other field + the trailing
-    `# sec N` comment). Returns the rewritten text and a list of (index, old_str, new_str)."""
+    """Sections are inline-flow mappings (`- {name: ..., crest_phase_deg: ...}`), so a top-level
+    `key:` regex would not match -- walk the file and substitute per matching inline-flow line."""
     with open(path) as fh:
         lines = fh.readlines()
     pat = re.compile(r"(crest_phase_deg:\s*)(\S+?)(\s*[},])")
@@ -211,11 +173,8 @@ VERIFY_DELTA_DEG = 12.0      # +-offset for the --verify crest-confirmation phas
 
 
 def _verify_impact(drv, cfg, found, last_idx):
-    """Confirm the found crest with Impact-T directly: pin every section to its found crest, then run
-    the deck at the LAST phased section's crest and crest +- VERIFY_DELTA (3 Impact-T runs, pencil
-    core + aperture off). The found crest is confirmed if the centre run's exit KE is the maximum.
-    This tests the crest -- the tool's deliverable -- and is immune to the constant field-amplitude
-    offset between `ele_field` and Fortran Impact-T (a uniform scale does not move the argmax)."""
+    """Confirms the crest, not the model's absolute energy: 3 Impact-T runs at crest +- VERIFY_DELTA,
+    immune to the model's constant field-amplitude offset (a uniform scale does not move the argmax)."""
     import copy
     import shutil
     workdir = "logs/diags/autophase_impact_verify"
@@ -240,8 +199,7 @@ def _verify_impact(drv, cfg, found, last_idx):
         I, _, _ = drv.build_impact(cfg_noap, workdir=workdir)
         for i, sec in enumerate(cfg_noap["sections"]):
             gname = drv._ensure_section_group(I, cfg_noap, i)
-            # Upstream sections at the phase the driver applies (crest + optimizer offset); the section
-            # under test sweeps about its bare crest (off), confirming crest_phase_deg is the KE peak.
+            # Upstream at the applied phase (crest + offset); the section under test sweeps about its bare crest.
             applied = found[i] + (off if i == last_idx else float(sec.get("crest_offset_deg", 0.0)))
             drv._set_section_phase(I, cfg_noap, i, applied)
             drv._set_group_scale(I, gname, sec["field_scale"])
@@ -281,10 +239,8 @@ def main():
         sys.exit(f"usage: python sim/autophase_impact.py "
                  f"[{' '.join(str(first + j) for j in range(n_sec))}] [--dry-run] [--verify]")
 
-    # ── Pencil-ise the converter positron core (longitudinal scan; matches sim/autophase.py) ──────
-    # The bare core's ~600 mrad divergence would scrape the bore before any section ends (no capture
-    # optic here), so a divergent bunch yields zero survivors at every phase. Redirect each particle's
-    # momentum onto +z (preserving energy), centre on-axis: the scan then measures pure energy gain.
+    # Pencil-ise: the bare core's divergence would scrape the bore before any section ends (no
+    # capture optic here), so redirect momentum onto +z / centre on-axis to isolate energy gain.
     P_in, info = drv.load_converter_core(cfg)
     pmag = np.sqrt(np.asarray(P_in.px) ** 2 + np.asarray(P_in.py) ** 2 + np.asarray(P_in.pz) ** 2)
     z = np.asarray(P_in.z, float)
@@ -299,13 +255,9 @@ def main():
 
     secf = _build_section_fields(drv, cfg)
 
-    # Persistent bunch state (z, u, t) advances section by section: each section's crest is found in
-    # the field of all EARLIER sections (pinned to their found/frozen crest), entering with the right
-    # energy and absolute arrival time -- the latter is what the absolute theta0 crest depends on.
-    # Upstream sections advance at the phase the driver APPLIES, crest_phase_deg + crest_offset_deg
-    # (sim/linac5-8.py), so nonzero optimizer offsets shift the arrival time exactly as on the deck;
-    # the scan for the section being phased uses the bare base phase (autophase owns crest_phase_deg,
-    # the offset is the optimizer's deliberate detune added on top).
+    # Bunch state (z, u, t) advances section by section, entering each with the arrival time the
+    # absolute theta0 crest depends on. Upstream sections advance at crest_phase_deg + the driver's
+    # crest_offset_deg (sim/linac5-8.py); the section being phased is scanned at the bare base phase.
     found = [float(s["crest_phase_deg"]) for s in cfg["sections"]]
     offsets = [float(s.get("crest_offset_deg", 0.0)) for s in cfg["sections"]]
     zc, uc, tc = z, u, 0.0
@@ -329,8 +281,7 @@ def main():
             print(f"  crest crest_phase_deg = {crest:.4f}°  (was {old:.4f}°, Δ {crest - old:+.4f}°)")
             print(f"  model ⟨KE⟩ {ke_out:.3f} MeV (relative; ~1.7× Impact-T magnitude, crest-only)\n",
                   flush=True)
-        # Advance the persistent state through this section at the phase the driver applies
-        # (found/frozen crest + optimizer offset), so the arrival time entering the next section matches.
+        # Advance at the phase the driver applies (crest + optimizer offset), matching the deck.
         zc, uc, tc = _push(zc, uc, tc, sf["lines"], math.radians(found[i] + offsets[i]),
                            z_stop, omega, kq, dt)
 

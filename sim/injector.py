@@ -1,12 +1,6 @@
-"""CESR injector in WarpX (RZ): the full injector subsection in one self-consistent
-space-charge run -- two 214 MHz prebuncher cavities (Preb 2 reversed) and six solenoid
-lenses (Lens 0A / Sol 0 / Lens 0E carry current at the default tune) -- reading the gun
-exit beam and handing a focused, velocity-bunched beam to linac_sec1 at z ~= 2.03 m.
-
-Drives lume-warpx from config/injector.yaml (which holds every constant); this module reads
-those back, imports the gun handoff via WarpX(initial_particles=...), and overrides only
-runtime-computed values (the per-field RF/solenoid time functions, step count, dt, diag period).
-See docs/injector.md for physics, parameters, field maps, and gotchas.
+"""CESR injector in WarpX (RZ): reads the gun exit beam, applies the prebuncher/solenoid
+fields from config/injector.yaml, and hands a bunched beam to linac_sec1.
+See docs/injector.md.
 """
 
 import os
@@ -33,16 +27,14 @@ from sim.helpers.buildfields import (
 
 CONFIG = "config/injector.yaml"
 OUTDIR = "logs/diags/injector/main"
-# Prefer the gun's reconstructed time-release exit beam when present, else the legacy snapshot.
 GUN_DIAG = ("logs/diags/gun/handoff" if os.path.isdir("logs/diags/gun/handoff")
             else "logs/diags/gun/particles")
 
 
 def load_gun_bunch(max_part, rng_seed, z_inject):
-    """Import the gun's last snapshot (already RZ) and shift it to the entrance.
+    """Import the gun's last snapshot and shift it to the entrance.
 
-    Returns (dict [gamma*beta momenta], v_beam, mean KE [keV], z_centroid). The cavities are
-    phased to put the CENTROID (not the tail) at the zero-crossing. See docs -> RF drive.
+    Returns (dict [gamma*beta momenta], v_beam, mean KE [keV], z_centroid).
     """
     ts = open_particle_series(GUN_DIAG, "gun")
     it = ts.iterations[-1]
@@ -50,7 +42,7 @@ def load_gun_bunch(max_part, rng_seed, z_inject):
         ["x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it)
     (x, y, z, ux, uy, uz), w = downsample(
         (x, y, z, ux, uy, uz), w, max_part, np.random.default_rng(rng_seed))
-    z = z - z.min() + z_inject                         # bunch tail (smallest z) -> z_inject
+    z = z - z.min() + z_inject
 
     v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
     z_centroid = float(np.average(z, weights=w))
@@ -64,23 +56,21 @@ def cavity_drive(power, q_l, f_rf, z_gap, v_at_gap, phi_off_deg, phase, omega,
                  t_offset=0.0, rev_phase=0.0, z_ref=0.0):
     """Time-function strings (warpx_E/B_time_function) for one prebuncher cavity.
 
-    Drives the 1-J map as a standing-wave TM mode: E ~ scale*cos(wt+phi), B ~ scale*sin(wt+phi).
-    The zc base lands the bunch centroid on the RF zero-crossing (net mean kick 0). Keep .10e
-    precision -- w*t truncation accumulates over the ~5 ns transit. See docs -> RF drive.
+    Keep .10e precision -- w*t truncation accumulates over the ~5 ns transit.
     Returns (e_time, b_time, scale, phi, t_gap).
     """
     scale = float(np.sqrt(1e3 * q_l * power / (2.0 * np.pi * f_rf)))
     t_gap = t_offset + (z_gap - z_ref) / v_at_gap
     base = np.pi / 2.0 if phase == "zc" else np.pi
     phi = -omega * t_gap + base + np.radians(phi_off_deg) + rev_phase
-    e_time, b_time = rf_time_functions(scale, omega, phi)   # amp/phase precision .10e
+    e_time, b_time = rf_time_functions(scale, omega, phi)
     return e_time, b_time, scale, phi, t_gap
 
 
 def _report_collimated_handoff(outdir, collim_r, collim_z):
-    """Report and return the multi-plane-collimated handoff charge at the ~Z_HANDOFF plane
-    (sanity log; the physical cut is the linac reader's at injection). Returns a dict of
-    metrics (or {} if no populated snapshot near the plane). See docs -> The 9.547 mm collimator.
+    """Report the multi-plane-collimated handoff charge near Z_HANDOFF -- a sanity log only,
+    the physical cut is the linac reader's at injection. Returns a metrics dict, or {} if no
+    populated snapshot near the plane.
     """
     from openpmd_viewer import OpenPMDTimeSeries
     ts = OpenPMDTimeSeries(os.path.join(outdir, "particles"))
@@ -135,7 +125,7 @@ def main():
     bunch, v_beam, ke_mean, z_centroid = load_gun_bunch(p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"])
     pg = make_particle_group(bunch["x"], bunch["y"], bunch["z"],
                              bunch["ux"], bunch["uy"], bunch["uz"], bunch["w"])
-    w.initial_particles = pg                           # imported beam for FromInitialParticles
+    w.initial_particles = pg
 
     for nm, cur in (("0A", p["I_LENS0A"]), ("0B", p["I_LENS0B"]), ("0C", p["I_LENS0C"]),
                     ("0D", p["I_LENS0D"]), ("Sol0", p["I_SOL0"]), ("0E", p["I_LENS0E"])):
@@ -144,15 +134,13 @@ def main():
 
     # `V_gap~` (= scale*V1J_KEV) is a transit-time-free upper bound for diagnostics/step sizing only,
     # not a physics input -- WarpX integrates the real time-varying field independently.
-    # -- Prebuncher 1 (forward map): centroid arrival uses v_beam over z_centroid->gap --
     e1, b1, scale1, phi1, t_gap1 = cavity_drive(
         p["PREB1_KW"], p["Q_L_1"], F_RF, Z_GAP_CENTER_1, v_beam, p["PREB1_PHI_OFF"],
         PHASE, omega, z_ref=z_centroid)
     print(f"Preb 1: P={p['PREB1_KW']:g} kW, scale={scale1:.3f}, V_gap~={scale1*V1J_KEV:.1f} kV, "
           f"phi={phi1:.3f} rad, t_gap={t_gap1*1e9:.3f} ns", flush=True)
 
-    # -- Prebuncher 2 (reversed install): two-segment arrival accounts for Preb-1's kick --
-    # Baked BEFORE WarpX integrates Preb 1, so estimate post-Preb-1 speed analytically (mean kick).
+    # Preb-2's phase is baked before WarpX integrates Preb 1, so estimate post-Preb-1 speed analytically.
     kick1 = -np.cos(base + np.radians(p["PREB1_PHI_OFF"])) * scale1 * V1J_KEV
     ke_after1 = max(ke_mean + (kick1 if p["PREB1_KW"] > 0 else 0.0), 1.0)
     v_after_preb1 = c * np.sqrt(1.0 - 1.0 / (1.0 + ke_after1 / MC2_KEV) ** 2)
@@ -165,7 +153,6 @@ def main():
               f"V_gap~={scale2*V1J_KEV:.1f} kV, phi={phi2:.3f} rad, t_gap={t_gap2*1e9:.3f} ns "
               f"(v_after_preb1={v_after_preb1:.3e} m/s from +{kick1:.1f} keV Preb-1 kick)", flush=True)
 
-    # -- Time step / duration: 3-leg transit estimate with the real per-leg speed --
     dt = p["CFL"] * (ZMAX / NZ) / v_beam
     kick_frac1 = -np.cos(base + np.radians(p["PREB1_PHI_OFF"]))
     ke_after1 = max(ke_mean + (kick_frac1 * scale1 * V1J_KEV if p["PREB1_KW"] > 0 else 0.0), 1.0)

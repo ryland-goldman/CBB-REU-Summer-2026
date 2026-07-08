@@ -1,15 +1,7 @@
 """
-CESR gun in WarpX (RZ): accelerate the cathode-emitted electrons through the
-scaled CESR_gun.gdf electrode field with self-consistent (electromagnetostatic)
-space charge, then reconstruct the timed exit beam for the injector handoff.
-
-Drives lume-warpx from config/gun.yaml (which holds every constant); this module reads those
-back, overrides only the runtime-computed values (dt, step count, the seed arrays, diagnostic
-periods), and builds up the time-release beam with a beforestep callback. The 1 nC bunch is
-released over the 2 ns grid pulse (the physical low-line-density representation), so no single
-volumetric dump holds the ~0.4 m drifting beam; build_exit_handoff() reconstructs the full exit
-beam by particle id across the dumps. See docs/gun.md for physics, the beam representation, the
-exit handoff, and gotchas.
+CESR gun in WarpX (RZ): accelerates the cathode-emitted electrons through the gun field with
+self-consistent space charge, then reconstructs the timed exit beam for the injector handoff.
+See docs/gun.md.
 
 main() runs ONLY the simulation; sim/plot/gun.py produces the figures.
 """
@@ -37,20 +29,15 @@ CONFIG = "config/gun.yaml"
 CATHODE_DIAG = "logs/diags/cathode/particles"
 CATHODE_SUMMARY = "logs/diags/cathode/injection_summary.json"
 DIAG_DIR = "logs/diags/gun"
-HANDOFF_DIR = "logs/diags/gun/handoff"   # reconstruct the exit beam here for the injector
+HANDOFF_DIR = "logs/diags/gun/handoff"
 
 
 def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, pulse_width, crest_time=None,
                        gap_d=None, anode_frac=None):
     """Import the cathode crest snapshot and remap the (x, z) slab into RZ.
 
-    Returns dict of x, y, z, ux, uy, uz, w, t arrays for the seed + time-release callback
-    (ux/uy/uz are proper velocity u = γβc [m/s]); t is the per-macroparticle emission time,
-    released over pulse_width and t-sorted so the per-step injection callback walks them in
-    one pass. `crest_time` selects the gap-full beam dump (WarpX force-writes a drained final-step
-    dump, so iterations[-1] is the wrong template); falls back to the last dump if unset.
-    `gap_d`/`anode_frac` restrict the seed to the forward-moving beam crossing the anode plane —
-    the delivered flux — dropping the near-cathode pileup and the reflected over-injection.
+    ux/uy/uz are proper velocity u = γβc [m/s]. `crest_time` picks the gap-full dump — WarpX
+    force-writes a drained final-step dump, so iterations[-1] is the wrong template.
     """
     ts = open_particle_series(CATHODE_DIAG, "cathode")
     it = (ts.iterations[int(np.argmin(np.abs(np.asarray(ts.t) - crest_time)))]
@@ -73,10 +60,8 @@ def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, pulse_width
 
     (xk, r, z, ux, uy, uz), w = downsample((xk, r, z, ux, uy, uz), w, max_part, rng)
 
-    # slab(x) → RZ disc: importance-resample (with replacement) by r·w to supply the 2πr
-    # revolution Jacobian the naive r=|x| map omits (else n(r) ∝ 1/r on-axis cusp). Resample UP to
-    # the full macroparticle budget so the thin anode-flux seed isn't starved (each gets its own
-    # random θ below, so bootstrapped copies spread azimuthally rather than overlapping).
+    # slab(x) → RZ disc: importance-resample by r·w for the 2πr Jacobian (else n(r) ∝ 1/r
+    # on-axis cusp); resample up to the full budget so the thin anode-flux seed isn't starved.
     if r.max() > 0.0:
         rw = r * w
         n_resample = max_part or r.size
@@ -91,10 +76,9 @@ def load_cathode_bunch(rmax, zmax, bunch_charge, rng_seed, max_part, pulse_width
     uxn = ur * ct - uy * st
     uyn = ur * st + uy * ct
     zpos = np.clip(z, 0.0, zmax)
-    w = w * (bunch_charge / (w.sum() * q_e))            # renormalize to BUNCH_CHARGE
+    w = w * (bunch_charge / (w.sum() * q_e))
 
-    # Emission time per macroparticle: released over PULSE_WIDTH, t-sorted so the per-step
-    # injection callback walks them in one pass.
+    # t-sorted so the per-step injection callback walks them in one pass.
     t = rng.uniform(0.0, pulse_width, size=r.size)
     order = np.argsort(t)
     t = t[order]
@@ -133,7 +117,6 @@ def build_exit_handoff(zmax_field):
     cat = {k: np.concatenate(v) for k, v in cols.items()}
     n_ids = np.unique(cat["id"]).size
 
-    # First appearance in the field-free pad (z ≥ zmax_field) per id.
     pad = np.where(cat["z"] >= zmax_field)[0]
     if pad.size == 0:
         print(f"  handoff: no particle reached the field-free pad (z ≥ {zmax_field*1e3:.1f} mm) "
@@ -202,7 +185,6 @@ def main():
     bunch = load_cathode_bunch(rmax, zmax, bunch_charge, p["RNG_SEED"], p["MAX_PART"],
                                p["PULSE_WIDTH"], crest_time, gap_d, anode_frac)
 
-    # ── Time step / duration ──────────────────────────────────────────────────
     gamma = 1.0 + q_e * gun_voltage / (m_e * c**2)
     v_exit = c * np.sqrt(1.0 - 1.0 / gamma**2)
     dt = p["CFL"] * (zmax / nz) / v_exit
@@ -241,10 +223,8 @@ def main():
         "diagnostics/1/period": period,
     })
 
-    # ── Time-release injection ────────────────────────────────────────────────
-    # Build up the bunch over PULSE_WIDTH: each step inject the macroparticles whose emission
-    # time falls in the step window. add_particles uses the WRITE path (the broken RZ accessor
-    # is the READ path). ux/uy/uz are proper velocity γβc [m/s].
+    # add_particles uses the WRITE path (the broken RZ accessor is the READ path).
+    # ux/uy/uz are proper velocity γβc [m/s].
     from pywarpx import particle_containers
     pc = [None]
     bt = bunch["t"]
