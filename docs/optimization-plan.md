@@ -118,12 +118,13 @@ vocs:
     l5_phase_off_3:   [-30, 30]
     l5_quad_scale_1:  [0.2, 2.5]       # sections[1].quad_scale (× the sec6 CESR exit-triplet gradients)
     l5_quad_scale_2:  [0.2, 2.5]       # sections[2].quad_scale (× the sec7 CESR exit-triplet gradients)
+    # applied sec-5/6 field = this × (conv_sol_b_tesla/0.7022) via solenoid_tracking — range bounds the pre-scale value
     l5_sol_b_5:       [0.05, 0.6]      # sections[0].solenoid_b_tesla (264 A machine flat-top = 0.243 T)
     l5_sol_b_6:       [0.05, 0.6]      # sections[1].solenoid_b_tesla
     # --- converter (positron yield + emittance into linac5-8) ---
     conv_target_len_mm: [4.0, 9.0]     # converter geometry.target_length_mm
-    conv_sol_b_tesla:   [0.8, 1.6]     # converter solenoid.b_tesla
-    conv_exit_drift_mm: [50, 150]      # converter solenoid.exit_drift_mm
+    conv_sol_b_tesla:   [0.35, 1.4]    # converter solenoid.b_tesla (con_sol peak; 0.7022 = 3300 A)
+    conv_exit_drift_mm: [125, 250]     # converter solenoid.exit_drift_mm (back face -> plane; >121 = past the map)
     # --- capture (linac1) — include only when scope=full ---
     l1_power_mw:  [14, 24]             # linac1 POWER_MW
     l1_phase_off: [-30, 30]            # crest OFFSET [deg] on linac1 sec-1 (added to autophased PHASE_DEG)
@@ -182,15 +183,15 @@ def penalty_outputs():
             "sigma_E_rel": float("nan"), "sigma_x_mm": float("nan"), "transmission_core": float("nan")}
 
 def main():
-    os.makedirs(f"{REPO_ROOT}/logs/opt", exist_ok=True)   # dump dir must exist before X.dump_file
+    os.makedirs(f"{REPO_ROOT}/logs/opt", exist_ok=True)   # dump dir must exist before the CSV checkpoint
     cfg = yaml.safe_load(open("config/xopt.yaml"))
     vocs = VOCS(**cfg["vocs"])
     gen  = CNSGAGenerator(vocs=vocs, population_size=cfg["generator"]["population_size"])
     ev   = Evaluator(function=evaluate, executor=make_executor(cfg["evaluator"]))
-    X = Xopt(vocs=vocs, generator=gen, evaluator=ev)
-    X.dump_file = "logs/opt/xopt.yaml"             # checkpoint each step (resume on crash)
+    X = Xopt(vocs=vocs, generator=gen, evaluator=ev)      # X.dump_file left unset — see "Execution"
     while len(X.data) < cfg["xopt"]["max_evaluations"]:   # len(X.data) is the eval count (verify vs X.n_evaluations)
         X.step()                                   # CNSGA is async — keeps the executor saturated
+        X.data.to_csv("logs/opt/xopt_data.csv")    # per-step progress record (no reload path — a restart starts fresh)
     save_pareto(X, "logs/opt/")
 ```
 
@@ -198,6 +199,10 @@ def main():
 no `xopt_error` return flag (Xopt sets that itself if the function *raises*; here we catch and return
 NaN so the worker survives). Named helpers still to implement: `apply_overrides`, `seed_upstream`,
 `run_chain`, `read_summary`, `make_executor`, `save_pareto` (specified in the sections around this).
+
+**`save_pareto`'s direction handling:** `str(MaximizeObjective())` does **not** contain `"MAX"` (it
+prints as `dtype=None`), so the minimize/maximize direction for each objective must be read off
+`type(objective).__name__` rather than the object's string form.
 
 ### `apply_overrides(out_dir, inputs)` — how variables reach the sim (no canonical-YAML edit)
 
@@ -214,7 +219,7 @@ same pattern autophase already uses to write crests). Concretely:
 | `conv_sol_b_tesla`   | `config/converter.yaml` · `solenoid.b_tesla` |
 | `conv_exit_drift_mm` | `config/converter.yaml` · `solenoid.exit_drift_mm` |
 | `l1_power_mw` | `config/linac1.yaml` · `params.POWER_MW` |
-| `l1_phase_off` | `config/linac1.yaml` · `params.PHASE_OFFSET_DEG` *(NEW key; sec-1 driver adds it to the autophased `PHASE_DEG`. Do NOT write `PHASE_DEG` — `autophase.py` overwrites it for section 1.)* |
+| `l1_phase_off` | `config/linac1.yaml` · `params.PHASE_OFFSET_DEG` *(NEW key; sec-1 driver adds it to the autophased `PHASE_DEG`. Do NOT write `PHASE_DEG` — `autophase.py` overwrites it for section 1. This key does not exist in the canonical `linac1.yaml`; `apply_overrides` inserts it under the sandbox copy's `params:` block on first use.)* |
 | `inj_*` | `config/injector.yaml` · `params.I_SOL0` / `I_LENS0E` / `PREB1_KW` / `PREB2_KW` |
 
 **Crest-offset vs autophase ordering (the critical integration point).** `sim/main.py` runs
@@ -248,6 +253,22 @@ dump) therefore needs two pieces, both owned by this plan:
    upstream dump is fixed across the population (only converter+downstream vars move), so a read-only
    symlink is safe. For `full`, `seed_upstream` is a no-op.
 
+## Freeze boundary — running upstream stages once per population
+
+Every stage upstream of the earliest actively-varied stage is parameter-independent across the
+whole population (none of its inputs move), so it is run **once** (`prefreeze_upstream`) and each
+eval symlinks the frozen dump instead of recomputing it:
+
+- **`scope: full`** varies from the injector onward, so cathode+gun are prefrozen — avoiding their
+  combined ~16 min/eval on every population member.
+- **`scope: downstream`** varies only converter/linac5-8 configs; `prefreeze_upstream` also drops
+  (as inert) any VOCS variable that targets an upstream config, since those configs never reach a
+  running stage under `--from converter` anyway.
+- The shared WarpX field maps (`fieldmaps/h5`) are likewise parameter-independent for every
+  currently-optimized variable (e.g. gun voltage is not a VOCS knob), so `sim/optimize.py` builds
+  them once before the population starts — otherwise the first wave of concurrent evals would race
+  to build the same maps.
+
 ## Execution (local → cluster)
 
 - **Local smoke test:** `executor: process`, small `population_size` (8), `scope: downstream`,
@@ -258,7 +279,19 @@ dump) therefore needs two pieces, both owned by this plan:
   via the evaluator config. The `SGECluster` import lives inside the `dask-sge` branch of
   `make_executor` so the default `process` path has no dask dependency. CNSGA is async, so workers stay saturated (no per-generation
   barrier). Wall-clock ≈ generations × slowest eval; total ≈ population × generations evals (see the
-  feasibility discussion). Checkpoint via `X.dump_file` so a multi-day run resumes after node loss.
+  feasibility discussion). The manual `X.data` CSV dump (see below) is a per-step checkpoint-of-record:
+  it preserves every evaluation for analysis and potential manual re-seeding, but `main()` has no
+  reload path (and the CSV omits the CNSGA population state), so a restarted run re-optimizes from
+  scratch.
+- `run_chain` launches the chain with `start_new_session=True` so an eval timeout can `SIGKILL` the
+  whole process group (`main.py` plus its WarpX/g4bl grandchildren) — killing only the `main.py` PID
+  orphans those grandchildren (reparented to init), which then keep burning cluster cores
+  indefinitely.
+- **`X.dump_file` is intentionally left unset**, despite the pseudocode above: Xopt's per-step
+  auto-dump serializes the CNSGA generator's population `DataFrame` via pandas
+  `to_json(orient="columns")`, which raises `"index must be unique"` under this project's
+  pandas/py3.14 combination once a generation rolls over. `X.data` is checkpointed to CSV manually
+  each step instead.
 - `RNG_SEED=0` / `OMP_NUM_THREADS=1` stay per eval (deterministic, reproducible, restart-safe).
 
 ## Validation

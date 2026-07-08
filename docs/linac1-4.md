@@ -114,6 +114,28 @@ bunch sits). How those are set differs between the capture section and the accel
   > (the CU 5 √P-scaled budget) by hand when retuning. A standalone `sim/linac1-4.py 4` uses the YAML
   > crest as-is, so run `sim/autophase.py 4` first if section 3's beam changed.
 
+### How `sim/autophase.py` finds the crest
+
+The crest search reproduces the driver's arrival-referenced phase convention
+`phi = -omega*(Z_STRUCT - z_center)/v_beam + base_deg` and RK4-integrates the single-particle
+longitudinal equations of motion (`dz/dt = c·u/γ`, `du/dt = -(e/m_e c)·Ez`) through the on-axis SLAC
+quadrature field `Ez = scale·[Ez1·cos(ωt+φ) + Ez2·cos(ωt+φ+π/2)]` — the same field the driver applies,
+just walked in 1D rather than in WarpX.
+
+The crest must be found by integrating the **whole bunch** longitudinally, not a centroid proxy: the
+captured core spans about 140° of RF, so its phase-averaged crest sits roughly 70° from the
+single-particle crest (validated against a WarpX phase scan). This 1D model has no transverse or
+space-charge back-reaction, so it is exact for the relativistic sections 2/3/4; for the 150 keV
+section-1 capture it gives the max-energy phase, which a deliberately off-crest bunching setpoint
+would differ from.
+
+The search integrates only `PROBE_LEN = 0.6 m` into the structure rather than the full 3 m section:
+the traveling-wave gradient is phase-uniform along the structure, so a short-probe crest matches the
+full-structure crest (confirmed against a WarpX scan). The coarse phase scan steps by
+`COARSE_STEP_DEG = 4°`; because `KE(phase)` is unimodal, the coarse argmax sample is always one of
+the two points bracketing the true crest, so the crest lies within ±`COARSE_STEP_DEG` of it — which
+is why the fine scan's half-window is set to match `COARSE_STEP_DEG`.
+
 The RF block is otherwise **uniform** across all four sections:
 
 ```

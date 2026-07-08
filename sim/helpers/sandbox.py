@@ -18,8 +18,8 @@ def make_out_dir(out_dir, src_root=REPO_ROOT):
     """Populate a LINACSIM_OUT_DIR sandbox: own config/ copy + empty logs/, fieldmaps shared.
     NO-OP when out_dir == src_root (the unset / REPO_ROOT case -- never sandbox the repo itself)."""
     if os.path.abspath(out_dir) == os.path.abspath(src_root):
-        return                                     # plain run: leave repo config/logs/fieldmaps as-is
+        return
     os.makedirs(out_dir, exist_ok=True)
-    shutil.copytree(f"{src_root}/config", f"{out_dir}/config", dirs_exist_ok=True)  # isolated copy
+    shutil.copytree(f"{src_root}/config", f"{out_dir}/config", dirs_exist_ok=True)
     os.makedirs(f"{out_dir}/logs", exist_ok=True)
     _link(f"{src_root}/fieldmaps", f"{out_dir}/fieldmaps")     # shared maps, NOT redirected

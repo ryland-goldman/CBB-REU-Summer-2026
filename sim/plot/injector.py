@@ -1,11 +1,5 @@
 """Figures for the WarpX RZ CESR injector (sim/injector.py) over logs/diags/injector/main/.
-Writes PNGs to logs/plots/injector/.
-
-Figures: phase_space_z_KE, energy_spectrum, transverse_r_pr, evolution_vs_z (mean KE / eps_n,x /
-sigma_x via fixed-z virtual screens), plus the stage-specific rich figures (the prebuncher RF field
-lobes cavity, the longitudinal line metrics sigma_z / peak-current line, the bunch line-charge
-profile lambda(z) bunch_profile, and the longitudinal phase space at four stations phasespace).
-See docs/injector.md for the physics each figure shows.
+Writes PNGs to logs/plots/injector/. See docs/injector.md for the physics each figure shows.
 """
 
 import os
@@ -63,12 +57,12 @@ def _peak_current(z, w, v_beam, n_bins=400):
 
 
 def rf_scale(power_kw, q_l, f_rf):
-    """Field scale sqrt(stored energy / 1 J), stored energy = 1e3*Q*P/(2pi f_RF). Mirrors sim."""
+    """Field scale sqrt(stored energy / 1 J), stored energy = 1e3*Q*P/(2pi f_RF)."""
     return float(np.sqrt(1e3 * q_l * power_kw / (2.0 * np.pi * f_rf))) if power_kw > 0 else 0.0
 
 
 def analyse(diag):
-    """Per-dump beam metrics (sorted by <z>) plus the raw (z, KE, w) snapshot of each dump."""
+    """Sorted by <z>: station_picks/line_figure rely on ascending order."""
     ts = OpenPMDTimeSeries(diag)
     rec = {k: [] for k in ("zmean", "sigz", "ke", "dke", "ipk", "it")}
     snaps = {}
@@ -98,7 +92,6 @@ def analyse(diag):
 
 
 def station_picks(rec):
-    """Four representative dumps along the line, with labels (used by both station figures)."""
     its, zmean = rec["it"], rec["zmean"]
     nearest = lambda z: its[int(np.argmin(np.abs(zmean - z)))]
     post = zmean > Z_GAP_CENTER_2
@@ -109,7 +102,6 @@ def station_picks(rec):
 
 
 def line_figure(rec):
-    """sigma_z, peak current, and mean energy along the line (vs <z>)."""
     z_mm = rec["zmean"] * 1e3
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.4), constrained_layout=True)
     a1.plot(z_mm, rec["sigz"] * 1e3, "o-", ms=3, color="C0")
@@ -131,7 +123,6 @@ def line_figure(rec):
 
 
 def bunch_profile_figure(rec, snaps, picks, titles):
-    """Longitudinal line-charge density lambda(z) at each station."""
     fig, axs = plt.subplots(1, len(picks), figsize=(3.4 * len(picks), 4.0), constrained_layout=True)
     for ax, it, title in zip(np.atleast_1d(axs), picks, titles):
         z, _, w = snaps[it]
@@ -154,7 +145,6 @@ def bunch_profile_figure(rec, snaps, picks, titles):
 
 
 def phasespace_figure(rec, snaps, picks, titles):
-    """Charge-weighted longitudinal phase space (z - <z>, KE - <KE>) at each station."""
     def wpercentile(v, w, q):
         order = np.argsort(v)
         cdf = np.cumsum(w[order]); cdf /= cdf[-1]
@@ -180,7 +170,7 @@ def phasespace_figure(rec, snaps, picks, titles):
 
 
 def _on_axis_ez(field_path):
-    """On-axis E_z(z) of a raw 1-J cavity map, in lab z."""
+    """Field map is stored normalized to 1 J; caller must scale by rf_scale()."""
     s = io.Series(field_path, io.Access.read_only)
     mesh = s.iterations[0].meshes["E"]
     ez = mesh["z"].load_chunk()
@@ -191,7 +181,6 @@ def _on_axis_ez(field_path):
 
 
 def cavity_figure(w):
-    """Spatial RF field lobes of both prebunchers (scaled by their drive amplitude), in lab z."""
     p1, p2 = w.get("params/PREB1_KW"), w.get("params/PREB2_KW")
     f_rf, q1, q2 = w.get("params/F_RF"), w.get("params/Q_L_1"), w.get("params/Q_L_2")
     scale1, scale2 = rf_scale(p1, q1, f_rf), rf_scale(p2, q2, f_rf)
@@ -222,7 +211,6 @@ def main():
     it = _last_populated(DIAG)
     pg = w._particle_group(iteration=it)
 
-    # Generic phase-space / spectrum figures (lume-warpx helpers + shared sim.plot.common).
     for name, fig in [
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
         ("energy_spectrum",  px.energy_spectrum(pg)),
@@ -241,7 +229,6 @@ def main():
                             title="Beam evolution along the injector  (fixed-z virtual screens)"),
           "evolution_vs_z")
 
-    # Stage-specific rich figures (raw openPMD over the whole run).
     cavity_figure(w)
     rec, snaps, _ = analyse(DIAG)
     if rec is not None:

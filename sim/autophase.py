@@ -1,28 +1,10 @@
 """
-Auto-phase the linac 1-4 RF cavities and rewrite the section YAMLs.
-
-`sim/main.py` runs this **before each WarpX linac stage** (one section per call), so the chain
-re-derives the crest each run; it also works standalone. It re-derives the frozen RF crest phase
-(CREST_PHASE_DEG for sections 2/3/4, PHASE_DEG for section 1) the linac driver consumes, then
-writes it back into config/linacN.yaml (comments preserved). Run it whenever an upstream change
-shifts the beam and the hardcoded setpoints go stale.
-
-Method: read the section's upstream exit beam exactly as sim/linac1-4.py does (same kinematics,
-same iris scrape for section 1), reproduce the driver's arrival-referenced phase convention
-phi = -omega*(Z_STRUCT - z_center)/v_beam + base_deg, and RK4-integrate the WHOLE bunch
-longitudinally through the real on-axis SLAC quadrature field over a phase scan. The crest is the
-base phase maximising the bunch-averaged exit energy (parabolic-refined). Integrating the whole
-bunch — not a centroid proxy — is essential: the captured core spans ~140 deg of RF, so its
-phase-averaged crest sits ~70 deg from the single-particle crest (validated against a WarpX phase
-scan). This is a 1D longitudinal model (no transverse / space-charge back-reaction): exact for the
-relativistic sections 2/3/4; for the 150 keV capture section 1 it is the max-energy phase, which a
-deliberately off-crest bunching setpoint would differ from.
+Auto-phase the linac 1-4 RF cavities and rewrite the section YAMLs (config/linacN.yaml).
+Run standalone, or via sim/main.py before each linac stage. See docs/linac1-4.md.
 
   python sim/autophase.py            # phase sections 1 2 3 4, rewrite the YAMLs
   python sim/autophase.py 2 3 4      # only the relativistic sections
   python sim/autophase.py --dry-run  # scan + report, write nothing
-
-No WarpX is launched; only the existing logs/diags/ dumps + the GDF field maps are read.
 """
 
 import os
@@ -74,11 +56,8 @@ SUBSAMPLE = 2048            # macroparticles integrated per phase (bunch-average
 
 
 def _load_bunch(drv, N, p):
-    """Section N's injected beam (matching sim/linac1-4.py: section 1 reads the iris-scraped
-    injector handoff; 2/3/4 read the previous section's captured-core exit), subsampled for the
-    scan. Returns (z [m], u = |gamma*beta| per particle, w, z_center [m], v_beam [m/s],
-    ke_mean [keV], scale). `scale` is the field-map amplitude the driver would apply."""
-    resample_n = p.get("RESAMPLE_N", 0)                     # match the driver's injected beam size
+    """Section N's injected beam, matching sim/linac1-4.py's own load path, subsampled for the scan."""
+    resample_n = p.get("RESAMPLE_N", 0)
     if N == 1:
         bunch, v_beam, ke_mean, _ = drv.load_injector_bunch(
             p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"],
@@ -99,23 +78,14 @@ def _load_bunch(drv, N, p):
     return z, u, w, z_center, v_beam, ke_mean, scale
 
 
-PROBE_LEN = 0.6            # integrate this far into the structure to fix the crest (TW gradient is
-                          # phase-uniform; a WarpX scan confirmed the crest at a 0.6 m probe)
-COARSE_STEP_DEG = 4.0     # wide 0..360 scan resolution; the fine scan refines the coarse argmax. For a
-                          # unimodal KE(phase) the argmax sample is one of the two bracketing the crest,
-                          # so it sits within ±COARSE_STEP_DEG of it -- the fine half-window matches that.
+PROBE_LEN = 0.6            # short-probe crest matches the full-structure crest (TW gradient is phase-uniform)
+COARSE_STEP_DEG = 4.0      # coarse scan step; fine scan half-window must match (unimodal KE(phase) guarantee)
 
 
 def _mean_exit_ke(base_deg, z0, u0, w, z_center, v_beam, scale, omega, zmap, ez1, ez2, z_probe):
-    """Bunch-averaged KE [keV] at the `z_probe` plane for a single base phase.
-
-    Integrates the WHOLE bunch (not a centroid proxy — the captured core spans ~140 deg of RF, so
-    its phase-averaged crest is far from the single-particle crest). Reproduces the driver phase
-    reference phi = -omega*t_in + base (t_in from the centroid, as the driver sets it) and the
-    90 deg quadrature sum Ez = scale*[Ez1 cos(wt+phi) + Ez2 cos(wt+phi+pi/2)]; RK4-integrates
-    dz/dt = c*u/gamma, du/dt = -(e/m_e c) Ez until the centroid passes z_probe. Field is exactly
-    zero outside the map (np.interp left/right=0), so exited particles coast.
-    """
+    """Bunch-averaged KE [keV] at `z_probe` for one base phase; integrates the whole bunch, not a
+    centroid proxy — the captured core's phase spread puts its crest far from the single-particle one.
+    Field is exactly zero outside the map (np.interp left/right=0), so exited particles coast."""
     phi = -omega * (Z_STRUCT - z_center) / v_beam + np.deg2rad(base_deg)
     k = q_e / (m_e * c)
     z, u = z0.copy(), u0.copy()
@@ -146,9 +116,7 @@ def _mean_exit_ke(base_deg, z0, u0, w, z_center, v_beam, scale, omega, zmap, ez1
 
 
 def find_crest(z0, u0, w, z_center, v_beam, ke_mean, scale, omega, zmap, ez1, ez2):
-    """Crest base phase [deg, in [0,360)] and its bunch-averaged gain [keV] at the probe plane: a
-    COARSE_STEP_DEG coarse scan (light subsample), a 0.1 deg fine scan about the peak, then a
-    parabolic refine. The probe plane caps the integration short of the full structure for speed."""
+    """Crest base phase [deg, in [0,360)] and its bunch-averaged gain [keV] at the probe plane."""
     z_probe = min(zmap[-1], Z_STRUCT + PROBE_LEN)
     coarse_sub = slice(0, min(512, z0.size))                  # lighter bunch for the wide scan
 

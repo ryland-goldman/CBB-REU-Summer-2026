@@ -1,14 +1,9 @@
 """
 Figures for the Cornell Linac sections 5-8 stage (Impact-T, sim/linac5-8.py).
 
-Reads logs/diags/linac5-8/main/{particles, injection_summary.json} and writes PNGs to
-logs/plots/linac5-8/: evolution_vs_z (mean KE / eps_n,x / sigma_x / surviving charge), energy_spread,
-section_gains (per-section achieved vs frozen-target ΔE bars), and from the exit particle slice
-energy_spectrum, phase_space_z_KE (longitudinal) and transverse_r_pr. The vs-z curves come from the
-summary's stat_vs_z table (Impact-T I.stat); a sparse particle-slice fallback covers legacy dumps.
-
-main() runs ONLY plotting (sim/linac5-8.py must have been run first). Run as
-`python sim/plot/linac5-8.py` (hyphenated name is not importable).
+Reads logs/diags/linac5-8/main and writes PNGs to logs/plots/linac5-8/. Run as
+`python sim/plot/linac5-8.py` after sim/linac5-8.py (hyphenated name is not importable).
+See docs/linac5-8.md.
 """
 
 import os
@@ -38,13 +33,12 @@ def _species(ts):
 
 
 def _wstat(a, w):
-    """Weighted mean and standard deviation."""
     m = np.average(a, weights=w)
     return m, np.sqrt(np.average((a - m) ** 2, weights=w))
 
 
 def _norm_emit(x, ux, w):
-    """Normalized RMS emittance eps_n = sqrt(<x^2><ux^2> - <x*ux>^2) (ux = gamma*beta_x)."""
+    """ux = gamma*beta_x."""
     xm = np.average(x, weights=w)
     um = np.average(ux, weights=w)
     xx = np.average((x - xm) ** 2, weights=w)
@@ -54,10 +48,7 @@ def _norm_emit(x, ux, w):
 
 
 def _read_slices(diag):
-    """Per-dump beam moments sorted by <z>: list of dicts (z, ke, dke, enx, eny, sx, sy, q).
-
-    Fallback for summaries without a stat_vs_z table (reads the openPMD particle slices).
-    """
+    """Fallback for summaries without a stat_vs_z table (reads the openPMD particle slices)."""
     from openpmd_viewer import OpenPMDTimeSeries
     try:
         ts = OpenPMDTimeSeries(os.path.join(diag, "particles"))
@@ -94,10 +85,8 @@ def _arr(rows, key):
 
 
 def _vs_z(diag, summ):
-    """(z, ke, dke, enx, eny, sx, sy, charge_pc) [m / MeV / mm-as-m units kept SI; charge pC] from
-    the summary's stat_vs_z (preferred) or the particle slices. `charge_pc` is None when the summary
-    predates the surviving-charge column. Returns None if neither source is usable.
-    """
+    """Prefers the summary's stat_vs_z; falls back to particle slices. `charge_pc` is None for
+    summaries predating the surviving-charge column; returns None if neither source is usable."""
     svz = summ.get("stat_vs_z", {})
     if svz.get("z_m"):
         z = np.array(svz["z_m"])
@@ -115,11 +104,8 @@ def _vs_z(diag, summ):
 
 
 def _achieved_de(calib, z, ke):
-    """Per-section achieved ΔE [MeV] from the vs-z KE curve: KE at each section's exit z minus KE
-    at its entry z. The section z-edges come from the calibration table (`z_entry_m`/`z_exit_m`,
-    the real deck geometry written by sim/linac5-8.py); a legacy summary without them falls back to
-    an even split of the z-grid (coarse -- it mis-attributes gain across the inter-section drifts).
-    """
+    """Legacy summaries without `z_entry_m`/`z_exit_m` fall back to an even split of the z-grid,
+    which mis-attributes gain across the inter-section drifts."""
     n = len(calib)
     if n == 0 or len(z) < 2:
         return []
@@ -131,7 +117,6 @@ def _achieved_de(calib, z, ke):
 
 
 def _exit_slice(diag):
-    """Particle arrays (x, y, z, ux, uy, uz, w) of the exit dump (largest <z>), or None."""
     from openpmd_viewer import OpenPMDTimeSeries
     parts = os.path.join(diag, "particles")
     if not os.path.isdir(parts):
@@ -156,7 +141,6 @@ def _exit_slice(diag):
 
 
 def _save_exit_figures(x, y, z, ux, uy, uz, w):
-    """Energy spectrum, longitudinal (z, KE) and transverse (r, p_r) phase space at the exit."""
     pg = make_particle_group(x, y, z, ux, uy, uz, w)
     fig = px.energy_spectrum(pg, use_ke=True, e_unit="MeV")
     fig.savefig(os.path.join(RESULTS, "energy_spectrum.png"), dpi=130, bbox_inches="tight")
@@ -193,7 +177,6 @@ def main():
     z, ke, dke, enx, eny, sx, sy, charge = vs
     power_mw = summ.get("power_mw", 17.0)
 
-    # 1) beam evolution vs z: mean KE / eps_n,x / sigma_x (+ surviving charge when available)
     fig = px.evolution_vs_z(
         z, ke, enx * 1e6, sx * 1e3, charge_pc=charge, ke_unit="MeV",
         title=f"linac5-8 beam evolution (sections 5-8, on-crest, {power_mw:g} MW)",
@@ -203,7 +186,6 @@ def main():
     fig.savefig(os.path.join(RESULTS, "evolution_vs_z.png"), dpi=130)
     plt.close(fig)
 
-    # 2) energy spread vs z (absolute grows on the cosine crest curvature; relative shrinks)
     fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.6, 6.2), constrained_layout=True, sharex=True)
     a1.plot(z, dke, "-o", ms=3, color="C5")
     a1.set_ylabel("sigma_KE [MeV]")
@@ -217,7 +199,6 @@ def main():
     fig.savefig(os.path.join(RESULTS, "energy_spread.png"), dpi=130)
     plt.close(fig)
 
-    # 3) per-section achieved vs frozen-target ΔE
     fig, ax = plt.subplots(figsize=(9.2, 4.8), constrained_layout=True)
     if calib:
         names = [c.get("name", f"sec{c['index'] + 5}") for c in calib]
@@ -239,7 +220,6 @@ def main():
     fig.savefig(os.path.join(RESULTS, "section_gains.png"), dpi=130)
     plt.close(fig)
 
-    # 4-6) exit-slice figures: energy spectrum, longitudinal (z, KE) and transverse (r, p_r)
     n_slice = _exit_slice(diag)
     if n_slice is not None:
         _save_exit_figures(*n_slice)

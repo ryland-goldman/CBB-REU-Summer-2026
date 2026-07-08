@@ -1,27 +1,9 @@
 """
-SLAC / Cornell Linac sections 1-4 in WarpX (RZ), merged into ONE parametrized driver.
-
-  Section 1 (capture): import the injector handoff beam at the z ≈ Z_HANDOFF plane, apply the
-    multi-plane 9.547 mm iris scrape, and capture it in the 3 m 2π/3 traveling-wave SLAC
-    structure with self-consistent space charge. RF amplitude = sqrt(POWER_MW/RF_NORM_MW),
-    phase referenced to bunch arrival (PHASE_DEG is the ABSOLUTE arrival-referenced base phase —
-    the autophase capture crest — applied directly, NOT a detune; 0 is not on-crest).
-  Sections 2, 3, 4 (accelerate): import the previous section's captured-core exit beam and
-    accelerate the relativistic core through the SAME reused SLAC quadrature maps, scaled by a
-    FROZEN FIELD_SCALE and phased to a FROZEN CREST_PHASE_DEG (the old runtime crest-finding +
-    ΔE-target field-scale loop is dropped — the setpoints were derived once and hardcoded in
-    the section yaml). Section 4's exit is the 4→5 boundary: the input to the e+/e- converter
-    target (sim/converter.py), whose positron output then feeds Impact-T sections 5-8.
+SLAC / Cornell Linac sections 1-4 in WarpX (RZ), one parametrized driver selected by CLI arg N.
 
 Run as:  python sim/linac1-4.py <N>   with N in {1, 2, 3, 4}.
 
-Drives lume-warpx from config/linacN.yaml (which holds every constant); this module reads those
-back, imports the upstream beam via WarpX(initial_particles=...), and overrides only the
-runtime-computed values (the two quadrature RF time functions, step count, dt, diagnostic
-period). The two SLAC quadrature maps are shared across all four sections. See docs/linac1-4.md
-for physics, the captured-core cut, the frozen setpoints, lab-z chaining, and gotchas.
-
-main() runs ONLY the simulation; sim/plot/linac1-4.py produces the figures.
+main() runs ONLY the simulation; sim/plot/linac1-4.py produces the figures. See docs/linac1-4.md.
 """
 
 import os
@@ -45,8 +27,7 @@ from sim.helpers.loadparticles import (
     load_warpx_exit_bunch, upstream_exit_lab_z, pipe_violator_ids, survivor_mask)
 from sim.helpers.buildfields import build_linac_slac_fields, Z_STRUCT, RMAX, BORE_R, V1KW_KEV
 
-# Section 1 reads the injector handoff; sections 2/3/4 read the previous section's exit. All
-# paths are repo-root-relative (prepare_env() chdir's to the repo root).
+# Paths are repo-root-relative (prepare_env() chdir's to the repo root).
 INJECTOR_DIAG = "logs/diags/injector/main/particles"
 PREV_PARTICLES = {2: "logs/diags/linac1-4/sec1/main/particles",
                   3: "logs/diags/linac1-4/sec2/main/particles",
@@ -58,12 +39,7 @@ PREV_LABEL = {2: "linac1-4/sec1", 3: "linac1-4/sec2", 4: "linac1-4/sec3"}
 
 
 def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z, resample_n=0):
-    """Import the injector beam at the z ≈ z_handoff plane and shift it to entry (section 1).
-
-    Selects the dump whose bunch ⟨z⟩ is nearest z_handoff, applies the multi-plane iris scrape,
-    and returns (dict [γβ momenta], v_beam, mean KE [keV], inj summary). `resample_n` > 0 forces
-    exactly that macroparticle count (up- or down-sample, reweighted); else downsample to max_part.
-    """
+    """Import the injector beam at the z ≈ z_handoff plane and shift it to entry (section 1)."""
     ts = open_particle_series(INJECTOR_DIAG, "injector")
 
     # Find the well-populated dump nearest the handoff plane (the n ≥ 0.8·nmax gate avoids a
@@ -86,11 +62,11 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z, resam
 
     idh, x, y, z, ux, uy, uz, w = ts.get_particle(
         ["id", "x", "y", "z", "ux", "uy", "uz", "w"], species="electrons", iteration=it_handoff)
-    q_inj = float(w.sum()) * q_e                          # TRUE injected charge (all r), capture denominator
+    q_inj = float(w.sum()) * q_e
 
     # Iris/pipe collimation: multi-plane id scrape, NOT a single z_handoff cut. See loadparticles.
     scan_iters = [it for it, _n, zm in recs if (collim_z - 0.05) <= zm <= (z_handoff + 0.03)]
-    if not scan_iters:                                    # empty window => no scrape => over-stated transmission
+    if not scan_iters:
         raise RuntimeError(
             f"no injector dump ⟨z⟩ in the iris-scrape window "
             f"[{(collim_z - 0.05)*1e3:.0f}, {(z_handoff + 0.03)*1e3:.0f}] mm — the {RMAX*1e3:.3f} mm "
@@ -99,15 +75,15 @@ def load_injector_bunch(max_part, rng_seed, z_inject, z_handoff, collim_z, resam
     keep = survivor_mask(idh, violators)
     idh, x, y, z, ux, uy, uz, w = (a[keep] for a in (idh, x, y, z, ux, uy, uz, w))
     r = np.hypot(x, y)
-    q_dom = float(w.sum()) * q_e                          # in-iris survivors
-    q_bore = float(w[r <= BORE_R].sum()) * q_e            # of those, within the RF bore
+    q_dom = float(w.sum()) * q_e
+    q_bore = float(w[r <= BORE_R].sum()) * q_e
 
     rng = np.random.default_rng(rng_seed)
-    if resample_n:                                        # fixed macroparticle count (up- or down-sample)
+    if resample_n:
         (x, y, z, ux, uy, uz), w = resample((x, y, z, ux, uy, uz), w, resample_n, rng)
     else:
         (x, y, z, ux, uy, uz), w = downsample((x, y, z, ux, uy, uz), w, max_part, rng)
-    z = z - z.min() + z_inject                            # bunch tail (smallest z) → z_inject
+    z = z - z.min() + z_inject
 
     v_beam, ke_mean = beam_kinematics(ux, uy, uz, w)
     sz = float(np.sqrt(np.average((z - np.average(z, weights=w)) ** 2, weights=w)))
@@ -150,19 +126,17 @@ def main():
     if os.path.isdir(outdir):                            # fresh diags (WarpX appends per dump)
         shutil.rmtree(outdir)
 
-    # ── Input beam + frozen RF setpoints (branch on section) ──────────────────────────────────
-    resample_n = p.get("RESAMPLE_N", 0)                 # >0 → resample beam to exactly N macroparticles
+    resample_n = p.get("RESAMPLE_N", 0)
     if N == 1:
         bunch, v_beam, ke_mean, inj = load_injector_bunch(
             p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"], p["Z_HANDOFF"], p["COLLIM_Z"],
             resample_n=resample_n)
         summary = inj                                   # records z_handoff_m for downstream lab-z chaining
-        # Capture beam (slipping ~150 keV): scale from input power, phase referenced to arrival.
         scale = float(np.sqrt(p["POWER_MW"] / p["RF_NORM_MW"]))
         # PHASE_OFFSET_DEG is the optimizer's phase knob, added on top of the autophased PHASE_DEG
         # (autophase.py owns PHASE_DEG for section 1). Absent => 0 (standalone runs unaffected).
         base_deg = p["PHASE_DEG"] + p.get("PHASE_OFFSET_DEG", 0.0)
-        z_span = 0.0                                    # section 1 stops the centroid (old sec1 behaviour)
+        z_span = 0.0
     else:
         bunch, v_beam, ke_mean, info = load_warpx_exit_bunch(
             PREV_PARTICLES[N], PREV_LABEL[N], p["MAX_PART"], p["RNG_SEED"], p["Z_INJECT"],

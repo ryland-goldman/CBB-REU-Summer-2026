@@ -1,11 +1,7 @@
 """Progress bars for the long engine runs.
 
-Each stage runs in its own subprocess whose stdout is captured to the pipeline log by
-main.py while stderr stays on the terminal -- so a tqdm bar written to stderr shows live
-while the engine's verbose stdout lands in the log. WarpX stages get their bar from
-lume-warpx's `w.run(progress=...)`; Impact-T (linac5-8) drives the bar below from a
-background poll of its `fort.18` longitudinal-position output; the converter (G4beamline)
-drives `g4bl_progress` below from g4bl's `Event N Completed` stdout stream.
+Each stage's stdout is captured to the pipeline log while stderr (this bar) stays live on
+the terminal.
 """
 
 import contextlib
@@ -31,11 +27,7 @@ def progress_bar(total=None, desc="", unit="it"):
 
 @contextlib.contextmanager
 def impact_progress(fort18_path, total_length_m, desc="linac5-8"):
-    """Drive a tqdm bar (in metres of beam travel) from Impact-T's fort.18 while it runs.
-
-    Impact-T appends the bunch centroid z to fort.18 each step; a daemon thread polls the
-    last value and advances the bar. Wrap I.run() in this context.
-    """
+    """Drive a tqdm bar (in metres of beam travel) from Impact-T's fort.18 while it runs."""
     import os
     with progress_bar(total=round(total_length_m, 3), desc=desc, unit="m") as bar:
         stop = threading.Event()
@@ -72,12 +64,7 @@ def impact_progress(fort18_path, total_length_m, desc="linac5-8"):
 
 
 def g4bl_progress(line_iter, total, desc="converter"):
-    """Drive a tqdm bar from g4bl's `Event N Completed` stdout lines, re-yielding each line.
-
-    g4bl streams `Event <n> Completed ...` as it tracks; parse the running count and advance the
-    bar toward `total` (= nEvents). Use as `for line in g4bl_progress(proc.stdout, N): ...` so the
-    caller can still tee the lines (e.g. keep a tail for error reporting).
-    """
+    """Drive a tqdm bar from g4bl's `Event N Completed` stdout lines, re-yielding each line."""
     import re
     pat = re.compile(r"Event\s+(\d+)\s+Completed")
     with progress_bar(total=total, desc=desc, unit="ev") as bar:

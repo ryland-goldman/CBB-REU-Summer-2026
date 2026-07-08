@@ -1,9 +1,5 @@
-"""Shared physics constants, emission physics, RF drive strings, and a little runtime
-plumbing (environment setup, file-path module loading).
-
-Everything here is stage-agnostic so the stage drivers read as physics. Physical constants
-come from scipy so no stage carries a divergent literal (u = gamma*beta; momentum in eV/c;
-rest energy in eV).
+"""Shared physics constants, emission physics, RF drive strings, and runtime plumbing
+(environment setup, file-path module loading) used by all stage drivers.
 """
 
 import os
@@ -13,7 +9,6 @@ import sys
 import numpy as np
 import scipy.constants as _sc
 
-# ── Physical constants (SI + eV conventions) ─────────────────────────────────────
 C_LIGHT = _sc.c                            # m/s
 E_CHARGE = _sc.e                           # C (elementary charge, positive)
 M_E = _sc.m_e                              # kg (electron mass)
@@ -32,7 +27,6 @@ def out_root():
     return os.path.abspath(os.environ.get("LINACSIM_OUT_DIR", REPO_ROOT))
 
 
-# ── Emission physics (cathode + gun) ─────────────────────────────────────────────
 def child_langmuir_current_density(voltage, gap):
     """Space-charge-limited current density J [A/m^2] across a planar gap; 0 for V<=0."""
     v = np.maximum(np.asarray(voltage, dtype=float), 0.0)
@@ -40,15 +34,11 @@ def child_langmuir_current_density(voltage, gap):
 
 
 def thermal_velocity_sigma(t_k):
-    """RMS thermal velocity per Cartesian component [m/s] for a Maxwellian cathode.
-
-    Thermal energies are non-relativistic (u ~ v): sigma = sqrt(kT/m_e)
-    = sqrt(kT[eV]/mc2[eV]) * c. WarpX consumes this as `rms_velocity`.
-    """
+    """RMS thermal velocity per Cartesian component [m/s] for a Maxwellian cathode
+    (non-relativistic: u ~ v, so sigma = sqrt(kT/m_e))."""
     return np.sqrt(K_B_EV * t_k / MC2_EV) * C_LIGHT
 
 
-# ── RF cavity drive ──────────────────────────────────────────────────────────────
 def rf_time_functions(scale, omega, phi, amp_prec=10, phase_prec=10):
     """(E, B) `warpx_*_time_function` strings for a standing-wave TM cavity drive:
     E ~ scale*cos(omega*t + phi), B ~ scale*sin(omega*t + phi). omega keeps .10e --

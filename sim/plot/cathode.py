@@ -1,17 +1,7 @@
 """
-Figures for the finite-cathode space-charge-limited (Child–Langmuir) diode (sim/cathode.py)
-over logs/diags/cathode/. Writes PNGs to logs/plots/cathode/.
-
-Figures: phase_space_z_KE, energy_spectrum (whole-gap snapshot), evolution_vs_z (mean KE / eps_n,x /
-sigma_x across the gap), potential_xz, charge_density_xz, plus the stage-specific rich figures that
-validate the emission physics — the on-axis potential and field against the Child–Langmuir law at
-the pulse peak (child_langmuir), the grid pulse V(t) with the transmitted current tracking the
-instantaneous J_CL(V(t)) and the measured emitted charge (grid_pulse), the energy spectrum of the
-delivered beam crossing the anode that seeds the gun (anode_spectrum), and the source's intrinsic
-thermal transverse x–px phase space (emission_phase_space — this 2D slab has no r–pr). See
-docs/cathode.md for the physics each figure shows.
-
-main() runs ONLY plotting (the sim must have been run first).
+Figures for the cathode stage (sim/cathode.py) from logs/diags/cathode/. Writes PNGs to
+logs/plots/cathode/. main() runs ONLY plotting (the sim must have been run first). See
+docs/cathode.md for what each figure shows.
 """
 
 import os
@@ -103,7 +93,7 @@ def child_langmuir_figure(V_anode, gap_d, it):
     ts = OpenPMDTimeSeries(FIELDS)
     phi, meta = ts.get_field("phi", iteration=it)
     ez, _ = ts.get_field("E", "z", iteration=it)
-    ix0 = np.argmin(np.abs(meta.x))                      # column nearest the axis
+    ix0 = np.argmin(np.abs(meta.x))
     z = meta.z
     phi_axis, ez_axis = phi[:, ix0], ez[:, ix0]
 
@@ -128,11 +118,7 @@ def child_langmuir_figure(V_anode, gap_d, it):
 
 
 def grid_pulse_figure(gap_d, R_cathode, p, summary):
-    """The grid pulse V(t) and the transmitted current tracking the instantaneous J_CL(V(t)).
-
-    Top: the pulsed grid bias. Bottom: WarpX mid-gap |J_z|(t) overlaid on the quasi-static
-    J_CL(V(t)) envelope (the diode follows V(t) since transit ≪ pulse), with the emitted charge
-    measured by sim/cathode.py annotated."""
+    """Grid V(t) vs the transmitted current; valid since transit time ≪ pulse duration."""
     ts = OpenPMDTimeSeries(FIELDS)
     times = np.asarray(ts.t)
     j_trans = []
@@ -140,7 +126,7 @@ def grid_pulse_figure(gap_d, R_cathode, p, summary):
         jz, meta = ts.get_field("j", "z", iteration=it)
         nz = jz.shape[0]
         xm = np.abs(meta.x) <= R_cathode
-        j_trans.append(np.abs(jz[nz // 2, xm]).mean())   # mid-gap transmitted |J_z| over the patch
+        j_trans.append(np.abs(jz[nz // 2, xm]).mean())
     j_trans = np.asarray(j_trans)
 
     v_t = _pulse_voltage(times, p)
@@ -172,9 +158,7 @@ def grid_pulse_figure(gap_d, R_cathode, p, summary):
 
 
 def anode_spectrum_figure(gap_d, anode_frac, it):
-    """Energy spectrum of the forward-moving beam crossing the anode plane — the delivered flux that
-    seeds the gun. Unlike energy_spectrum (a whole-gap snapshot dominated by the slow near-cathode
-    pileup), this is z-cut to the anode slab, so it shows the ~full-gap acceleration (≈ peak eV)."""
+    """Unlike energy_spectrum (whole-gap snapshot), z-cut to the anode slab — the delivered flux."""
     ts = OpenPMDTimeSeries(PARTICLES)
     z, ux, uy, uz, w = ts.get_particle(["z", "ux", "uy", "uz", "w"], iteration=it)
     m = anode_beam_mask(z, uz, gap_d, anode_frac)
@@ -238,7 +222,7 @@ def main():
     os.makedirs(RESULTS, exist_ok=True)
 
     w = WarpX(input_file=CONFIG)
-    _load_series(w)                                      # logs/diags/cathode/{fields, particles}
+    _load_series(w)
 
     summary = None
     summary_path = os.path.join(DIAG_DIR, "injection_summary.json")
@@ -252,7 +236,6 @@ def main():
     it = _crest_iteration(ts, summary, _last_populated(PARTICLES))
     pg = w._particle_group(iteration=it)
 
-    # Generic phase-space / field figures (lume-warpx helpers + shared sim.plot.common).
     for name, fig in [
         ("phase_space_z_KE", w.plot2D("z", "kinetic_energy", iteration=it)),
         ("potential_xz",     w.plot_fields("phi", "x", "z")),
@@ -261,8 +244,8 @@ def main():
     ]:
         _save(fig, name)
 
-    # Beam evolution across the gap (fixed-z virtual screens over the rising-edge dumps up to the
-    # crest; the drained post-crest dumps would skew the near-cathode screens with a cold layer).
+    # Rising-edge dumps only up to the crest: post-crest dumps are drained and would skew the
+    # near-cathode screens with a cold layer.
     crest_t = summary["crest_time_s"] if summary and summary.get("crest_time_s") else ts.t[-1]
     rising = [i for i, t in zip(ts.iterations, ts.t) if t <= crest_t * 1.001]
     pool = common.pool_trajectories(ts, rising, with_y=False)          # 2D slab: no y
@@ -271,8 +254,8 @@ def main():
                                 title="Cathode beam evolution across the gap"),
           "evolution_vs_z")
 
-    # Stage-specific rich figures (raw openPMD; emission-physics validation). The grid bias is now
-    # a V(t) parser string, so the SCL reference voltage is the pulse PEAK from params, not w.get().
+    # The grid bias is a V(t) parser string, so the SCL reference voltage is the pulse PEAK from
+    # params, not w.get().
     gap_d = w.get("grid/upper_bound")[1]
     R_cathode = w.get("species")[0]["upper_bound"][0]
     p = w.get("params")

@@ -1,17 +1,7 @@
 """
-Figures for the WarpX RZ Cornell Linac sections 1-4 (sim/linac1-4.py) over
-logs/diags/linac1-4/secN/main/. Writes PNGs to logs/plots/linac1-4/ (sec{N}_ prefix).
-(No field diagnostic is dumped, so no plot_fields.)
-
-Run as:  python sim/plot/linac1-4.py <N>   with N in {1, 2, 3, 4}.
-
-Four figures per section show the capture / acceleration physics:
-  phase_space_z_KE — the captured/accelerated slice (longitudinal phase space),
-  transverse_r_pr  — the exit transverse (r, p_r) phase space within the bore,
-  energy_spectrum  — the exit energy spectrum,
-  evolution_vs_z   — mean KE / eps_n,x / sigma_x along the section (fixed-z virtual screens).
-
-main() runs ONLY plotting (the section sim must have been run first).
+Figures for WarpX linac sections 1-4 (sim/linac1-4.py) from logs/diags/linac1-4/secN/main/.
+Writes PNGs to logs/plots/linac1-4/. Run as: python sim/plot/linac1-4.py <N>  (N in 1-4).
+See docs/linac1-4.md.
 """
 
 import os
@@ -53,9 +43,7 @@ def main():
     diag_dir = f"logs/diags/linac1-4/sec{N}/main"
     particles = os.path.join(diag_dir, "particles")
 
-    # The sim overrides write_dir to logs/diags/linac1-4/secN/main, so the particles series sits
-    # directly there (not under <path>/diags). Populate w._outputs by hand the way the cathode
-    # plotter does, so plot2D/plot1D work without WarpX.load_output (which needs a path= on w).
+    # w has no path= set, so WarpX.load_output can't find the series; populate w._outputs by hand instead.
     ts = OpenPMDTimeSeries(particles)
     w = WarpX(input_file=config)
     w._outputs = {"particles": ts}
